@@ -64,7 +64,7 @@ export interface Goal {
 // ============================================================
 // DTOs — dados de entrada para criação/edição (sem id/user_id/created_at)
 // ============================================================
-export type CreateAccount = Omit<Account, "id" | "user_id" | "created_at">;
+export type CreateAccount = Omit<Accout, "id" | "user_id" | "created_at">;
 export type UpdateAccount = Partial<CreateAccount>;
 
 export type CreateCategory = Omit<Category, "id" | "user_id" | "created_at">;
