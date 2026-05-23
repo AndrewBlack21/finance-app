@@ -3,7 +3,7 @@ import { Link } from "expo-router";
 import { useForm, Controller } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth } from "../../hooks/useAuth";
 import { Button, Input, FormError } from "@/components/ui";
 
 const schema = z.object({
