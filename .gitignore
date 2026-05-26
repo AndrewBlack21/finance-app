@@ -30,6 +30,7 @@ npm-debug.*
 yarn-debug.*
 yarn-error.*
 .npm-cache/
+expo-start.*.log
 
 # macOS
 .DS_Store
