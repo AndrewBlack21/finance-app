@@ -26,7 +26,7 @@ export const authService = {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { full_name: name } }, // capturado pelo trigger handle_new_user
+      options: { data: { name, full_name: name } }, // capturado pelo trigger handle_new_user
     });
     return { data: data.user, error: error?.message ?? null };
   },
