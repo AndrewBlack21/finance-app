@@ -3,7 +3,9 @@ import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 
 const URL = process.env.EXPO_PUBLIC_SUPABASE_URL!;
-const KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
+// Aceita tanto ANON_KEY quanto KEY para compatibilidade
+const KEY = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
+  process.env.EXPO_PUBLIC_SUPABASE_KEY)!;
 
 // ============================================================
 // STORAGE ADAPTER

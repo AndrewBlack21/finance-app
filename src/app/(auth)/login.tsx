@@ -1,9 +1,10 @@
-import { View, Text, TouchableOpacity } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Link } from "expo-router";
 import { useForm, Controller } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useAuth } from "../../hooks/useAuth";
+import { useAuth } from "@/hooks/useAuth";
 import { Button, Input, FormError } from "@/components/ui";
 
 const schema = z.object({
@@ -29,15 +30,11 @@ export default function LoginScreen() {
   };
 
   return (
-    <View className="flex-1 bg-white justify-center px-6">
-      {/* Cabeçalho */}
-      <Text className="text-3xl font-bold text-gray-900 mb-1">Entrar</Text>
-      <Text className="text-gray-500 mb-8">
-        Acesse sua conta para continuar
-      </Text>
+    <SafeAreaView style={s.container}>
+      <Text style={s.title}>Entrar</Text>
+      <Text style={s.subtitle}>Acesse sua conta para continuar</Text>
 
-      {/* Formulário */}
-      <View className="gap-y-4">
+      <View style={s.form}>
         <Controller
           name="email"
           control={control}
@@ -68,14 +65,11 @@ export default function LoginScreen() {
           )}
         />
 
-        {/* Erro global do servidor */}
         {errors.root && <FormError message={errors.root.message!} />}
 
         <Link href="/(auth)/forgot-password" asChild>
           <TouchableOpacity>
-            <Text className="text-indigo-600 text-sm text-right">
-              Esqueci minha senha
-            </Text>
+            <Text style={s.forgotLink}>Esqueci minha senha</Text>
           </TouchableOpacity>
         </Link>
 
@@ -86,13 +80,34 @@ export default function LoginScreen() {
         />
       </View>
 
-      {/* Rodapé */}
-      <View className="flex-row justify-center mt-8">
-        <Text className="text-gray-500">Não tem conta? </Text>
+      <View style={s.footer}>
+        <Text style={s.footerText}>Não tem conta? </Text>
         <Link href="/(auth)/register">
-          <Text className="text-indigo-600 font-semibold">Criar conta</Text>
+          <Text style={s.link}>Criar conta</Text>
         </Link>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
+
+const s = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#ffffff",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+    paddingVertical: 40,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: "bold",
+    color: "#111827",
+    marginBottom: 4,
+  },
+  subtitle: { fontSize: 14, color: "#6b7280", marginBottom: 32 },
+  form: { gap: 16 },
+  forgotLink: { color: "#6366f1", fontSize: 13, textAlign: "right" },
+  footer: { flexDirection: "row", justifyContent: "center", marginTop: 32 },
+  footerText: { color: "#6b7280" },
+  link: { color: "#6366f1", fontWeight: "600" },
+});
