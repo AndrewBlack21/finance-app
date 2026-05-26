@@ -44,7 +44,7 @@ export function useAuth() {
           .single();
         if (data) store.setProfile(data);
       } else {
-        store.clear();
+        store.clearAuth();
       }
     });
 

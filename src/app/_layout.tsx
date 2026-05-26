@@ -1,6 +1,7 @@
 import "@/global.css";
 import { useEffect } from "react";
-import { Slot, SplashScreen, Stack } from "expo-router";
+import { ActivityIndicator, View } from "react-native";
+import { SplashScreen, Stack } from "expo-router";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -13,7 +14,13 @@ function RootLayoutContent() {
     if (isHydrated) SplashScreen.hideAsync();
   }, [isHydrated]);
 
-  if (!isHydrated) return null;
+  if (!isHydrated) {
+    return (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+        <ActivityIndicator color="#6366f1" />
+      </View>
+    );
+  }
 
   return (
     <Stack screenOptions={{ headerShown: false }}>

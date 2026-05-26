@@ -1,5 +1,4 @@
 export type AccountType = "checking" | "savings" | "credit" | "investment";
-import { type } from "./index";
 export type TransactionType = "income" | "expense" | "transfer";
 export type CategoryType = "income" | "expense";
 

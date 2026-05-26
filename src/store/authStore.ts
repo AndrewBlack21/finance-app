@@ -17,6 +17,7 @@ interface AuthState {
   setSession: (session: Session | null) => void;
   setLoading: (v: boolean) => void;
   setHydrated: (v: boolean) => void;
+  clearAuth: () => void;
   clear: () => void; // Limpa tudo no logout
 }
 
@@ -36,6 +37,13 @@ export const useAuthStore = create<AuthState>((set) => ({
   setSession: (session) => set({ session }),
   setLoading: (v) => set({ isLoading: v }),
   setHydrated: (v) => set({ isHydrated: v }),
+  clearAuth: () =>
+    set({
+      user: null,
+      profile: null,
+      session: null,
+      isLoading: false,
+    }),
 
   clear: () =>
     set({
