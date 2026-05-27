@@ -1,4 +1,5 @@
 import { View, Text, StyleSheet } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Link } from "expo-router";
 import { useForm, Controller } from "react-hook-form";
 import { z } from "zod";
@@ -36,7 +37,7 @@ export default function RegisterScreen() {
   };
 
   return (
-    <View style={s.container}>
+    <SafeAreaView style={s.container}>
       <Text style={s.title}>Criar conta</Text>
       <Text style={s.subtitle}>Comece a controlar suas finanças</Text>
 
@@ -113,7 +114,7 @@ export default function RegisterScreen() {
           <Text style={s.link}>Entrar</Text>
         </Link>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -123,6 +124,7 @@ const s = StyleSheet.create({
     backgroundColor: "#fff",
     justifyContent: "center",
     paddingHorizontal: 24,
+    paddingVertical: 40,
   },
   title: {
     fontSize: 28,
