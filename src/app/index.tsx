@@ -1,7 +1,9 @@
 import { Redirect } from "expo-router";
 import { useAuth } from "@/hooks/useAuth";
 import { View, ActivityIndicator } from "react-native";
-
+// src/app/(tabs)/index.tsx — troque
+import { useAccounts } from "@/hooks/useAccounts";
+import { useCategories } from "@/hooks/useCategories";
 export default function Index() {
   const { isHydrated, isLoggedIn } = useAuth();
 
