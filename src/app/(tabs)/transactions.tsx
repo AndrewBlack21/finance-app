@@ -7,44 +7,71 @@ import {
   Modal,
   StyleSheet,
   ActivityIndicator,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useTransactions } from "@/hooks/useTransactions";
 import { TransactionForm } from "@/components/forms/TransactionForm";
 import { formatCurrency, formatDate } from "@/utils";
 import { useAuth } from "@/hooks/useAuth";
-import type { Transaction, CreateTransaction } from "@/types";
+import type {
+  Transaction,
+  CreateTransaction,
+  UpdateTransaction,
+} from "@/types";
 
 export default function TransactionsScreen() {
   const { profile } = useAuth();
-  const { transactions, isLoading, create, remove, summary } =
+  const { transactions, isLoading, create, update, remove, summary } =
     useTransactions();
   const [modalVisible, setModalVisible] = useState(false);
+  const [editing, setEditing] = useState<Transaction | null>(null);
 
   const handleCreate = async (data: CreateTransaction) => {
     const { error } = await create(data);
-    if (error) {
-      console.log("Erro ao salvar:", error);
-      alert("Erro ao salvar: " + error);
-    } else {
+    if (error) Alert.alert("Erro", error);
+    else {
       setModalVisible(false);
+      setEditing(null);
     }
+  };
+
+  const handleUpdate = async (data: CreateTransaction) => {
+    if (!editing) return;
+    const { error } = await update(editing.id, data as UpdateTransaction);
+    if (error) Alert.alert("Erro", error);
+    else {
+      setModalVisible(false);
+      setEditing(null);
+    }
+  };
+
+  const handleDelete = (id: string) => {
+    Alert.alert("Remover", "Tem certeza?", [
+      { text: "Cancelar", style: "cancel" },
+      { text: "Remover", style: "destructive", onPress: () => remove(id) },
+    ]);
+  };
+
+  const openEdit = (t: Transaction) => {
+    setEditing(t);
+    setModalVisible(true);
+  };
+
+  const openNew = () => {
+    setEditing(null);
+    setModalVisible(true);
   };
 
   return (
     <SafeAreaView style={s.safe}>
-      {/* HEADER */}
       <View style={s.header}>
         <Text style={s.title}>Transações</Text>
-        <TouchableOpacity
-          style={s.addBtn}
-          onPress={() => setModalVisible(true)}
-        >
+        <TouchableOpacity style={s.addBtn} onPress={openNew}>
           <Text style={s.addBtnText}>+ Nova</Text>
         </TouchableOpacity>
       </View>
 
-      {/* RESUMO */}
       <View style={s.summaryRow}>
         <View style={[s.summaryCard, { borderLeftColor: "#16a34a" }]}>
           <Text style={s.summaryLabel}>Receitas</Text>
@@ -60,7 +87,6 @@ export default function TransactionsScreen() {
         </View>
       </View>
 
-      {/* LISTA */}
       {isLoading ? (
         <ActivityIndicator color="#6366f1" style={{ marginTop: 32 }} />
       ) : (
@@ -80,13 +106,13 @@ export default function TransactionsScreen() {
             <TransactionItem
               transaction={item}
               currency={profile?.currency ?? "BRL"}
-              onDelete={() => remove(item.id)}
+              onEdit={() => openEdit(item)}
+              onDelete={() => handleDelete(item.id)}
             />
           )}
         />
       )}
 
-      {/* MODAL FORMULÁRIO */}
       <Modal
         visible={modalVisible}
         animationType="slide"
@@ -94,12 +120,26 @@ export default function TransactionsScreen() {
       >
         <SafeAreaView style={s.modal}>
           <View style={s.modalHeader}>
-            <Text style={s.modalTitle}>Nova Transação</Text>
+            <Text style={s.modalTitle}>
+              {editing ? "Editar Transação" : "Nova Transação"}
+            </Text>
+            <TouchableOpacity
+              onPress={() => {
+                setModalVisible(false);
+                setEditing(null);
+              }}
+            >
+              <Text style={s.modalClose}>Fechar</Text>
+            </TouchableOpacity>
           </View>
           <TransactionForm
             isLoading={isLoading}
-            onSubmit={handleCreate}
-            onCancel={() => setModalVisible(false)}
+            initialValues={editing ?? undefined}
+            onSubmit={editing ? handleUpdate : handleCreate}
+            onCancel={() => {
+              setModalVisible(false);
+              setEditing(null);
+            }}
           />
         </SafeAreaView>
       </Modal>
@@ -107,20 +147,18 @@ export default function TransactionsScreen() {
   );
 }
 
-// ============================================================
-// ITEM DA LISTA
-// ============================================================
 function TransactionItem({
   transaction: t,
   currency,
+  onEdit,
   onDelete,
 }: {
   transaction: Transaction;
   currency: string;
+  onEdit: () => void;
   onDelete: () => void;
 }) {
   const isIncome = t.type === "income";
-
   return (
     <View style={s.item}>
       <View
@@ -131,14 +169,12 @@ function TransactionItem({
       >
         <Text style={s.itemEmoji}>{isIncome ? "↑" : "↓"}</Text>
       </View>
-
       <View style={s.itemInfo}>
         <Text style={s.itemTitle}>{t.title}</Text>
         <Text style={s.itemCategory}>
           {t.category?.name ?? "Sem categoria"} · {formatDate(t.date)}
         </Text>
       </View>
-
       <View style={s.itemRight}>
         <Text
           style={[s.itemAmount, { color: isIncome ? "#16a34a" : "#dc2626" }]}
@@ -146,20 +182,21 @@ function TransactionItem({
           {isIncome ? "+" : "-"}
           {formatCurrency(t.amount, currency)}
         </Text>
-        <TouchableOpacity onPress={onDelete} style={s.deleteBtn}>
-          <Text style={s.deleteBtnText}>Remover</Text>
-        </TouchableOpacity>
+        <View style={s.itemActions}>
+          <TouchableOpacity onPress={onEdit} style={s.editBtn}>
+            <Text style={s.editText}>Editar</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={onDelete} style={s.deleteBtn}>
+            <Text style={s.deleteText}>Remover</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
 }
 
-// ============================================================
-// STYLES
-// ============================================================
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#f8fafc" },
-
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -175,7 +212,6 @@ const s = StyleSheet.create({
     borderRadius: 20,
   },
   addBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
-
   summaryRow: {
     flexDirection: "row",
     paddingHorizontal: 20,
@@ -191,9 +227,7 @@ const s = StyleSheet.create({
   },
   summaryLabel: { fontSize: 12, color: "#6b7280", marginBottom: 4 },
   summaryValue: { fontSize: 16, fontWeight: "700" },
-
   list: { paddingHorizontal: 20, paddingBottom: 32 },
-
   item: {
     flexDirection: "row",
     alignItems: "center",
@@ -216,19 +250,24 @@ const s = StyleSheet.create({
   itemCategory: { fontSize: 12, color: "#9ca3af", marginTop: 2 },
   itemRight: { alignItems: "flex-end" },
   itemAmount: { fontSize: 14, fontWeight: "700" },
-  deleteBtn: { marginTop: 4 },
-  deleteBtnText: { fontSize: 11, color: "#ef4444" },
-
+  itemActions: { flexDirection: "row", gap: 8, marginTop: 4 },
+  editBtn: {},
+  editText: { fontSize: 11, color: "#6366f1" },
+  deleteBtn: {},
+  deleteText: { fontSize: 11, color: "#ef4444" },
   empty: { alignItems: "center", paddingVertical: 60 },
   emptyText: { fontSize: 16, fontWeight: "600", color: "#374151" },
   emptySubtext: { fontSize: 13, color: "#9ca3af", marginTop: 6 },
-
   modal: { flex: 1, backgroundColor: "#f8fafc" },
   modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderBottomWidth: 1,
     borderBottomColor: "#e5e7eb",
   },
   modalTitle: { fontSize: 18, fontWeight: "bold", color: "#111827" },
+  modalClose: { color: "#6366f1", fontWeight: "600" },
 });

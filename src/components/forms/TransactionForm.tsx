@@ -11,7 +11,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Input, Button, FormError } from "@/components/ui";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useCategories } from "@/hooks/useCategories";
-import type { CreateTransaction, TransactionType } from "@/types";
+import type { CreateTransaction, TransactionType, Transaction } from "@/types";
 
 // ============================================================
 // SCHEMA DE VALIDAÇÃO
@@ -42,6 +42,7 @@ interface TransactionFormProps {
   onSubmit: (data: CreateTransaction) => Promise<void>;
   onCancel: () => void;
   isLoading: boolean;
+  initialValues?: Partial<Transaction>; // ← linha nova
 }
 
 // ============================================================
@@ -60,6 +61,7 @@ export function TransactionForm({
   onSubmit,
   onCancel,
   isLoading,
+  initialValues,
 }: TransactionFormProps) {
   const { accounts } = useAccounts();
   const { income, expense } = useCategories();
@@ -74,9 +76,14 @@ export function TransactionForm({
   } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
-      type: "expense",
-      date: today,
-      currency: "BRL",
+      type: (initialValues?.type ?? "expense") as TransactionType,
+      date: initialValues?.date ?? today,
+      currency: initialValues?.currency ?? "BRL",
+      title: initialValues?.title ?? "",
+      amount: initialValues?.amount?.toString() ?? "",
+      account_id: initialValues?.account_id ?? "",
+      category_id: initialValues?.category_id ?? "",
+      notes: initialValues?.notes ?? "",
     },
   });
 

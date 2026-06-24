@@ -1,7 +1,13 @@
+// ============================================================
+// ENUMS — espelham os tipos criados no Supabase
+// ============================================================
 export type AccountType = "checking" | "savings" | "credit" | "investment";
 export type TransactionType = "income" | "expense" | "transfer";
 export type CategoryType = "income" | "expense";
 
+// ============================================================
+// ENTIDADES — espelham as tabelas do banco
+// ============================================================
 export interface Profile {
   id: string;
   name: string | null;
@@ -10,7 +16,7 @@ export interface Profile {
   created_at: string;
 }
 
-export interface Accout {
+export interface Account {
   id: string;
   user_id: string;
   name: string;
@@ -23,7 +29,7 @@ export interface Accout {
 
 export interface Category {
   id: string;
-  user_id: string | null; // null categoria gobal
+  user_id: string | null; // null = categoria global
   name: string;
   icon: string;
   color: string;
@@ -35,17 +41,18 @@ export interface Transaction {
   id: string;
   user_id: string;
   account_id: string;
-  category_id: string | null; // null categoria gobal
+  category_id: string | null;
   title: string;
   amount: number;
+  currency: string;
   type: TransactionType;
   date: string;
-  description: string | null;
   notes: string | null;
   recurring: boolean;
-  created_at: string; // Joins opcionais (quando fizer select com related)
+  created_at: string;
+  // Joins opcionais (quando fizer select com related)
   category?: Category;
-  account?: Accout;
+  account?: Account;
 }
 
 export interface Goal {
@@ -63,7 +70,7 @@ export interface Goal {
 // ============================================================
 // DTOs — dados de entrada para criação/edição (sem id/user_id/created_at)
 // ============================================================
-export type CreateAccount = Omit<Accout, "id" | "user_id" | "created_at">;
+export type CreateAccount = Omit<Account, "id" | "user_id" | "created_at">;
 export type UpdateAccount = Partial<CreateAccount>;
 
 export type CreateCategory = Omit<Category, "id" | "user_id" | "created_at">;
@@ -119,9 +126,36 @@ export interface RegisterCredentials extends AuthCredentials {
 }
 
 // ============================================================
-// RESPOSTA PADRÃO DOS SERVICES
-// Padrão reutilizável: sempre retorna { data, error }
+// PARCELAS
 // ============================================================
+export interface Installment {
+  id: string;
+  user_id: string;
+  account_id: string;
+  title: string;
+  total_amount: number;
+  installment_amount: number;
+  total_installments: number;
+  paid_installments: number;
+  currency: string;
+  start_date: string;
+  created_at: string;
+  account?: Account;
+  // Calculados no frontend
+  remaining_installments?: number;
+  progress?: number;
+}
+
+export type CreateInstallment = Omit<
+  Installment,
+  | "id"
+  | "user_id"
+  | "created_at"
+  | "account"
+  | "remaining_installments"
+  | "progress"
+>;
+export type UpdateInstallment = Partial<CreateInstallment>;
 export interface ServiceResponse<T> {
   data: T | null;
   error: string | null;

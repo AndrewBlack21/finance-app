@@ -6,9 +6,7 @@
     "scheme": "financeapp",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
-
     "assetBundlePatterns": ["**/*"],
-
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.seuNome.financeapp"
@@ -21,7 +19,19 @@
     },
     "web": {
       "bundler": "metro",
-      "output": "static"
+      "output": "static",
+      "favicon": "./assets/favicon.png",
+      "pwa": {
+        "enabled": true,
+        "name": "Finance App",
+        "short_name": "Finance",
+        "description": "Controle financeiro pessoal",
+        "background_color": "#ffffff",
+        "theme_color": "#6366f1",
+        "display": "standalone",
+        "orientation": "portrait",
+        "start_url": "/"
+      }
     },
     "plugins": ["expo-router"],
     "experiments": {

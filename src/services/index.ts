@@ -8,3 +8,4 @@ export { transactionService } from "./supabase/transactions";
 export { accountService } from "./supabase/accounts-categories-goals";
 export { categoryService } from "./supabase/accounts-categories-goals";
 export { goalService } from "./supabase/accounts-categories-goals";
+export { installmentService } from "./supabase/installments";
