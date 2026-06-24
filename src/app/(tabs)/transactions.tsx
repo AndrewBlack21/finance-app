@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
 import { useTransactions } from "@/hooks/useTransactions";
 import { TransactionForm } from "@/components/forms/TransactionForm";
 import { formatCurrency, formatDate } from "@/utils";
@@ -68,7 +69,8 @@ export default function TransactionsScreen() {
       <View style={s.header}>
         <Text style={s.title}>Transações</Text>
         <TouchableOpacity style={s.addBtn} onPress={openNew}>
-          <Text style={s.addBtnText}>+ Nova</Text>
+          <Ionicons name="add" size={18} color="#fff" />
+          <Text style={s.addBtnText}>Nova</Text>
         </TouchableOpacity>
       </View>
 
@@ -121,7 +123,7 @@ export default function TransactionsScreen() {
         <SafeAreaView style={s.modal}>
           <View style={s.modalHeader}>
             <Text style={s.modalTitle}>
-              {editing ? "Editar Transação" : "Nova Transação"}
+              {editing ? "Editar TransaÃ§Ã£o" : "Nova TransaÃ§Ã£o"}
             </Text>
             <TouchableOpacity
               onPress={() => {
@@ -167,12 +169,16 @@ function TransactionItem({
           { backgroundColor: (t.category?.color ?? "#6366f1") + "20" },
         ]}
       >
-        <Text style={s.itemEmoji}>{isIncome ? "↑" : "↓"}</Text>
+        <Ionicons
+          name={isIncome ? "arrow-up" : "arrow-down"}
+          size={20}
+          color={isIncome ? "#16a34a" : "#dc2626"}
+        />
       </View>
       <View style={s.itemInfo}>
         <Text style={s.itemTitle}>{t.title}</Text>
         <Text style={s.itemCategory}>
-          {t.category?.name ?? "Sem categoria"} · {formatDate(t.date)}
+          {t.category?.name ?? "Sem categoria"} Â· {formatDate(t.date)}
         </Text>
       </View>
       <View style={s.itemRight}>
@@ -184,10 +190,10 @@ function TransactionItem({
         </Text>
         <View style={s.itemActions}>
           <TouchableOpacity onPress={onEdit} style={s.editBtn}>
-            <Text style={s.editText}>Editar</Text>
+            <Ionicons name="create-outline" size={14} color="#6366f1" />
           </TouchableOpacity>
           <TouchableOpacity onPress={onDelete} style={s.deleteBtn}>
-            <Text style={s.deleteText}>Remover</Text>
+            <Ionicons name="trash-outline" size={14} color="#ef4444" />
           </TouchableOpacity>
         </View>
       </View>
@@ -206,6 +212,9 @@ const s = StyleSheet.create({
   },
   title: { fontSize: 22, fontWeight: "bold", color: "#111827" },
   addBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
     backgroundColor: "#6366f1",
     paddingHorizontal: 16,
     paddingVertical: 8,
@@ -244,16 +253,15 @@ const s = StyleSheet.create({
     alignItems: "center",
     marginRight: 12,
   },
-  itemEmoji: { fontSize: 18 },
   itemInfo: { flex: 1 },
   itemTitle: { fontSize: 14, fontWeight: "600", color: "#111827" },
   itemCategory: { fontSize: 12, color: "#9ca3af", marginTop: 2 },
   itemRight: { alignItems: "flex-end" },
   itemAmount: { fontSize: 14, fontWeight: "700" },
   itemActions: { flexDirection: "row", gap: 8, marginTop: 4 },
-  editBtn: {},
+  editBtn: { padding: 4 },
   editText: { fontSize: 11, color: "#6366f1" },
-  deleteBtn: {},
+  deleteBtn: { padding: 4 },
   deleteText: { fontSize: 11, color: "#ef4444" },
   empty: { alignItems: "center", paddingVertical: 60 },
   emptyText: { fontSize: 16, fontWeight: "600", color: "#374151" },

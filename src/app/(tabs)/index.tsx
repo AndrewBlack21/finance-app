@@ -7,7 +7,7 @@ export default function HomeScreen() {
 
   return (
     <View style={s.container}>
-      <Text style={s.title}>Inicio</Text>
+      <Text style={s.title}>Seja Bem Vindo ao FinAI</Text>
       <Text style={s.subtitle}>Voce esta logado.</Text>
       <Button label="Sair" loading={isLoading} onPress={logout} />
     </View>

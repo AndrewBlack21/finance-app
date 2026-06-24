@@ -1,6 +1,6 @@
 import { supabase } from "./client";
 import type {
-  Accout,
+  Account,
   CreateAccount,
   UpdateAccount,
   Category,
@@ -16,7 +16,7 @@ import type {
 // ACCOUNTS SERVICE
 // ============================================================
 export const accountService = {
-  list: async (): Promise<ServiceResponse<Accout[]>> => {
+  list: async (): Promise<ServiceResponse<Account[]>> => {
     const { data, error } = await supabase
       .from("accounts")
       .select("*")
@@ -24,7 +24,7 @@ export const accountService = {
     return { data, error: error?.message ?? null };
   },
 
-  create: async (payload: CreateAccount): Promise<ServiceResponse<Accout>> => {
+  create: async (payload: CreateAccount): Promise<ServiceResponse<Account>> => {
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -39,7 +39,7 @@ export const accountService = {
   update: async (
     id: string,
     payload: UpdateAccount,
-  ): Promise<ServiceResponse<Accout>> => {
+  ): Promise<ServiceResponse<Account>> => {
     const { data, error } = await supabase
       .from("accounts")
       .update(payload)

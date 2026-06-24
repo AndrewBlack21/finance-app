@@ -1,4 +1,4 @@
-import {
+﻿import {
   View,
   Text,
   ScrollView,
@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/hooks/useAuth";
 import { useTransactions } from "@/hooks/useTransactions";
 import { useAccounts } from "@/hooks/useAccounts";
@@ -25,14 +26,14 @@ export default function DashboardScreen() {
   const { profile, logout } = useAuth();
   const { from, to } = getCurrentMonthRange();
 
-  // Transações filtradas pelo mês atual
+  // TransaÃ§Ãµes filtradas pelo mÃªs atual
   const { transactions, summary, isLoading } = useTransactions({
     date_from: from,
     date_to: to,
   });
   const { accounts, totalBalance } = useAccounts();
 
-  const firstName = profile?.name?.split(" ")[0] ?? "Usuário";
+  const firstName = profile?.name?.split(" ")[0] ?? "UsuÃ¡rio";
   const month = getCurrentMonthName();
 
   return (
@@ -44,7 +45,10 @@ export default function DashboardScreen() {
         {/* HEADER */}
         <View style={s.header}>
           <View>
-            <Text style={s.greeting}>Olá, {firstName} 👋</Text>
+            <View style={s.greetingRow}>
+              <Text style={s.greeting}>Ola, {firstName}</Text>
+              <Ionicons name="sparkles" size={18} color="#6366f1" />
+            </View>
             <Text style={s.monthLabel}>{month}</Text>
           </View>
           <TouchableOpacity style={s.logoutBtn} onPress={logout}>
@@ -60,14 +64,20 @@ export default function DashboardScreen() {
           </Text>
           <View style={s.balanceRow}>
             <View style={s.balanceItem}>
-              <Text style={s.balanceItemLabel}>↑ Receitas</Text>
+              <View style={s.balanceItemLabelRow}>
+                <Ionicons name="arrow-up-circle" size={14} color="#4ade80" />
+                <Text style={s.balanceItemLabel}>Receitas</Text>
+              </View>
               <Text style={[s.balanceItemValue, { color: "#4ade80" }]}>
                 {formatCurrency(summary.income, profile?.currency ?? "BRL")}
               </Text>
             </View>
             <View style={s.divider} />
             <View style={s.balanceItem}>
-              <Text style={s.balanceItemLabel}>↓ Despesas</Text>
+              <View style={s.balanceItemLabelRow}>
+                <Ionicons name="arrow-down-circle" size={14} color="#f87171" />
+                <Text style={s.balanceItemLabel}>Despesas</Text>
+              </View>
               <Text style={[s.balanceItemValue, { color: "#f87171" }]}>
                 {formatCurrency(summary.expense, profile?.currency ?? "BRL")}
               </Text>
@@ -96,10 +106,10 @@ export default function DashboardScreen() {
           </View>
         )}
 
-        {/* ÚLTIMAS TRANSAÇÕES */}
+        {/* As Ultimas Transações */}
         <View style={s.section}>
           <View style={s.sectionHeader}>
-            <Text style={s.sectionTitle}>Últimas Transações</Text>
+            <Text style={s.sectionTitle}>As Ultimas Transações</Text>
             <Text style={s.seeAll}>Ver todas</Text>
           </View>
 
@@ -130,7 +140,7 @@ export default function DashboardScreen() {
 }
 
 // ============================================================
-// ITEM DE TRANSAÇÃO — componente local (usado só aqui)
+// ITEM DE TRANSAÃ‡ÃƒO â€” componente local (usado sÃ³ aqui)
 // ============================================================
 function TransactionItem({
   transaction: t,
@@ -142,14 +152,18 @@ function TransactionItem({
   const isIncome = t.type === "income";
   return (
     <View style={s.transactionItem}>
-      {/* Ícone de categoria */}
+      {/* Ãcone de categoria */}
       <View
         style={[
           s.transactionIcon,
           { backgroundColor: t.category?.color ?? "#6366f1" + "20" },
         ]}
       >
-        <Text style={s.transactionEmoji}>{isIncome ? "↑" : "↓"}</Text>
+        <Ionicons
+          name={isIncome ? "arrow-up" : "arrow-down"}
+          size={20}
+          color={isIncome ? "#16a34a" : "#dc2626"}
+        />
       </View>
 
       {/* Info */}
@@ -192,6 +206,7 @@ const s = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 8,
   },
+  greetingRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   greeting: { fontSize: 22, fontWeight: "bold", color: "#111827" },
   monthLabel: {
     fontSize: 13,
@@ -223,7 +238,13 @@ const s = StyleSheet.create({
   },
   balanceRow: { flexDirection: "row", alignItems: "center" },
   balanceItem: { flex: 1 },
-  balanceItemLabel: { color: "#c7d2fe", fontSize: 12, marginBottom: 4 },
+  balanceItemLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    marginBottom: 4,
+  },
+  balanceItemLabel: { color: "#c7d2fe", fontSize: 12 },
   balanceItemValue: { fontSize: 16, fontWeight: "600" },
   divider: {
     width: 1,
@@ -288,7 +309,6 @@ const s = StyleSheet.create({
     alignItems: "center",
     marginRight: 12,
   },
-  transactionEmoji: { fontSize: 18 },
   transactionInfo: { flex: 1 },
   transactionTitle: { fontSize: 14, fontWeight: "600", color: "#111827" },
   transactionCategory: { fontSize: 12, color: "#9ca3af", marginTop: 2 },

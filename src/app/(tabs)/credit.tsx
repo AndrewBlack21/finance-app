@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
 import { useForm, Controller } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -25,9 +26,9 @@ import type { Installment } from "@/types";
 // SCHEMA
 // ============================================================
 const schema = z.object({
-  title: z.string().min(1, "Nome obrigatório"),
-  total_amount: z.string().min(1, "Valor obrigatório"),
-  total_installments: z.string().min(1, "Parcelas obrigatório"),
+  title: z.string().min(1, "Nome obrigatÃ³rio"),
+  total_amount: z.string().min(1, "Valor obrigatÃ³rio"),
+  total_installments: z.string().min(1, "Parcelas obrigatÃ³rio"),
   account_id: z.string().min(1, "Selecione uma conta"),
   currency: z.string().min(1),
   start_date: z.string().min(1),
@@ -112,18 +113,19 @@ export default function CreditScreen() {
     <SafeAreaView style={s.safe}>
       {/* HEADER */}
       <View style={s.header}>
-        <Text style={s.title}>Crédito</Text>
+        <Text style={s.title}>CrÃ©dito</Text>
         <TouchableOpacity
           style={s.addBtn}
           onPress={() => setModalVisible(true)}
         >
-          <Text style={s.addBtnText}>+ Novo</Text>
+          <Ionicons name="add" size={18} color="#fff" />
+          <Text style={s.addBtnText}>Novo</Text>
         </TouchableOpacity>
       </View>
 
       {/* CARD TOTAL MENSAL */}
       <View style={s.totalCard}>
-        <Text style={s.totalLabel}>Total de parcelas este mês</Text>
+        <Text style={s.totalLabel}>Total de parcelas este mÃªs</Text>
         <Text style={s.totalValue}>
           {formatCurrency(monthlyTotal, profile?.currency)}
         </Text>
@@ -189,7 +191,7 @@ export default function CreditScreen() {
               render={({ field: { onChange, value } }) => (
                 <Input
                   label="Nome do produto/compra"
-                  placeholder="Ex: iPhone, Sofá..."
+                  placeholder="Ex: iPhone, SofÃ¡..."
                   onChangeText={onChange}
                   value={value}
                   error={errors.title?.message}
@@ -220,7 +222,7 @@ export default function CreditScreen() {
                   control={control}
                   render={({ field: { onChange, value } }) => (
                     <Input
-                      label="Nº de parcelas"
+                      label="NÂº de parcelas"
                       placeholder="12"
                       keyboardType="numeric"
                       onChangeText={onChange}
@@ -243,7 +245,7 @@ export default function CreditScreen() {
             )}
 
             {/* CONTA */}
-            <Text style={s.label}>Conta/Cartão</Text>
+            <Text style={s.label}>Conta/CartÃ£o</Text>
             <Controller
               name="account_id"
               control={control}
@@ -344,7 +346,7 @@ function InstallmentCard({
       <View style={cs.cardTop}>
         <View style={{ flex: 1 }}>
           <Text style={cs.cardTitle}>{i.title}</Text>
-          <Text style={cs.cardAccount}>{i.account?.name ?? "—"}</Text>
+          <Text style={cs.cardAccount}>{i.account?.name ?? "â€”"}</Text>
         </View>
         <View style={{ alignItems: "flex-end" }}>
           <Text style={cs.cardAmount}>
@@ -376,12 +378,20 @@ function InstallmentCard({
         <View style={{ flexDirection: "row", gap: 12 }}>
           {!isDone && (
             <TouchableOpacity onPress={onPay}>
-              <Text style={cs.payText}>Pagar parcela</Text>
+              <View style={cs.actionPill}>
+                <Ionicons name="card-outline" size={14} color="#6366f1" />
+                <Text style={cs.payText}>Pagar</Text>
+              </View>
             </TouchableOpacity>
           )}
-          {isDone && <Text style={cs.doneText}>✓ Quitado</Text>}
+          {isDone && (
+            <View style={cs.actionPill}>
+              <Ionicons name="checkmark-circle" size={14} color="#16a34a" />
+              <Text style={cs.doneText}>Quitado</Text>
+            </View>
+          )}
           <TouchableOpacity onPress={onDelete}>
-            <Text style={cs.deleteText}>Remover</Text>
+            <Ionicons name="trash-outline" size={14} color="#ef4444" />
           </TouchableOpacity>
         </View>
       </View>
@@ -400,6 +410,9 @@ const s = StyleSheet.create({
   },
   title: { fontSize: 22, fontWeight: "bold", color: "#111827" },
   addBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
     backgroundColor: "#6366f1",
     paddingHorizontal: 16,
     paddingVertical: 8,
@@ -475,6 +488,7 @@ const cs = StyleSheet.create({
     alignItems: "center",
   },
   cardTotal: { fontSize: 12, color: "#6b7280" },
+  actionPill: { flexDirection: "row", alignItems: "center", gap: 4 },
   payText: { fontSize: 12, color: "#6366f1", fontWeight: "600" },
   doneText: { fontSize: 12, color: "#16a34a", fontWeight: "600" },
   deleteText: { fontSize: 12, color: "#ef4444" },

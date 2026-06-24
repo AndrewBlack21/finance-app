@@ -397,7 +397,4 @@ const s = StyleSheet.create({
     alignItems: "center",
   },
   saveText: { color: "#fff", fontWeight: "600", fontSize: 15 },
-
-  // Container geral
-  container: { padding: 20 },
 });
