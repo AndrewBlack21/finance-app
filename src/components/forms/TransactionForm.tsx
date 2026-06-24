@@ -21,7 +21,11 @@ const schema = z.object({
   amount: z
     .string()
     .min(1, "Valor obrigatório")
-    .refine((v) => !isNaN(Number(v)) && Number(v) > 0, "Valor inválido"),
+    .refine((v) => {
+      // Remove R$, espaços, pontos de milhar e troca vírgula por ponto
+      const clean = v.replace(/[R$\s.]/g, "").replace(",", ".");
+      return !isNaN(Number(clean)) && Number(clean) > 0;
+    }, "Valor inválido"),
   type: z.enum(["income", "expense", "transfer"]),
   account_id: z.string().min(1, "Selecione uma conta"),
   category_id: z.string().optional(),
@@ -81,9 +85,12 @@ export function TransactionForm({
   const categories = selectedType === "income" ? income : expense;
 
   const handleFormSubmit = async (values: FormData) => {
+    // Limpa o valor antes de converter
+    const cleanAmount = values.amount.replace(/[R$\s.]/g, "").replace(",", ".");
+
     await onSubmit({
       title: values.title,
-      amount: Number(values.amount),
+      amount: Number(cleanAmount),
       type: values.type,
       account_id: values.account_id,
       category_id: values.category_id ?? null,
@@ -100,7 +107,7 @@ export function TransactionForm({
       showsVerticalScrollIndicator={false}
     >
       {/* TIPO */}
-      <Text style={s.label}>Tipo</Text>
+      <Text style={[s.label, { marginBottom: 8 }]}>Tipo</Text>
       <Controller
         name="type"
         control={control}
@@ -299,18 +306,16 @@ export function TransactionForm({
 
       {/* AÇÕES */}
       <View style={s.actions}>
-        <Button
-          label="Cancelar"
-          variant="outline"
-          onPress={onCancel}
-          style={{ flex: 1, marginRight: 8 }}
-        />
-        <Button
-          label="Salvar"
-          loading={isLoading}
+        <TouchableOpacity style={s.cancelBtn} onPress={onCancel}>
+          <Text style={s.cancelText}>Cancelar</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[s.saveBtn, isLoading && { opacity: 0.6 }]}
           onPress={handleSubmit(handleFormSubmit)}
-          style={{ flex: 1 }}
-        />
+          disabled={isLoading}
+        >
+          <Text style={s.saveText}>{isLoading ? "Salvando..." : "Salvar"}</Text>
+        </TouchableOpacity>
       </View>
     </ScrollView>
   );
@@ -325,7 +330,7 @@ const s = StyleSheet.create({
   row: { flexDirection: "row", alignItems: "flex-start" },
 
   // Tipo
-  typeRow: { flexDirection: "row", gap: 8, marginBottom: 4 },
+  typeRow: { flexDirection: "row", marginBottom: 4 },
   typeBtn: {
     flex: 1,
     paddingVertical: 10,
@@ -333,35 +338,59 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#e5e7eb",
     alignItems: "center",
+    marginHorizontal: 4,
   },
   typeBtnText: { fontSize: 13, fontWeight: "600", color: "#6b7280" },
   typeBtnActive: { color: "#fff" },
 
   // Moeda
-  currencyRow: { flexDirection: "row", gap: 6 },
+  currencyRow: { flexDirection: "row" },
   currencyBtn: {
     paddingHorizontal: 10,
     paddingVertical: 8,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: "#e5e7eb",
+    marginRight: 6,
   },
   currencyBtnActive: { backgroundColor: "#6366f1", borderColor: "#6366f1" },
   currencyText: { fontSize: 12, fontWeight: "600", color: "#6b7280" },
   currencyTextActive: { color: "#fff" },
 
   // Opções (conta/categoria)
-  optionRow: { flexDirection: "row", gap: 8, marginBottom: 4 },
+  optionRow: { flexDirection: "row", marginBottom: 4 },
   optionBtn: {
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
     borderWidth: 1,
     borderColor: "#e5e7eb",
+    marginRight: 8,
   },
   optionText: { fontSize: 13, color: "#6b7280", fontWeight: "500" },
   optionTextActive: { color: "#fff" },
 
   // Ações
-  actions: { flexDirection: "row", marginTop: 8 },
+  actions: { flexDirection: "row", marginTop: 24, marginBottom: 40 },
+  cancelBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#6366f1",
+    alignItems: "center",
+    marginRight: 8,
+  },
+  cancelText: { color: "#6366f1", fontWeight: "600", fontSize: 15 },
+  saveBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: "#6366f1",
+    alignItems: "center",
+  },
+  saveText: { color: "#fff", fontWeight: "600", fontSize: 15 },
+
+  // Container geral
+  container: { padding: 20 },
 });

@@ -1,66 +1,31 @@
 import { createClient } from "@supabase/supabase-js";
-import * as SecureStore from "expo-secure-store";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
 
-const URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
-// Aceita tanto ANON_KEY quanto KEY para compatibilidade
+const URL = process.env.EXPO_PUBLIC_SUPABASE_URL!;
 const KEY = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
-  process.env.EXPO_PUBLIC_SUPABASE_KEY);
-
-export const isSupabaseConfigured = Boolean(URL && KEY);
+  process.env.EXPO_PUBLIC_SUPABASE_KEY)!;
 
 // ============================================================
 // STORAGE ADAPTER
-// Web  → localStorage  |  Mobile → SecureStore (criptografado)
-// Padrão reutilizável para qualquer app Expo com Supabase
+// AsyncStorage suporta valores grandes — SecureStore tem limite de 2048 bytes
 // ============================================================
-const ExpoSecureStoreAdapter = {
-  getItem: (key: string) => SecureStore.getItemAsync(key),
-  setItem: (key: string, value: string) => SecureStore.setItemAsync(key, value),
-  removeItem: (key: string) => SecureStore.deleteItemAsync(key),
-};
-
-const memoryStorage = new Map<string, string>();
-const WebStorageAdapter = {
-  getItem: (key: string) => {
-    if (typeof localStorage !== "undefined") return localStorage.getItem(key);
-    return memoryStorage.get(key) ?? null;
-  },
-  setItem: (key: string, value: string) => {
-    if (typeof localStorage !== "undefined") localStorage.setItem(key, value);
-    else memoryStorage.set(key, value);
-  },
-  removeItem: (key: string) => {
-    if (typeof localStorage !== "undefined") localStorage.removeItem(key);
-    else memoryStorage.delete(key);
-  },
-};
-
 const storage =
   Platform.OS === "web"
-    ? WebStorageAdapter // Web: localStorage no browser, memoria no render estatico
-    : ExpoSecureStoreAdapter; // Mobile: SecureStore criptografado
+    ? {
+        getItem: (key: string) => Promise.resolve(localStorage.getItem(key)),
+        setItem: (key: string, value: string) =>
+          Promise.resolve(localStorage.setItem(key, value)),
+        removeItem: (key: string) =>
+          Promise.resolve(localStorage.removeItem(key)),
+      }
+    : AsyncStorage;
 
-const NoopWebSocket = class {
-  close() {}
-  send() {}
-  addEventListener() {}
-  removeEventListener() {}
-} as never;
-
-export const supabase = createClient(
-  URL ?? "https://example.supabase.co",
-  KEY ?? "missing-supabase-key",
-  {
-    auth: {
-      storage,
-      autoRefreshToken: true,
-      persistSession: true,
-      detectSessionInUrl: Platform.OS === "web",
-    },
-    realtime:
-      typeof WebSocket === "undefined"
-        ? { transport: NoopWebSocket }
-        : undefined,
+export const supabase = createClient(URL, KEY, {
+  auth: {
+    storage,
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: Platform.OS === "web",
   },
-);
+});

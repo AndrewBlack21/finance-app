@@ -1,8 +1,7 @@
-import { Redirect, Tabs } from "expo-router";
-import { useAuthStore } from "@/store/authStore";
+import { Tabs } from "expo-router";
 import { View, StyleSheet } from "react-native";
 
-// icone simples em texto - substituir por expo-vector
+// Ícone simples em texto — substituir por expo-vector-icons depois
 function TabIcon({ label, active }: { label: string; active: boolean }) {
   const icons: Record<string, string> = {
     home: "🏠",
@@ -25,6 +24,7 @@ export default function TabsLayout() {
     >
       <Tabs.Screen name="index" options={{ title: "Início" }} />
       <Tabs.Screen name="transactions" options={{ title: "Transações" }} />
+      <Tabs.Screen name="accounts" options={{ title: "Contas" }} />
     </Tabs>
   );
 }

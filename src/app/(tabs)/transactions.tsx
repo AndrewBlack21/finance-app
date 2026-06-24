@@ -23,7 +23,12 @@ export default function TransactionsScreen() {
 
   const handleCreate = async (data: CreateTransaction) => {
     const { error } = await create(data);
-    if (!error) setModalVisible(false);
+    if (error) {
+      console.log("Erro ao salvar:", error);
+      alert("Erro ao salvar: " + error);
+    } else {
+      setModalVisible(false);
+    }
   };
 
   return (

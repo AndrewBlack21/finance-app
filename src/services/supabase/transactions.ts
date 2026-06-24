@@ -5,7 +5,7 @@ import type {
   UpdateTransaction,
   TransactionFilters,
   ServiceResponse,
-} from "../../types";
+} from "@/types";
 
 export const transactionService = {
   // Lista com filtros opcionais + join de category e account
@@ -17,7 +17,7 @@ export const transactionService = {
       .select("*, category:categories(*), account:accounts(*)")
       .order("date", { ascending: false });
 
-    //Aplica filtros dinamicamente - So adiciona se o valor existir
+    // Aplica filtros dinamicamente — só adiciona se o valor existir
     if (filters.type) query = query.eq("type", filters.type);
     if (filters.category_id)
       query = query.eq("category_id", filters.category_id);
@@ -30,7 +30,7 @@ export const transactionService = {
     return { data, error: error?.message ?? null };
   },
 
-  // Buscar uma transação por id
+  // Busca uma transação por id
   getById: async (id: string): Promise<ServiceResponse<Transaction>> => {
     const { data, error } = await supabase
       .from("transactions")
@@ -40,7 +40,7 @@ export const transactionService = {
     return { data, error: error?.message ?? null };
   },
 
-  // Criar - RLS garante que user_id = auth.uid() automaticamente
+  // Cria — RLS garante que user_id = auth.uid() automaticamente
   create: async (
     payload: CreateTransaction,
   ): Promise<ServiceResponse<Transaction>> => {
@@ -49,12 +49,13 @@ export const transactionService = {
     } = await supabase.auth.getUser();
     const { data, error } = await supabase
       .from("transactions")
-      .select()
+      .insert({ ...payload, user_id: user!.id })
+      .select("*, category:categories(*), account:accounts(*)")
       .single();
     return { data, error: error?.message ?? null };
   },
 
-  // Atualiza campos especificos
+  // Atualiza campos específicos
   update: async (
     id: string,
     payload: UpdateTransaction,
@@ -74,9 +75,9 @@ export const transactionService = {
     return { data: null, error: error?.message ?? null };
   },
 
-  //Resumo mensal para o dashboard
-  //Retorna total de income e expense de um mes/ano
-  getMothlySummary: async (year: number, month: number) => {
+  // Resumo mensal para o dashboard
+  // Retorna total de income e expense de um mês/ano
+  getMonthlySummary: async (year: number, month: number) => {
     const from = `${year}-${String(month).padStart(2, "0")}-01`;
     const to = `${year}-${String(month).padStart(2, "0")}-31`;
 
