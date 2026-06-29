@@ -44,7 +44,7 @@ export function useAuth() {
           .single();
         if (data) store.setProfile(data);
       } else {
-        store.clearAuth();
+        store.clear();
       }
     });
 
@@ -71,6 +71,8 @@ export function useAuth() {
   const logout = async () => {
     store.setLoading(true);
     await authService.logout();
+    store.clear();
+    store.setHydrated(true);
     store.setLoading(false);
   };
 

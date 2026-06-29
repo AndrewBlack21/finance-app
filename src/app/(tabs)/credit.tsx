@@ -113,7 +113,7 @@ export default function CreditScreen() {
     <SafeAreaView style={s.safe}>
       {/* HEADER */}
       <View style={s.header}>
-        <Text style={s.title}>CrÃ©dito</Text>
+        <Text style={s.title}>Credito</Text>
         <TouchableOpacity
           style={s.addBtn}
           onPress={() => setModalVisible(true)}
@@ -125,7 +125,7 @@ export default function CreditScreen() {
 
       {/* CARD TOTAL MENSAL */}
       <View style={s.totalCard}>
-        <Text style={s.totalLabel}>Total de parcelas este mÃªs</Text>
+        <Text style={s.totalLabel}>Total de parcelas este mês</Text>
         <Text style={s.totalValue}>
           {formatCurrency(monthlyTotal, profile?.currency)}
         </Text>
@@ -245,7 +245,7 @@ export default function CreditScreen() {
             )}
 
             {/* CONTA */}
-            <Text style={s.label}>Conta/CartÃ£o</Text>
+            <Text style={s.label}>Conta/Cartão</Text>
             <Controller
               name="account_id"
               control={control}

@@ -4,6 +4,7 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
+  Switch,
 } from "react-native";
 import { useForm, Controller } from "react-hook-form";
 import { z } from "zod";
@@ -11,6 +12,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Input, Button, FormError } from "@/components/ui";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useCategories } from "@/hooks/useCategories";
+import { useFixedExpenses } from "@/hooks/useFixedExpenses";
 import type { CreateTransaction, TransactionType, Transaction } from "@/types";
 
 // ============================================================
@@ -22,7 +24,6 @@ const schema = z.object({
     .string()
     .min(1, "Valor obrigatório")
     .refine((v) => {
-      // Remove R$, espaços, pontos de milhar e troca vírgula por ponto
       const clean = v.replace(/[R$\s.]/g, "").replace(",", ".");
       return !isNaN(Number(clean)) && Number(clean) > 0;
     }, "Valor inválido"),
@@ -30,8 +31,10 @@ const schema = z.object({
   account_id: z.string().min(1, "Selecione uma conta"),
   category_id: z.string().optional(),
   date: z.string().min(1, "Data obrigatória"),
+  due_day: z.string().optional(), // dia vencimento — só para fixas
   notes: z.string().optional(),
   currency: z.string().min(1, "Moeda obrigatória"),
+  is_fixed: z.boolean().default(false),
 });
 type FormData = z.infer<typeof schema>;
 
@@ -42,7 +45,7 @@ interface TransactionFormProps {
   onSubmit: (data: CreateTransaction) => Promise<void>;
   onCancel: () => void;
   isLoading: boolean;
-  initialValues?: Partial<Transaction>; // ← linha nova
+  initialValues?: Partial<Transaction>;
 }
 
 // ============================================================
@@ -65,6 +68,7 @@ export function TransactionForm({
 }: TransactionFormProps) {
   const { accounts } = useAccounts();
   const { income, expense } = useCategories();
+  const { create: createFixed } = useFixedExpenses();
 
   const today = new Date().toISOString().split("T")[0];
 
@@ -84,20 +88,40 @@ export function TransactionForm({
       account_id: initialValues?.account_id ?? "",
       category_id: initialValues?.category_id ?? "",
       notes: initialValues?.notes ?? "",
+      is_fixed: false,
+      due_day: "",
     },
   });
 
   const selectedType = watch("type");
-  // Categorias filtradas pelo tipo selecionado
+  const isFixed = watch("is_fixed");
   const categories = selectedType === "income" ? income : expense;
 
   const handleFormSubmit = async (values: FormData) => {
-    // Limpa o valor antes de converter
     const cleanAmount = values.amount.replace(/[R$\s.]/g, "").replace(",", ".");
+    const amount = Number(cleanAmount);
 
+    // Se for conta fixa → cria em fixedExpenses em vez de transaction
+    if (values.is_fixed && values.type === "expense") {
+      await createFixed({
+        title: values.title,
+        amount,
+        currency: values.currency,
+        due_day: Number(values.due_day) || new Date().getDate(),
+        account_id: values.account_id ?? null,
+        category_id: values.category_id ?? null,
+        is_paid: false,
+        paid_at: null,
+        recurring: true,
+      });
+      onCancel();
+      return;
+    }
+
+    // Transação normal
     await onSubmit({
       title: values.title,
-      amount: Number(cleanAmount),
+      amount,
       type: values.type,
       account_id: values.account_id,
       category_id: values.category_id ?? null,
@@ -139,6 +163,45 @@ export function TransactionForm({
           </View>
         )}
       />
+
+      {/* TOGGLE FIXA / EVENTUAL — só para despesas */}
+      {selectedType === "expense" && (
+        <Controller
+          name="is_fixed"
+          control={control}
+          render={({ field: { onChange, value } }) => (
+            <View style={s.toggleRow}>
+              <View>
+                <Text style={s.toggleLabel}>Conta fixa recorrente?</Text>
+                <Text style={s.toggleSub}>Ex: aluguel, luz, internet</Text>
+              </View>
+              <Switch
+                value={value}
+                onValueChange={onChange}
+                trackColor={{ false: "#e5e7eb", true: "#6366f1" }}
+                thumbColor="#fff"
+              />
+            </View>
+          )}
+        />
+      )}
+
+      {/* DIA DE VENCIMENTO — só aparece se for fixa */}
+      {isFixed && selectedType === "expense" && (
+        <Controller
+          name="due_day"
+          control={control}
+          render={({ field: { onChange, value } }) => (
+            <Input
+              label="Dia de vencimento"
+              placeholder="Ex: 10"
+              keyboardType="numeric"
+              onChangeText={onChange}
+              value={value ?? ""}
+            />
+          )}
+        />
+      )}
 
       {/* TÍTULO */}
       <Controller
@@ -335,6 +398,17 @@ const s = StyleSheet.create({
   container: { padding: 20, gap: 16 },
   label: { fontSize: 13, fontWeight: "600", color: "#374151", marginBottom: 6 },
   row: { flexDirection: "row", alignItems: "flex-start" },
+
+  toggleRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "#f5f3ff",
+    borderRadius: 12,
+    padding: 14,
+  },
+  toggleLabel: { fontSize: 14, fontWeight: "600", color: "#111827" },
+  toggleSub: { fontSize: 12, color: "#6b7280", marginTop: 2 },
 
   // Tipo
   typeRow: { flexDirection: "row", marginBottom: 4 },
