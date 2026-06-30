@@ -11,7 +11,9 @@ export function useAuth() {
 
     const hydrate = async () => {
       try {
+        console.log("🔵 Iniciando hydrate...");
         const { data: session } = await authService.getSession();
+        console.log("🟢 Sessão obtida:", session ? "logado" : "sem sessão");
         if (!mounted) return;
         if (session) {
           store.setSession(session);
@@ -24,8 +26,9 @@ export function useAuth() {
           if (data && mounted) store.setProfile(data);
         }
       } catch (e) {
-        console.log("hydrate error:", e);
+        console.log("🔴 hydrate error:", e);
       } finally {
+        console.log("🟡 Finalizando hydrate, setando isHydrated=true");
         if (mounted) store.setHydrated(true);
       }
     };

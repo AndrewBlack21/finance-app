@@ -298,6 +298,10 @@ const s = StyleSheet.create({
   transactionAmount: { fontSize: 14, fontWeight: "700" },
   transactionDate: { fontSize: 11, color: "#9ca3af", marginTop: 2 },
 
+  empty: {
+    paddingVertical: 20,
+    alignItems: "center",
+  },
   emptyAccounts: {
     backgroundColor: "#f5f3ff",
     borderRadius: 12,

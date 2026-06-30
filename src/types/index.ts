@@ -85,6 +85,31 @@ export type UpdateTransaction = Partial<CreateTransaction>;
 export type CreateGoal = Omit<Goal, "id" | "user_id" | "created_at">;
 export type UpdateGoal = Partial<CreateGoal>;
 
+export interface FixedExpense {
+  id: string;
+  user_id: string;
+  title: string;
+  amount: number;
+  currency: string;
+  due_day: number;
+  account_id: string | null;
+  category_id: string | null;
+  is_paid: boolean;
+  paid_at: string | null;
+  recurring: boolean;
+  created_at: string;
+  account?: Account;
+  category?: Category;
+}
+
+export type CreateFixedExpense = Omit<
+  FixedExpense,
+  "id" | "user_id" | "created_at" | "account" | "category"
+>;
+export type UpdateFixedExpense = Partial<
+  Omit<CreateFixedExpense, "is_paid" | "paid_at" | "recurring">
+>;
+
 // ============================================================
 // FILTROS — usados nos hooks de listagem
 // ============================================================

@@ -44,6 +44,16 @@ export const fixedExpenseService = {
     return { data, error: error?.message ?? null };
   },
 
+  undoPaid: async (id: string): Promise<ServiceResponse<FixedExpense>> => {
+    const { data, error } = await supabase
+      .from("fixed_expenses")
+      .update({ is_paid: false, paid_at: null })
+      .eq("id", id)
+      .select("*, account:accounts(*), category:categories(*)")
+      .single();
+    return { data, error: error?.message ?? null };
+  },
+
   // Reseta pagamentos (virada do mês)
   resetPaid: async (): Promise<ServiceResponse<null>> => {
     const { error } = await supabase
