@@ -6,6 +6,8 @@ import {
   StyleSheet,
   Switch,
 } from "react-native";
+import { useRouter } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { useForm, Controller } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -67,6 +69,7 @@ export function TransactionForm({
   initialValues,
 }: TransactionFormProps) {
   const { accounts } = useAccounts();
+  const router = useRouter();
   const { income, expense } = useCategories();
   const { create: createFixed } = useFixedExpenses();
 
@@ -310,7 +313,23 @@ export function TransactionForm({
       {/* CATEGORIA */}
       {selectedType !== "transfer" && (
         <>
-          <Text style={s.label}>Categoria</Text>
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+            }}
+          >
+            <Text style={s.label}>Categoria</Text>
+            <TouchableOpacity
+              onPress={() => {
+                onCancel();
+                router.push("/(tabs)/categories");
+              }}
+            >
+              <Ionicons name="add-circle" size={22} color="#6366f1" />
+            </TouchableOpacity>
+          </View>
           <Controller
             name="category_id"
             control={control}

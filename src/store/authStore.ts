@@ -51,6 +51,6 @@ export const useAuthStore = create<AuthState>((set) => ({
       profile: null,
       session: null,
       isLoading: false,
-      isHydrated: false,
+      isHydrated: true,
     }),
 }));

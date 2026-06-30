@@ -9,6 +9,7 @@ import {
   StyleSheet,
   Alert,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useForm, Controller } from "react-hook-form";
 import { z } from "zod";
@@ -17,6 +18,7 @@ import { useCategories } from "@/hooks/useCategories";
 import { categoryService } from "@/services";
 import { Input } from "@/components/ui";
 import type { Category, CategoryType } from "@/types";
+import { useRouter } from "expo-router";
 
 const schema = z.object({
   name: z.string().min(1, "Nome obrigatório"),
@@ -41,30 +43,27 @@ const COLORS = [
   "#84cc16",
 ];
 
-const ICONS = [
-  { key: "cart", label: "🛒" },
-  { key: "food", label: "🍔" },
-  { key: "home", label: "🏠" },
-  { key: "car", label: "🚗" },
-  { key: "health", label: "💊" },
-  { key: "education", label: "📚" },
-  { key: "travel", label: "✈️" },
-  { key: "clothing", label: "👕" },
-  { key: "pets", label: "🐾" },
-  { key: "gift", label: "🎁" },
-  { key: "sports", label: "⚽" },
-  { key: "music", label: "🎵" },
-  { key: "salary", label: "💰" },
-  { key: "investment", label: "📈" },
-  { key: "freelance", label: "💻" },
-  { key: "other", label: "📦" },
+const ICONS: { key: string; name: keyof typeof Ionicons.glyphMap }[] = [
+  { key: "cart", name: "cart" },
+  { key: "food", name: "fast-food" },
+  { key: "home", name: "home" },
+  { key: "car", name: "car" },
+  { key: "health", name: "medkit" },
+  { key: "education", name: "school" },
+  { key: "travel", name: "airplane" },
+  { key: "clothing", name: "shirt" },
+  { key: "pets", name: "paw" },
+  { key: "gift", name: "gift" },
+  { key: "sports", name: "football" },
+  { key: "music", name: "musical-notes" },
+  { key: "salary", name: "cash" },
+  { key: "investment", name: "trending-up" },
+  { key: "freelance", name: "laptop" },
+  { key: "other", name: "ellipsis-horizontal-circle" },
 ];
 
-const EMOJI_MAP: Record<string, string> = Object.fromEntries(
-  ICONS.map((i) => [i.key, i.label]),
-);
-
 export default function CategoriesScreen() {
+  const router = useRouter();
   const { categories, income, expense, refetch } = useCategories();
   const [modalVisible, setModalVisible] = useState(false);
   const [tab, setTab] = useState<CategoryType>("expense");
@@ -120,7 +119,13 @@ export default function CategoriesScreen() {
   return (
     <SafeAreaView style={s.safe}>
       <View style={s.header}>
-        <Text style={s.title}>Categorias</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+          <TouchableOpacity onPress={() => router.back()}>
+            <Ionicons name="arrow-back" size={26} color="#111827" />
+          </TouchableOpacity>
+          <Text style={s.title}>Categorias</Text>
+        </View>
+
         <TouchableOpacity
           style={s.addBtn}
           onPress={() => setModalVisible(true)}
@@ -165,8 +170,16 @@ export default function CategoriesScreen() {
             onLongPress={() => handleDelete(c)}
             activeOpacity={0.8}
           >
-            <Text style={s.catEmoji}>{EMOJI_MAP[c.icon] ?? "📦"}</Text>
-            <Text style={s.catName}>{c.name}</Text>
+            <Ionicons
+              name={
+                (ICONS.find((i) => i.key === c.icon)?.name ??
+                  "ellipsis-horizontal-circle") as any
+              }
+              size={26}
+              color={c.color}
+              style={{ marginBottom: 8 }}
+            />
+
             {!c.user_id ? (
               <Text style={s.catDefault}>Padrão</Text>
             ) : (
@@ -274,7 +287,11 @@ export default function CategoriesScreen() {
                       style={[s.iconBtn, value === i.key && s.iconBtnActive]}
                       onPress={() => onChange(i.key)}
                     >
-                      <Text style={s.iconEmoji}>{i.label}</Text>
+                      <Ionicons
+                        name={i.name}
+                        size={22}
+                        color={value === i.key ? "#6366f1" : "#6b7280"}
+                      />
                     </TouchableOpacity>
                   ))}
                 </View>
@@ -303,15 +320,29 @@ export default function CategoriesScreen() {
               )}
             />
 
-            <TouchableOpacity
-              style={[s.saveBtn, isLoading && { opacity: 0.6 }]}
-              onPress={handleSubmit(onSubmit)}
-              disabled={isLoading}
-            >
-              <Text style={s.saveBtnText}>
-                {isLoading ? "Salvando..." : "Criar categoria"}
-              </Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: "row", gap: 12 }}>
+              <TouchableOpacity
+                style={[s.saveBtn, { flex: 1, backgroundColor: "#e5e7eb" }]}
+                onPress={() => {
+                  setModalVisible(false);
+                  reset();
+                }}
+              >
+                <Text style={[s.saveBtnText, { color: "#374151" }]}>
+                  Cancelar
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[s.saveBtn, { flex: 1 }, isLoading && { opacity: 0.6 }]}
+                onPress={handleSubmit(onSubmit)}
+                disabled={isLoading}
+              >
+                <Text style={s.saveBtnText}>
+                  {isLoading ? "Salvando..." : "Criar"}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </ScrollView>
         </SafeAreaView>
       </Modal>
@@ -357,13 +388,6 @@ const s = StyleSheet.create({
     padding: 16,
     alignItems: "center",
     borderTopWidth: 3,
-  },
-  catEmoji: { fontSize: 28, marginBottom: 8 },
-  catName: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#111827",
-    textAlign: "center",
   },
   catDefault: { fontSize: 10, color: "#9ca3af", marginTop: 4 },
   catCustom: {
@@ -421,7 +445,6 @@ const s = StyleSheet.create({
     backgroundColor: "#fff",
   },
   iconBtnActive: { borderColor: "#6366f1", backgroundColor: "#ede9fe" },
-  iconEmoji: { fontSize: 22 },
 
   colorRow: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   colorBtn: { width: 36, height: 36, borderRadius: 18 },

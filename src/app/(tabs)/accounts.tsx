@@ -23,7 +23,11 @@ type PeriodRange = {
   label: string;
 };
 
-const PERIODS: { value: Period; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+const PERIODS: {
+  value: Period;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+}[] = [
   { value: "day", label: "Dia", icon: "today-outline" },
   { value: "week", label: "Semana", icon: "calendar-outline" },
   { value: "month", label: "Mes", icon: "calendar-number-outline" },
@@ -86,7 +90,11 @@ export default function AccountDetailScreen() {
     <SafeAreaView style={s.safe}>
       <View style={[s.header, { backgroundColor: accountColor }]}>
         <TouchableOpacity onPress={() => router.back()} style={s.back}>
-          <Ionicons name="chevron-back" size={18} color="rgba(255,255,255,0.86)" />
+          <Ionicons
+            name="chevron-back"
+            size={18}
+            color="rgba(255,255,255,0.86)"
+          />
           <Text style={s.backText}>Voltar</Text>
         </TouchableOpacity>
         <Text style={s.accountName}>{name}</Text>
@@ -144,7 +152,9 @@ export default function AccountDetailScreen() {
           data={transactions}
           keyExtractor={(t) => t.id}
           contentContainerStyle={s.list}
-          ListEmptyComponent={<EmptyState text="Nenhuma transacao nesta conta" />}
+          ListEmptyComponent={
+            <EmptyState text="Nenhuma transacao nesta conta" />
+          }
           renderItem={({ item }) => (
             <TransactionRow transaction={item} currency={accountCurrency} />
           )}
@@ -154,7 +164,9 @@ export default function AccountDetailScreen() {
           data={installments}
           keyExtractor={(i) => i.id}
           contentContainerStyle={s.list}
-          ListEmptyComponent={<EmptyState text="Nenhuma compra parcelada nesta conta" />}
+          ListEmptyComponent={
+            <EmptyState text="Nenhuma compra parcelada nesta conta" />
+          }
           renderItem={({ item }) => (
             <InstallmentCard installment={item} currency={accountCurrency} />
           )}
@@ -174,7 +186,9 @@ export default function AccountDetailScreen() {
               currency={accountCurrency}
             />
           }
-          ListEmptyComponent={<EmptyState text="Nenhum movimento neste periodo" />}
+          ListEmptyComponent={
+            <EmptyState text="Nenhum movimento neste periodo" />
+          }
           renderItem={({ item }) => (
             <TransactionRow transaction={item} currency={accountCurrency} />
           )}
@@ -293,7 +307,11 @@ function TransactionRow({
   return (
     <View style={s.item}>
       <View style={[s.itemIcon, { backgroundColor: `${color}18` }]}>
-        <Ionicons name={isIncome ? "arrow-up" : "arrow-down"} size={20} color={color} />
+        <Ionicons
+          name={isIncome ? "arrow-up" : "arrow-down"}
+          size={20}
+          color={color}
+        />
       </View>
       <View style={s.itemInfo}>
         <Text style={s.itemTitle}>{t.title}</Text>
@@ -317,7 +335,9 @@ function InstallmentCard({
   currency: string;
 }) {
   const isDone = i.paid_installments >= i.total_installments;
-  const progress = Math.round((i.paid_installments / i.total_installments) * 100);
+  const progress = Math.round(
+    (i.paid_installments / i.total_installments) * 100,
+  );
 
   return (
     <View style={s.installCard}>
@@ -327,9 +347,15 @@ function InstallmentCard({
           <Text style={s.installTitle}>{i.title}</Text>
         </View>
         <View style={s.installStatusRow}>
-          {isDone && <Ionicons name="checkmark-circle" size={15} color="#16a34a" />}
-          <Text style={[s.installStatus, { color: isDone ? "#16a34a" : "#6366f1" }]}>
-            {isDone ? "Quitado" : `${i.paid_installments}/${i.total_installments}`}
+          {isDone && (
+            <Ionicons name="checkmark-circle" size={15} color="#16a34a" />
+          )}
+          <Text
+            style={[s.installStatus, { color: isDone ? "#16a34a" : "#6366f1" }]}
+          >
+            {isDone
+              ? "Quitado"
+              : `${i.paid_installments}/${i.total_installments}`}
           </Text>
         </View>
       </View>
@@ -352,6 +378,13 @@ function InstallmentCard({
           Total: {formatCurrency(i.total_amount, i.currency ?? currency)}
         </Text>
       </View>
+
+      <TouchableOpacity
+        style={s.fab}
+        onPress={() => console.log("Abrir criação de conta")}
+      >
+        <Ionicons name="add" size={30} color="#fff" />
+      </TouchableOpacity>
     </View>
   );
 }
@@ -417,52 +450,158 @@ function isDateInsideRange(date: string, range: PeriodRange) {
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#f8fafc" },
   header: { padding: 20, paddingTop: 12, paddingBottom: 24 },
-  back: { flexDirection: "row", alignItems: "center", gap: 3, marginBottom: 12 },
-  backText: { color: "rgba(255,255,255,0.86)", fontSize: 14, fontWeight: "600" },
-  accountName: { color: "#fff", fontSize: 20, fontWeight: "bold", marginBottom: 4 },
-  accountBalance: { color: "#fff", fontSize: 32, fontWeight: "bold", marginBottom: 16 },
+  back: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    marginBottom: 12,
+  },
+  backText: {
+    color: "rgba(255,255,255,0.86)",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  accountName: {
+    color: "#fff",
+    fontSize: 20,
+    fontWeight: "bold",
+    marginBottom: 4,
+  },
+  accountBalance: {
+    color: "#fff",
+    fontSize: 32,
+    fontWeight: "bold",
+    marginBottom: 16,
+  },
   headerRow: { flexDirection: "row" },
   headerStat: { flex: 1 },
-  headerStatLabelRow: { flexDirection: "row", alignItems: "center", gap: 5, marginBottom: 2 },
+  headerStatLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    marginBottom: 2,
+  },
   headerStatLabel: { color: "rgba(255,255,255,0.78)", fontSize: 12 },
   headerStatValue: { color: "#fff", fontSize: 15, fontWeight: "700" },
-  headerDivider: { width: 1, backgroundColor: "rgba(255,255,255,0.3)", marginHorizontal: 16 },
-  tabs: { flexDirection: "row", backgroundColor: "#fff", borderBottomWidth: 1, borderBottomColor: "#e5e7eb" },
+  headerDivider: {
+    width: 1,
+    backgroundColor: "rgba(255,255,255,0.3)",
+    marginHorizontal: 16,
+  },
+  tabs: {
+    flexDirection: "row",
+    backgroundColor: "#fff",
+    borderBottomWidth: 1,
+    borderBottomColor: "#e5e7eb",
+  },
   tab: { flex: 1, paddingVertical: 12, alignItems: "center", gap: 3 },
   tabActive: { borderBottomWidth: 2, borderBottomColor: "#6366f1" },
   tabText: { fontSize: 12, color: "#9ca3af", fontWeight: "700" },
   tabTextActive: { color: "#6366f1" },
   list: { padding: 16, paddingBottom: 32 },
-  item: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 12, padding: 14, marginBottom: 8 },
-  itemIcon: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center", marginRight: 12 },
+  item: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 8,
+  },
+  itemIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
   itemInfo: { flex: 1 },
   itemTitle: { fontSize: 14, fontWeight: "600", color: "#111827" },
   itemSub: { fontSize: 12, color: "#9ca3af", marginTop: 2 },
   itemAmount: { fontSize: 14, fontWeight: "700" },
-  installCard: { backgroundColor: "#fff", borderRadius: 12, padding: 14, marginBottom: 10 },
-  installTop: { flexDirection: "row", justifyContent: "space-between", marginBottom: 10, gap: 12 },
-  installTitleRow: { flex: 1, flexDirection: "row", alignItems: "center", gap: 8 },
+  installCard: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 10,
+  },
+  installTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 10,
+    gap: 12,
+  },
+  installTitleRow: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
   installTitle: { fontSize: 14, fontWeight: "700", color: "#111827", flex: 1 },
   installStatusRow: { flexDirection: "row", alignItems: "center", gap: 4 },
   installStatus: { fontSize: 13, fontWeight: "700" },
-  progressBar: { height: 6, backgroundColor: "#e5e7eb", borderRadius: 3, marginBottom: 8 },
+  progressBar: {
+    height: 6,
+    backgroundColor: "#e5e7eb",
+    borderRadius: 3,
+    marginBottom: 8,
+  },
   progressFill: { height: 6, borderRadius: 3 },
   installBottom: { flexDirection: "row", justifyContent: "space-between" },
   installSub: { fontSize: 12, color: "#6366f1", fontWeight: "600" },
   installTotal: { fontSize: 12, color: "#9ca3af" },
   historyHeader: { marginBottom: 12 },
-  periodRow: { flexDirection: "row", backgroundColor: "#eef2ff", borderRadius: 12, padding: 4, marginBottom: 12 },
-  periodBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingVertical: 9, borderRadius: 9 },
+  periodRow: {
+    flexDirection: "row",
+    backgroundColor: "#eef2ff",
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 12,
+  },
+  periodBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    paddingVertical: 9,
+    borderRadius: 9,
+  },
   periodBtnActive: { backgroundColor: "#6366f1" },
   periodText: { color: "#6b7280", fontSize: 12, fontWeight: "700" },
   periodTextActive: { color: "#fff" },
-  historyRange: { color: "#6b7280", fontSize: 13, fontWeight: "600", marginBottom: 10, textTransform: "capitalize" },
+  historyRange: {
+    color: "#6b7280",
+    fontSize: 13,
+    fontWeight: "600",
+    marginBottom: 10,
+    textTransform: "capitalize",
+  },
   historyCards: { flexDirection: "row", gap: 10, marginBottom: 10 },
-  historyCard: { flex: 1, backgroundColor: "#fff", borderRadius: 12, padding: 12, borderLeftWidth: 4 },
-  historyCardLabelRow: { flexDirection: "row", alignItems: "center", gap: 5, marginBottom: 5 },
+  historyCard: {
+    flex: 1,
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 12,
+    borderLeftWidth: 4,
+  },
+  historyCardLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    marginBottom: 5,
+  },
   historyCardLabel: { color: "#6b7280", fontSize: 12, fontWeight: "600" },
   historyCardValue: { fontSize: 15, fontWeight: "800" },
-  netCard: { backgroundColor: "#fff", borderRadius: 12, padding: 14, marginBottom: 10, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  netCard: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
   netLabel: { color: "#6b7280", fontSize: 13, fontWeight: "600" },
   netValue: { fontSize: 16, fontWeight: "800" },
   empty: { alignItems: "center", paddingVertical: 56, gap: 8 },
