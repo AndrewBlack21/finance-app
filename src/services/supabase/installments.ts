@@ -34,9 +34,18 @@ export const installmentService = {
     id: string,
     currentPaid: number,
   ): Promise<ServiceResponse<Installment>> => {
+    // Busca o installment atual para garantir dados frescos
+    const { data: current } = await supabase
+      .from("installments")
+      .select("*")
+      .eq("id", id)
+      .single();
+
+    const newPaid = (current?.paid_installments ?? currentPaid) + 1;
+
     const { data, error } = await supabase
       .from("installments")
-      .update({ paid_installments: currentPaid + 1 })
+      .update({ paid_installments: newPaid })
       .eq("id", id)
       .select("*, account:accounts(*)")
       .single();

@@ -44,7 +44,7 @@ export function useInstallments() {
       id,
       currentPaid,
     );
-    if (data)
+    if (data) {
       setInstallments((prev) =>
         prev.map((i) =>
           i.id === id
@@ -59,6 +59,7 @@ export function useInstallments() {
             : i,
         ),
       );
+    }
     return { error };
   };
 

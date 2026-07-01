@@ -47,9 +47,12 @@ export const transactionService = {
     const {
       data: { user },
     } = await supabase.auth.getUser();
+    // Remove category_id se for transferência — evita erro 400
+    const body = { ...payload, user_id: user!.id };
+    if (payload.type === "transfer") delete (body as any).category_id;
     const { data, error } = await supabase
       .from("transactions")
-      .insert({ ...payload, user_id: user!.id })
+      .insert(body)
       .select("*, category:categories(*), account:accounts(*)")
       .single();
     return { data, error: error?.message ?? null };

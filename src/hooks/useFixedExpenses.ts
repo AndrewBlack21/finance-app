@@ -27,13 +27,14 @@ export function useFixedExpenses() {
 
   // Paga a conta e cria transação de despesa automaticamente
   const markAsPaid = async (expense: FixedExpense) => {
-    if (!expense.account_id) return { error: "Selecione uma conta para pagar" };
+    // sem bloqueio — permite pagar mesmo sem conta vinculada
 
     // Cria a transação de despesa
     const { error: txError } = await transactionService.create({
       title: `${expense.title} (Conta Fixa)`,
       amount: expense.amount,
       currency: expense.currency,
+      amount: expense.amount,
       type: "expense",
       account_id: expense.account_id,
       category_id: expense.category_id,
@@ -46,7 +47,7 @@ export function useFixedExpenses() {
     // Marca como paga
     const { data, error } = await fixedExpenseService.markAsPaid(
       expense.id,
-      expense.account_id,
+      expense.account_id ?? "",
     );
     if (data)
       setExpenses((prev) => prev.map((e) => (e.id === expense.id ? data : e)));
@@ -59,6 +60,16 @@ export function useFixedExpenses() {
     return { error };
   };
 
+  const undoPaid = async (id: string) => {
+    setIsLoading(true);
+    const { data, error } = await fixedExpenseService.update(id, {
+      is_paid: false,
+      paid_at: null,
+    });
+    if (data) setExpenses((prev) => prev.map((e) => (e.id === id ? data : e)));
+    setIsLoading(false);
+    return { error };
+  };
   // Totais
   const totalMonth = expenses.reduce((s, e) => s + e.amount, 0);
   const totalPaid = expenses
@@ -76,6 +87,7 @@ export function useFixedExpenses() {
     pendingCount,
     create,
     markAsPaid,
+    undoPaid,
     remove,
     refetch: fetch,
   };

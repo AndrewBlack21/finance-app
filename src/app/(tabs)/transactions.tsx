@@ -8,6 +8,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
+  TextInput,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -27,6 +28,7 @@ export default function TransactionsScreen() {
     useTransactions();
   const [modalVisible, setModalVisible] = useState(false);
   const [editing, setEditing] = useState<Transaction | null>(null);
+  const [dateFilter, setDateFilter] = useState("");
 
   const handleCreate = async (data: CreateTransaction) => {
     const { error } = await create(data);
@@ -88,7 +90,22 @@ export default function TransactionsScreen() {
           </Text>
         </View>
       </View>
-
+      <TextInput
+        placeholder="Filtrar por data (AAAA-MM-DD)"
+        value={dateFilter}
+        onChangeText={setDateFilter}
+        style={{
+          marginHorizontal: 20,
+          marginBottom: 8,
+          backgroundColor: "#fff",
+          borderRadius: 10,
+          paddingHorizontal: 14,
+          paddingVertical: 10,
+          borderWidth: 1,
+          borderColor: "#e5e7eb",
+          fontSize: 14,
+        }}
+      />
       {isLoading ? (
         <ActivityIndicator color="#6366f1" style={{ marginTop: 32 }} />
       ) : (
@@ -123,7 +140,7 @@ export default function TransactionsScreen() {
         <SafeAreaView style={s.modal}>
           <View style={s.modalHeader}>
             <Text style={s.modalTitle}>
-              {editing ? "Editar TransaÃ§Ã£o" : "Nova TransaÃ§Ã£o"}
+              {editing ? "Editar Transação" : "Nova Transação"}
             </Text>
             <TouchableOpacity
               onPress={() => {
@@ -178,7 +195,7 @@ function TransactionItem({
       <View style={s.itemInfo}>
         <Text style={s.itemTitle}>{t.title}</Text>
         <Text style={s.itemCategory}>
-          {t.category?.name ?? "Sem categoria"} Â· {formatDate(t.date)}
+          {t.category?.name ?? "Sem categoria"} · {formatDate(t.date)}
         </Text>
       </View>
       <View style={s.itemRight}>

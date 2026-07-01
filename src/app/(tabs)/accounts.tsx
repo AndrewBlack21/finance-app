@@ -6,6 +6,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   TouchableOpacity,
+  TextInput,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -48,19 +49,24 @@ export default function AccountDetailScreen() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [installments, setInstallments] = useState<Installment[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-
+  const [modalVisible, setModalVisible] = useState(false);
   useEffect(() => {
     loadData();
   }, [id]);
 
+  const { openModal } = useLocalSearchParams<{ openModal?: string }>();
+  // Abre modal automaticamente se vier da home
+  useEffect(() => {
+    if (openModal === "1") setModalVisible(true);
+  }, [openModal]);
   const loadData = async () => {
     setIsLoading(true);
-    const { data: txData } = await transactionService.list({ account_id: id });
-    setTransactions(txData ?? []);
-
-    const { data: instData } = await installmentService.list();
-    setInstallments((instData ?? []).filter((i) => i.account_id === id));
-
+    const [txResult, instResult] = await Promise.all([
+      transactionService.list({ account_id: id }),
+      installmentService.list(),
+    ]);
+    setTransactions(txResult.data ?? []);
+    setInstallments((instResult.data ?? []).filter((i) => i.account_id === id));
     setIsLoading(false);
   };
 
@@ -99,7 +105,7 @@ export default function AccountDetailScreen() {
         </TouchableOpacity>
         <Text style={s.accountName}>{name}</Text>
         <Text style={s.accountBalance}>
-          {formatCurrency(Number(balance), accountCurrency)}
+          {formatCurrency(parseFloat(balance ?? "0") || 0, accountCurrency)}
         </Text>
         <View style={s.headerRow}>
           <View style={s.headerStat}>
@@ -257,7 +263,27 @@ function HistoryHeader({
       </View>
 
       <Text style={s.historyRange}>{range.label}</Text>
-
+      {period === "day" && (
+        <TextInput
+          placeholder="Selecionar data (AAAA-MM-DD)"
+          value={range.from}
+          onChangeText={(text) => {
+            if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+              onChangePeriod("day");
+            }
+          }}
+          style={{
+            backgroundColor: "#fff",
+            borderRadius: 10,
+            paddingHorizontal: 14,
+            paddingVertical: 10,
+            borderWidth: 1,
+            borderColor: "#e5e7eb",
+            fontSize: 14,
+            marginBottom: 10,
+          }}
+        />
+      )}
       <View style={s.historyCards}>
         <View style={[s.historyCard, { borderLeftColor: "#16a34a" }]}>
           <View style={s.historyCardLabelRow}>
@@ -378,13 +404,6 @@ function InstallmentCard({
           Total: {formatCurrency(i.total_amount, i.currency ?? currency)}
         </Text>
       </View>
-
-      <TouchableOpacity
-        style={s.fab}
-        onPress={() => console.log("Abrir criação de conta")}
-      >
-        <Ionicons name="add" size={30} color="#fff" />
-      </TouchableOpacity>
     </View>
   );
 }

@@ -14,6 +14,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useTransactions } from "@/hooks/useTransactions";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useInstallments } from "@/hooks/useInstallments";
+import { useFixedExpenses } from "@/hooks/useFixedExpenses";
 import {
   formatCurrency,
   formatDate,
@@ -36,6 +37,9 @@ const FALLBACK_COLORS = [
 // ============================================================
 export default function DashboardScreen() {
   const { profile, logout } = useAuth();
+  const { accounts, totalBalance } = useAccounts();
+  const { installments, monthlyTotal: installmentTotal } = useInstallments();
+  const { totalPaid: fixedPaid } = useFixedExpenses();
   const router = useRouter();
   const { from, to } = getCurrentMonthRange();
   const { width } = useWindowDimensions();
@@ -45,17 +49,39 @@ export default function DashboardScreen() {
     date_from: from,
     date_to: to,
   });
-  const { accounts, totalBalance } = useAccounts();
-  const { installments } = useInstallments();
 
   const firstName = profile?.name?.split(" ")[0] ?? "Usuário";
   const month = getCurrentMonthName();
   const currency = profile?.currency ?? "BRL";
   const chartWidth = Math.max(width - 72, 260);
   const expenses = transactions.filter((t) => t.type === "expense");
-  const creditExpenses = expenses.filter((t) => t.account?.type === "credit");
-  const categoryExpenses = groupTransactionsByCategory(expenses);
-  const creditCategoryExpenses = groupTransactionsByCategory(creditExpenses);
+  const fixedAsExpenses = expenses;
+  const categoryExpenses = groupTransactionsByCategory(fixedAsExpenses);
+  const creditExpenses = expenses.filter(
+    (t) => t.account?.type === "credit" || t.account?.type === "credit_card",
+  );
+  // Se não houver nenhuma, usa todas as despesas como fallback
+  const creditCategorySource =
+    creditExpenses.length > 0 ? creditExpenses : expenses;
+  const creditCategoryExpenses = installments
+    .filter((i) => i.paid_installments < i.total_installments)
+    .reduce<{ label: string; value: number; color: string }[]>((acc, i) => {
+      const existing = acc.find(
+        (x) => x.label === (i.account?.name ?? "Crédito"),
+      );
+      if (existing) {
+        existing.value += i.installment_amount;
+      } else
+        acc.push({
+          label: i.account?.name ?? "Crédito",
+          value: i.installment_amount,
+          color: FALLBACK_COLORS[acc.length % FALLBACK_COLORS.length],
+        });
+      return acc;
+    }, [])
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 6);
+
   const topCreditPurchases = getTopCreditPurchases(installments);
   const maxCreditPurchase = Math.max(
     ...topCreditPurchases.map((item) => item.value),
@@ -204,25 +230,51 @@ export default function DashboardScreen() {
         </View>
 
         {/* CONTAS */}
-        {accounts.length > 0 && (
-          <View style={s.section}>
+        <View style={s.section}>
+          <View style={s.sectionHeader}>
             <Text style={s.sectionTitle}>Minhas Contas</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {accounts.map((account) => (
-                <View
-                  key={account.id}
-                  style={[s.accountCard, { borderLeftColor: account.color }]}
-                >
-                  <Text style={s.accountName}>{account.name}</Text>
-                  <Text style={s.accountBalance}>
-                    {formatCurrency(account.balance, account.currency)}
-                  </Text>
-                  <Text style={s.accountType}>{account.type}</Text>
-                </View>
-              ))}
-            </ScrollView>
+            <TouchableOpacity
+              onPress={() =>
+                router.push({
+                  pathname: "/(tabs)/accounts",
+                  params: { openModal: "1" },
+                })
+              }
+            >
+              <Text style={s.seeAll}>+ Adicionar</Text>
+            </TouchableOpacity>
           </View>
-        )}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {accounts.length === 0 && (
+              <TouchableOpacity
+                style={s.emptyAccounts}
+                onPress={() => router.push("/(tabs)/accounts")}
+              >
+                <Text style={s.emptyAccountsText}>
+                  Toque para adicionar uma conta
+                </Text>
+              </TouchableOpacity>
+            )}
+            {accounts.map((account) => (
+              <TouchableOpacity
+                key={account.id}
+                style={[s.accountCard, { borderLeftColor: account.color }]}
+                onPress={() =>
+                  router.push({
+                    pathname: "/(tabs)/accounts",
+                    params: {
+                      id: account.id,
+                      name: account.name,
+                      balance: String(account.balance),
+                      currency: account.currency,
+                      color: account.color,
+                    },
+                  })
+                }
+              ></TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
 
         {/* ÚLTIMAS TRANSAÇÕES */}
         <View style={s.section}>
@@ -553,7 +605,11 @@ const s = StyleSheet.create({
     overflow: "hidden",
   },
   progressFill: { height: 8, borderRadius: 4 },
-  emptyChart: { minHeight: 120, alignItems: "center", justifyContent: "center" },
+  emptyChart: {
+    minHeight: 120,
+    alignItems: "center",
+    justifyContent: "center",
+  },
 
   // Transaction item
   transactionItem: {
