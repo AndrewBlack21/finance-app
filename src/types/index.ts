@@ -25,6 +25,17 @@ export interface Account {
   currency: string;
   color: string;
   created_at: string;
+  due_day: number | null;
+}
+export interface InstallmentGroup {
+  account_id: string;
+  account_name: string;
+  account_color: string;
+  due_day: number | null;
+  monthly_total: number; // soma das parcelas do mês
+  currency: string;
+  installments: Installment[];
+  is_overdue: boolean; // vence em <= 2 dias
 }
 
 export interface Category {

@@ -78,6 +78,46 @@ export function useFixedExpenses() {
   const totalPending = totalMonth - totalPaid;
   const pendingCount = expenses.filter((e) => !e.is_paid).length;
 
+  // ============================================================
+  // INTELIGÊNCIA: GERA CÓPIAS PARA O NOVO MÊS
+  // ============================================================
+  const generateMonthlyFixedExpenses = async () => {
+    setIsLoading(true);
+
+    const currentMonth = new Date().toISOString().slice(0, 7); // Ex: "2026-07"
+
+    // 1. Verifica se já geramos contas para este mês (para não duplicar)
+    const { data: currentExpenses } =
+      await fixedExpenseService.getForMonth(currentMonth);
+
+    if (currentExpenses && currentExpenses.length === 0) {
+      // 2. Se está vazio, pega as contas recorrentes ativas
+      const { data: allActive } = await fixedExpenseService.getAllRecurring();
+
+      if (allActive && allActive.length > 0) {
+        // 3. Prepara as cópias com o status "não pago" para o mês atual
+        const copies = allActive.map((expense) => ({
+          title: expense.title,
+          amount: expense.amount,
+          currency: expense.currency,
+          due_day: expense.due_day,
+          account_id: expense.account_id,
+          category_id: expense.category_id,
+          is_paid: false, // Começa devendo!
+          paid_at: null,
+          recurring: true,
+          // Ajusta a data para o mês atual
+          date: `${currentMonth}-${String(expense.due_day).padStart(2, "0")}`,
+        }));
+
+        // 4. Salva as cópias no banco
+        await fixedExpenseService.createMany(copies);
+        await fetch(); // Atualiza a tela
+      }
+    }
+    setIsLoading(false);
+  };
+
   return {
     expenses,
     isLoading,
@@ -85,6 +125,7 @@ export function useFixedExpenses() {
     totalPaid,
     totalPending,
     pendingCount,
+    generateMonthlyFixedExpenses,
     create,
     markAsPaid,
     undoPaid,

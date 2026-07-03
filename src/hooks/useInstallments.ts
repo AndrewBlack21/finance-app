@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { installmentService } from "@/services";
 import type { Installment, CreateInstallment } from "@/types";
+import type { InstallmentGroup } from "@/types";
 
 export function useInstallments() {
   const [installments, setInstallments] = useState<Installment[]>([]);
@@ -71,17 +72,93 @@ export function useInstallments() {
 
   // Total de parcelas pendentes no mês
   const monthlyTotal = installments.reduce((sum, i) => {
-    if (i.paid_installments < i.total_installments)
-      return sum + i.installment_amount;
-    return sum;
+    return sum + i.installment_amount;
   }, 0);
 
+  // NOVA FUNÇÃO: Atualiza uma compra parcelada no banco e no estado local
+  const update = async (id: string, payload: Partial<CreateInstallment>) => {
+    setIsLoading(true);
+    const { data, error } = await installmentService.update(id, payload);
+    if (data) {
+      setInstallments((prev) =>
+        prev.map((i) =>
+          i.id === id
+            ? {
+                ...data,
+                remaining_installments:
+                  data.total_installments - data.paid_installments,
+                progress: Math.round(
+                  (data.paid_installments / data.total_installments) * 100,
+                ),
+              }
+            : i,
+        ),
+      );
+    }
+    setIsLoading(false);
+    return { data, error };
+  };
+  const groupedByAccount = useMemo((): InstallmentGroup[] => {
+    const map: Record<string, InstallmentGroup> = {};
+    const today = new Date().getDate();
+
+    installments.forEach((i) => {
+      const id = i.account_id;
+      const acct = i.account;
+      if (!map[id]) {
+        const due = acct?.due_day ?? null;
+        const diff = due !== null ? due - today : null;
+        map[id] = {
+          account_id: id,
+          account_name: acct?.name ?? "Sem conta",
+          account_color: acct?.color ?? "#6366f1",
+          due_day: due,
+          monthly_total: 0,
+          currency: i.currency,
+          installments: [],
+          is_overdue: diff !== null && diff >= 0 && diff <= 2,
+        };
+      }
+      // Só soma parcelas em aberto
+      if (i.paid_installments < i.total_installments) {
+        map[id].monthly_total += i.installment_amount;
+      }
+      map[id].installments.push(i);
+    });
+
+    return Object.values(map).sort(
+      (a, b) => (a.due_day ?? 99) - (b.due_day ?? 99),
+    );
+  }, [installments]);
+  const payFullInvoice = async (accountId: string) => {
+    setIsLoading(true);
+    // 1. Filtra apenas as parcelas ativas deste cartão
+    const activeInstallments = installments.filter(
+      (i) =>
+        i.account_id === accountId &&
+        i.paid_installments < i.total_installments,
+    );
+
+    // 2. Dispara o pagamento de todas ao mesmo tempo usando Promise.all
+    const promises = activeInstallments.map((i) =>
+      installmentService.payInstallment(i.id, i.paid_installments),
+    );
+
+    await Promise.all(promises);
+
+    // 3. Atualiza os dados na tela
+    await fetch();
+    setIsLoading(false);
+  };
   return {
     installments,
     isLoading,
     monthlyTotal,
+    groupedByAccount,
     create,
     payInstallment,
+    payFullInvoice,
+    update, // <-- Exportando a nova função de edição
     remove,
     refetch: fetch,
   };

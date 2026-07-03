@@ -34,12 +34,17 @@ export const installmentService = {
     id: string,
     currentPaid: number,
   ): Promise<ServiceResponse<Installment>> => {
-    // Busca o installment atual para garantir dados frescos
-    const { data: current } = await supabase
+    // Busca o installment atual para garantir dados frescos e captura possíveis erros
+    const { data: current, error: fetchError } = await supabase
       .from("installments")
       .select("*")
       .eq("id", id)
       .single();
+
+    // Se falhar na busca inicial (ex: falta de internet ou registro deletado), interrompe e retorna o erro
+    if (fetchError) {
+      return { data: null, error: fetchError.message };
+    }
 
     const newPaid = (current?.paid_installments ?? currentPaid) + 1;
 

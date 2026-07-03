@@ -6,10 +6,13 @@ import {
   StyleSheet,
   ActivityIndicator,
   useWindowDimensions,
+  FlatList,
+  RefreshControl,
 } from "react-native";
+import React, { useState, useRef, useCallback, useMemo } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
-import { BarChart, PieChart } from "react-native-gifted-charts";
+import { useRouter, useFocusEffect } from "expo-router";
+import { PieChart } from "react-native-gifted-charts";
 import { useAuth } from "@/hooks/useAuth";
 import { useTransactions } from "@/hooks/useTransactions";
 import { useAccounts } from "@/hooks/useAccounts";
@@ -37,32 +40,139 @@ const FALLBACK_COLORS = [
 // ============================================================
 export default function DashboardScreen() {
   const { profile, logout } = useAuth();
-  const { accounts, totalBalance } = useAccounts();
-  const { installments, monthlyTotal: installmentTotal } = useInstallments();
-  const { totalPaid: fixedPaid } = useFixedExpenses();
   const router = useRouter();
   const { from, to } = getCurrentMonthRange();
   const { width } = useWindowDimensions();
-
-  // Transações filtradas pelo mês atual
-  const { transactions, summary, isLoading } = useTransactions({
+  // 1. Variável que controla se a "rodinha" de carregamento está a girar
+  const [refreshing, setRefreshing] = useState(false);
+  // Hooks do Banco de Dados
+  const { accounts, totalBalance, refetch: refetchAccounts } = useAccounts();
+  const { installments, refetch: refetchInstallments } = useInstallments();
+  const { expenses: fixedExpenses, refetch: refetchFixed } = useFixedExpenses();
+  const {
+    transactions,
+    summary,
+    isLoading,
+    refetch: refetchTransactions,
+  } = useTransactions({
     date_from: from,
     date_to: to,
   });
 
+  const onRefresh = async () => {
+    setRefreshing(true);
+    if (refetchAccounts) await refetchAccounts();
+    if (refetchInstallments) await refetchInstallments();
+    if (refetchTransactions) await refetchTransactions();
+    if (refetchFixed) await refetchFixed();
+    setRefreshing(false);
+  };
+  // GATILHO DE ATUALIZAÇÃO: Recarrega a tela sempre que o usuário entra nela
+  useFocusEffect(
+    useCallback(() => {
+      if (refetchAccounts) refetchAccounts();
+      if (refetchInstallments) refetchInstallments();
+      if (refetchTransactions) refetchTransactions();
+      if (refetchFixed) refetchFixed();
+
+      // O SEGREDO ESTÁ AQUI NA LINHA ABAIXO:
+      // O array vazio [] impede o loop infinito de requisições!
+    }, []),
+  );
+
   const firstName = profile?.name?.split(" ")[0] ?? "Usuário";
   const month = getCurrentMonthName();
   const currency = profile?.currency ?? "BRL";
-  const chartWidth = Math.max(width - 72, 260);
+
+  // ============================================================
+  // INTELIGÊNCIA DOS GRÁFICOS (Débito + Crédito + Porcentagem)
+  // ============================================================
   const expenses = transactions.filter((t) => t.type === "expense");
-  const fixedAsExpenses = expenses;
-  const categoryExpenses = groupTransactionsByCategory(fixedAsExpenses);
-  const creditExpenses = expenses.filter(
-    (t) => t.account?.type === "credit" || t.account?.type === "credit_card",
-  );
-  // Se não houver nenhuma, usa todas as despesas como fallback
-  const creditCategorySource =
-    creditExpenses.length > 0 ? creditExpenses : expenses;
+
+  // 1. Gráfico de Categorias (Junta Transações Normais + Parcelas de Crédito)
+  // 1. Gráfico de Categorias (Débito + Crédito + Contas Fixas Pendentes)
+  const { categoryData, totalCategoryExpenses } = useMemo(() => {
+    let total = 0;
+    const grouped: Record<
+      string,
+      { label: string; value: number; color: string }
+    > = {};
+
+    // A. Soma despesas normais (Aqui já entram as contas fixas que foram PAGAS)
+    expenses.forEach((t) => {
+      const label = t.category?.name ?? "Outros";
+      const color = t.category?.color ?? FALLBACK_COLORS[0];
+      if (!grouped[label]) grouped[label] = { label, value: 0, color };
+      grouped[label].value += t.amount;
+      total += t.amount;
+    });
+
+    // B. Soma parcelas do cartão de crédito
+    installments.forEach((i) => {
+      if (i.paid_installments < i.total_installments) {
+        const label = (i as any).category?.name ?? "Cartão de Crédito";
+        const color = (i as any).category?.color ?? FALLBACK_COLORS[2];
+        if (!grouped[label]) grouped[label] = { label, value: 0, color };
+        grouped[label].value += i.installment_amount;
+        total += i.installment_amount;
+      }
+    });
+
+    // C. NOVO: Soma as contas fixas que AINDA NÃO FORAM PAGAS
+    fixedExpenses.forEach((f) => {
+      if (!f.is_paid) {
+        const label = f.category?.name ?? "Contas Fixas";
+        const color = f.category?.color ?? "#f59e0b"; // Cor laranja padrão
+        if (!grouped[label]) grouped[label] = { label, value: 0, color };
+        grouped[label].value += f.amount;
+        total += f.amount;
+      }
+    });
+
+    // Calcula a percentagem final para o gráfico
+    const dataList = Object.values(grouped)
+      .sort((a, b) => b.value - a.value)
+      .map((item) => ({
+        ...item,
+        percentage:
+          total > 0 ? Math.round((item.value / total) * 100) + "%" : "0%",
+      }))
+      .slice(0, 6); // Mostra o top 6 para não poluir o gráfico
+
+    return { categoryData: dataList, totalCategoryExpenses: total };
+  }, [expenses, installments, fixedExpenses]); // <-- Adicionamos fixedExpenses nas dependências
+
+  // 2. Gráfico de Maiores Gastos de Crédito (Agora em Pizza)
+  const creditPurchasesChart = useMemo(() => {
+    let total = 0;
+
+    // FILTRO NOVO: Puxa apenas as compras parceladas que AINDA estão ativas
+    const activeInstallments = installments.filter(
+      (i) => i.paid_installments < i.total_installments,
+    );
+
+    const data = activeInstallments
+      .map((i, index) => {
+        total += i.total_amount;
+        return {
+          label: shortenLabel(i.title),
+          value: i.total_amount,
+          color: FALLBACK_COLORS[index % FALLBACK_COLORS.length],
+        };
+      })
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 5);
+
+    const withPercentage = data.map((item) => ({
+      ...item,
+      percentage:
+        total > 0 ? Math.round((item.value / total) * 100) + "%" : "0%",
+    }));
+
+    return { data: withPercentage, total };
+  }, [installments]);
+
+  // 3. Agrupamento para o Carrossel de Cartões
   const creditCategoryExpenses = installments
     .filter((i) => i.paid_installments < i.total_installments)
     .reduce<{ label: string; value: number; color: string }[]>((acc, i) => {
@@ -71,28 +181,30 @@ export default function DashboardScreen() {
       );
       if (existing) {
         existing.value += i.installment_amount;
-      } else
+      } else {
         acc.push({
           label: i.account?.name ?? "Crédito",
           value: i.installment_amount,
           color: FALLBACK_COLORS[acc.length % FALLBACK_COLORS.length],
         });
+      }
       return acc;
     }, [])
     .sort((a, b) => b.value - a.value)
     .slice(0, 6);
-
-  const topCreditPurchases = getTopCreditPurchases(installments);
-  const maxCreditPurchase = Math.max(
-    ...topCreditPurchases.map((item) => item.value),
-    0,
-  );
 
   return (
     <SafeAreaView style={s.safe}>
       <ScrollView
         contentContainerStyle={s.scroll}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={["#6366f1"]}
+          />
+        }
       >
         {/* HEADER */}
         <View style={s.header}>
@@ -107,10 +219,18 @@ export default function DashboardScreen() {
 
         {/* CARD SALDO TOTAL */}
         <View style={s.balanceCard}>
-          <Text style={s.balanceLabel}>Saldo total</Text>
-          <Text style={s.balanceValue}>
-            {formatCurrency(totalBalance, currency)}
+          <Text style={s.balanceLabel}>Saldo do Mês</Text>
+          <Text
+            style={[
+              s.balanceValue,
+              summary.balance < 0 ? { color: "#ef4444" } : { color: "#fff" },
+            ]}
+          >
+            {summary.balance < 0 ? "⚠️ " : ""}
+            {/* Trocamos totalBalance por summary.balance */}
+            {formatCurrency(summary.balance, currency)}
           </Text>
+
           <View style={s.balanceRow}>
             <View style={s.balanceItem}>
               <Text style={s.balanceItemLabel}>↑ Receitas</Text>
@@ -127,20 +247,86 @@ export default function DashboardScreen() {
             </View>
           </View>
         </View>
-
-        {/* GRAFICOS */}
+        {/* Minhas Contas */}
+        <View style={s.section}>
+          <View style={s.sectionHeader}>
+            <Text style={s.sectionTitle}>Minhas Contas</Text>
+            <TouchableOpacity onPress={() => router.push("/(tabs)/accounts")}>
+              <Text style={s.seeAll}>Ver todas</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {accounts.length === 0 ? (
+              <View style={s.emptyAccounts}>
+                <Text style={s.emptyAccountsText}>Nenhuma conta criada</Text>
+              </View>
+            ) : (
+              accounts.map((account) => (
+                <TouchableOpacity
+                  key={account.id}
+                  style={[
+                    s.accountCard,
+                    { borderLeftColor: account.color || "#6366f1" },
+                  ]}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/(tabs)/accounts",
+                      params: {
+                        id: account.id,
+                        name: account.name,
+                        balance: String(account.balance),
+                        currency: account.currency,
+                        color: account.color,
+                      },
+                    })
+                  }
+                >
+                  <Text style={s.accountName}>{account.name}</Text>
+                  <Text style={s.accountBalance}>
+                    {formatCurrency(account.balance, account.currency)}
+                  </Text>
+                  <Text style={s.accountType}>
+                    {account.type === "checking"
+                      ? "Conta Corrente"
+                      : account.type}
+                  </Text>
+                </TouchableOpacity>
+              ))
+            )}
+          </ScrollView>
+        </View>
+        {/* CARROSSEL DE CARTÕES */}
+        <View style={s.section}>
+          <Text style={s.sectionTitle}>Faturas de Crédito Ativas</Text>
+          <View
+            style={[
+              s.chartCard,
+              { backgroundColor: "transparent", elevation: 0, padding: 0 },
+            ]}
+          >
+            {creditCategoryExpenses.length === 0 ? (
+              <EmptyChart message="Sem gastos de cartão cadastrados este mês." />
+            ) : (
+              <CreditCardCarousel
+                data={creditCategoryExpenses}
+                currency={currency}
+              />
+            )}
+          </View>
+        </View>
+        {/* GRAFICO: GASTOS POR CATEGORIA (Débito e Crédito) */}
         <View style={s.section}>
           <Text style={s.sectionTitle}>Gastos por categoria</Text>
           <View style={s.chartCard}>
             {isLoading ? (
               <ActivityIndicator color="#6366f1" style={s.chartLoading} />
-            ) : categoryExpenses.length === 0 ? (
-              <EmptyChart message="Nenhum gasto por categoria este mes" />
+            ) : categoryData.length === 0 ? (
+              <EmptyChart message="Nenhum gasto registrado este mês." />
             ) : (
               <>
                 <View style={s.pieWrap}>
                   <PieChart
-                    data={categoryExpenses.map((item) => ({
+                    data={categoryData.map((item) => ({
                       value: item.value,
                       color: item.color,
                     }))}
@@ -151,19 +337,19 @@ export default function DashboardScreen() {
                       <View style={s.pieCenter}>
                         <Text style={s.pieCenterLabel}>Total</Text>
                         <Text style={s.pieCenterValue}>
-                          {formatCurrency(summary.expense, currency)}
+                          {formatCurrency(totalCategoryExpenses, currency)}
                         </Text>
                       </View>
                     )}
                   />
                 </View>
                 <View style={s.legend}>
-                  {categoryExpenses.map((item) => (
+                  {categoryData.map((item) => (
                     <ChartLegendItem
                       key={item.label}
                       label={item.label}
                       color={item.color}
-                      value={formatCurrency(item.value, currency)}
+                      value={`${formatCurrency(item.value, currency)} (${item.percentage})`}
                     />
                   ))}
                 </View>
@@ -172,180 +358,58 @@ export default function DashboardScreen() {
           </View>
         </View>
 
+        {/* GRAFICO: MAIORES GASTOS NO CRÉDITO (Novo Grafico em Pizza) */}
         <View style={s.section}>
-          <Text style={s.sectionTitle}>Maiores gastos no credito</Text>
+          <Text style={s.sectionTitle}>Maiores gastos no crédito</Text>
           <View style={s.chartCard}>
-            {topCreditPurchases.length === 0 ? (
-              <EmptyChart message="Nenhuma compra de credito cadastrada" />
+            {creditPurchasesChart.data.length === 0 ? (
+              <EmptyChart message="Nenhuma compra de crédito cadastrada." />
             ) : (
-              <BarChart
-                data={topCreditPurchases.map((item, index) => ({
-                  value: item.value,
-                  label: item.label,
-                  frontColor: FALLBACK_COLORS[index % FALLBACK_COLORS.length],
-                  topLabelComponent: () => (
-                    <Text style={s.barValue}>
-                      {formatCompactCurrency(item.value, currency)}
-                    </Text>
-                  ),
-                }))}
-                width={chartWidth}
-                height={180}
-                barWidth={34}
-                spacing={18}
-                initialSpacing={10}
-                maxValue={maxCreditPurchase || 1}
-                noOfSections={4}
-                yAxisThickness={0}
-                xAxisThickness={0}
-                rulesColor="#e5e7eb"
-                yAxisTextStyle={s.axisText}
-                xAxisLabelTextStyle={s.axisLabel}
-                isAnimated
-              />
-            )}
-          </View>
-        </View>
-
-        <View style={s.section}>
-          <Text style={s.sectionTitle}>Categorias mais usadas no credito</Text>
-          <View style={s.chartCard}>
-            {creditCategoryExpenses.length === 0 ? (
-              <EmptyChart message="Sem gastos de cartao categorizados este mes" />
-            ) : (
-              <View style={s.categoryBars}>
-                {creditCategoryExpenses.map((item) => (
-                  <CategoryProgress
-                    key={item.label}
-                    label={item.label}
-                    color={item.color}
-                    value={item.value}
-                    total={creditCategoryExpenses[0]?.value ?? item.value}
-                    currency={currency}
+              <>
+                <View style={s.pieWrap}>
+                  <PieChart
+                    data={creditPurchasesChart.data.map((item) => ({
+                      value: item.value,
+                      color: item.color,
+                    }))}
+                    donut
+                    radius={82}
+                    innerRadius={52}
+                    centerLabelComponent={() => (
+                      <View style={s.pieCenter}>
+                        <Text style={s.pieCenterLabel}>Total</Text>
+                        <Text style={s.pieCenterValue}>
+                          {formatCurrency(creditPurchasesChart.total, currency)}
+                        </Text>
+                      </View>
+                    )}
                   />
-                ))}
-              </View>
+                </View>
+                <View style={s.legend}>
+                  {creditPurchasesChart.data.map((item) => (
+                    <ChartLegendItem
+                      key={item.label}
+                      label={item.label}
+                      color={item.color}
+                      value={`${formatCurrency(item.value, currency)} (${item.percentage})`}
+                    />
+                  ))}
+                </View>
+              </>
             )}
           </View>
-        </View>
-
-        {/* CONTAS */}
-        <View style={s.section}>
-          <View style={s.sectionHeader}>
-            <Text style={s.sectionTitle}>Minhas Contas</Text>
-            <TouchableOpacity
-              onPress={() =>
-                router.push({
-                  pathname: "/(tabs)/accounts",
-                  params: { openModal: "1" },
-                })
-              }
-            >
-              <Text style={s.seeAll}>+ Adicionar</Text>
-            </TouchableOpacity>
-          </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {accounts.length === 0 && (
-              <TouchableOpacity
-                style={s.emptyAccounts}
-                onPress={() => router.push("/(tabs)/accounts")}
-              >
-                <Text style={s.emptyAccountsText}>
-                  Toque para adicionar uma conta
-                </Text>
-              </TouchableOpacity>
-            )}
-            {accounts.map((account) => (
-              <TouchableOpacity
-                key={account.id}
-                style={[s.accountCard, { borderLeftColor: account.color }]}
-                onPress={() =>
-                  router.push({
-                    pathname: "/(tabs)/accounts",
-                    params: {
-                      id: account.id,
-                      name: account.name,
-                      balance: String(account.balance),
-                      currency: account.currency,
-                      color: account.color,
-                    },
-                  })
-                }
-              ></TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-
-        {/* ÚLTIMAS TRANSAÇÕES */}
-        <View style={s.section}>
-          <View style={s.sectionHeader}>
-            <Text style={s.sectionTitle}>Últimas Transações</Text>
-            <Text style={s.seeAll}>Ver todas</Text>
-          </View>
-
-          {isLoading && (
-            <ActivityIndicator color="#6366f1" style={{ marginTop: 16 }} />
-          )}
-
-          {!isLoading && transactions.length === 0 && (
-            <View style={s.empty}>
-              <Text style={s.emptyText}>Nenhuma transação este mês</Text>
-            </View>
-          )}
-
-          {!isLoading &&
-            transactions
-              .slice(0, 5)
-              .map((t) => (
-                <TransactionItem
-                  key={t.id}
-                  transaction={t}
-                  currency={currency}
-                />
-              ))}
         </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function groupTransactionsByCategory(transactions: Transaction[]) {
-  const grouped = transactions.reduce<Record<string, ChartSummary>>(
-    (acc, transaction) => {
-      const label = transaction.category?.name ?? "Sem categoria";
-      const color =
-        transaction.category?.color ??
-        FALLBACK_COLORS[Object.keys(acc).length % FALLBACK_COLORS.length];
-
-      if (!acc[label]) acc[label] = { label, value: 0, color };
-      acc[label].value += transaction.amount;
-      return acc;
-    },
-    {},
-  );
-
-  return Object.values(grouped)
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 6);
-}
-
-function getTopCreditPurchases(installments: Installment[]) {
-  return installments
-    .map((item) => ({
-      label: shortenLabel(item.title),
-      value: item.total_amount,
-    }))
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 5);
-}
+// ============================================================
+// COMPONENTES DE APOIO E FUNÇÕES AUXILIARES
+// ============================================================
 
 function shortenLabel(label: string) {
-  return label.length > 9 ? `${label.slice(0, 8)}.` : label;
-}
-
-function formatCompactCurrency(amount: number, currency: string) {
-  if (amount >= 1000) return `${formatCurrency(amount / 1000, currency)} mil`;
-  return formatCurrency(amount, currency);
+  return label.length > 15 ? `${label.slice(0, 14)}...` : label;
 }
 
 function EmptyChart({ message }: { message: string }) {
@@ -376,42 +440,6 @@ function ChartLegendItem({
   );
 }
 
-function CategoryProgress({
-  label,
-  color,
-  value,
-  total,
-  currency,
-}: {
-  label: string;
-  color: string;
-  value: number;
-  total: number;
-  currency: string;
-}) {
-  const fillWidth = total > 0 ? `${Math.max((value / total) * 100, 8)}%` : "0%";
-
-  return (
-    <View style={s.progressItem}>
-      <View style={s.progressTop}>
-        <Text style={s.progressLabel}>{label}</Text>
-        <Text style={s.progressValue}>{formatCurrency(value, currency)}</Text>
-      </View>
-      <View style={s.progressTrack}>
-        <View
-          style={[
-            s.progressFill,
-            { width: fillWidth as any, backgroundColor: color },
-          ]}
-        />
-      </View>
-    </View>
-  );
-}
-
-// ============================================================
-// ITEM DE TRANSAÇÃO — componente local (usado só aqui)
-// ============================================================
 function TransactionItem({
   transaction: t,
   currency,
@@ -422,7 +450,6 @@ function TransactionItem({
   const isIncome = t.type === "income";
   return (
     <View style={s.transactionItem}>
-      {/* Ícone de categoria */}
       <View
         style={[
           s.transactionIcon,
@@ -431,16 +458,12 @@ function TransactionItem({
       >
         <Text style={s.transactionEmoji}>{isIncome ? "↑" : "↓"}</Text>
       </View>
-
-      {/* Info */}
       <View style={s.transactionInfo}>
         <Text style={s.transactionTitle}>{t.title}</Text>
         <Text style={s.transactionCategory}>
           {t.category?.name ?? "Sem categoria"}
         </Text>
       </View>
-
-      {/* Valor + data */}
       <View style={s.transactionRight}>
         <Text
           style={[
@@ -456,11 +479,104 @@ function TransactionItem({
   );
 }
 
-type ChartSummary = {
-  label: string;
-  value: number;
-  color: string;
-};
+function CreditCardCarousel({
+  data,
+  currency,
+}: {
+  data: any[];
+  currency: string;
+}) {
+  const [activeIndex, setActiveIndex] = useState(0);
+  const flatListRef = useRef<FlatList>(null);
+  const CARD_WIDTH = 280;
+
+  const handleScroll = (event: any) => {
+    const scrollPosition = event.nativeEvent.contentOffset.x;
+    const index = Math.round(scrollPosition / CARD_WIDTH);
+    setActiveIndex(index);
+  };
+
+  const scrollToIndex = (index: number) => {
+    if (index >= 0 && index < data.length) {
+      flatListRef.current?.scrollToIndex({ index, animated: true });
+    }
+  };
+
+  return (
+    <View style={s.carouselContainer}>
+      <View style={s.carouselRow}>
+        <TouchableOpacity
+          onPress={() => scrollToIndex(activeIndex - 1)}
+          style={s.arrowBtn}
+        >
+          <Text style={s.arrowText}>{"<"}</Text>
+        </TouchableOpacity>
+
+        <FlatList
+          ref={flatListRef}
+          data={data}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          snapToInterval={CARD_WIDTH + 16}
+          decelerationRate="fast"
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
+          keyExtractor={(item) => item.label}
+          renderItem={({ item, index }) => {
+            const isFocused = index === activeIndex;
+            const nomeBanco = item.label.toLowerCase();
+            let bgColor = item.color;
+            if (nomeBanco.includes("nubank")) bgColor = "#8A05BE";
+            if (nomeBanco.includes("itaú") || nomeBanco.includes("itau"))
+              bgColor = "#EC7000";
+
+            return (
+              <View
+                style={[
+                  s.physicalCard,
+                  {
+                    backgroundColor: bgColor,
+                    transform: [{ scale: isFocused ? 1 : 0.9 }],
+                  },
+                ]}
+              >
+                <View style={s.cardTop}>
+                  <View style={s.chip}>
+                    <View style={s.chipLine} />
+                    <View style={s.chipLine} />
+                    <View style={s.chipLine} />
+                  </View>
+                  <Text style={s.bankLogoText}>{item.label}</Text>
+                </View>
+                <View>
+                  <Text style={s.cardLabel}>Total Gasto</Text>
+                  <Text style={s.cardAmount}>
+                    {formatCurrency(item.value, currency)}
+                  </Text>
+                </View>
+              </View>
+            );
+          }}
+        />
+
+        <TouchableOpacity
+          onPress={() => scrollToIndex(activeIndex + 1)}
+          style={s.arrowBtn}
+        >
+          <Text style={s.arrowText}>{">"}</Text>
+        </TouchableOpacity>
+      </View>
+      <View style={s.pagination}>
+        {data.map((_, index) => (
+          <View
+            key={index}
+            style={[s.dot, activeIndex === index ? s.dotActive : s.dotInactive]}
+          />
+        ))}
+      </View>
+    </View>
+  );
+}
 
 // ============================================================
 // STYLES
@@ -518,31 +634,8 @@ const s = StyleSheet.create({
     marginHorizontal: 16,
   },
 
-  // Accounts
-  accountCard: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 16,
-    marginRight: 12,
-    minWidth: 140,
-    borderLeftWidth: 4,
-  },
-  accountName: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#374151",
-    marginBottom: 6,
-  },
-  accountBalance: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: "#111827",
-    marginBottom: 4,
-  },
-  accountType: { fontSize: 11, color: "#9ca3af", textTransform: "capitalize" },
-
   // Section
-  section: { marginTop: 8, paddingHorizontal: 20 },
+  section: { marginTop: 8, paddingHorizontal: 20, marginBottom: 16 },
   sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -580,31 +673,6 @@ const s = StyleSheet.create({
   legendDot: { width: 10, height: 10, borderRadius: 5 },
   legendLabel: { flex: 1, fontSize: 13, color: "#374151", fontWeight: "600" },
   legendValue: { fontSize: 13, color: "#111827", fontWeight: "700" },
-  barValue: {
-    width: 58,
-    textAlign: "center",
-    fontSize: 10,
-    color: "#6b7280",
-    fontWeight: "700",
-  },
-  axisText: { color: "#9ca3af", fontSize: 10 },
-  axisLabel: { color: "#6b7280", fontSize: 10, fontWeight: "600" },
-  categoryBars: { gap: 14 },
-  progressItem: { gap: 8 },
-  progressTop: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 12,
-  },
-  progressLabel: { flex: 1, fontSize: 13, color: "#374151", fontWeight: "700" },
-  progressValue: { fontSize: 13, color: "#111827", fontWeight: "700" },
-  progressTrack: {
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: "#e5e7eb",
-    overflow: "hidden",
-  },
-  progressFill: { height: 8, borderRadius: 4 },
   emptyChart: {
     minHeight: 120,
     alignItems: "center",
@@ -635,20 +703,91 @@ const s = StyleSheet.create({
   transactionRight: { alignItems: "flex-end" },
   transactionAmount: { fontSize: 14, fontWeight: "700" },
   transactionDate: { fontSize: 11, color: "#9ca3af", marginTop: 2 },
+  empty: { paddingVertical: 20, alignItems: "center" },
+  emptyText: { color: "#9ca3af", fontSize: 14, fontStyle: "italic" },
 
-  empty: {
-    paddingVertical: 20,
-    alignItems: "center",
-  },
-  emptyAccounts: {
-    backgroundColor: "#f5f3ff",
-    borderRadius: 12,
+  // Carousel
+  carouselContainer: { alignItems: "center", marginTop: 4 },
+  carouselRow: { flexDirection: "row", alignItems: "center" },
+  arrowBtn: { padding: 8, zIndex: 10 },
+  arrowText: { fontSize: 24, fontWeight: "bold", color: "#9ca3af" },
+  physicalCard: {
+    width: 280,
+    height: 170,
+    borderRadius: 16,
     padding: 20,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#e0e7ff",
-    borderStyle: "dashed",
+    marginHorizontal: 8,
+    justifyContent: "space-between",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 8,
   },
-  emptyAccountsText: { color: "#6366f1", fontWeight: "600", fontSize: 14 },
-  emptyText: { color: "#9ca3af", fontSize: 14 },
+  cardTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+  },
+  chip: {
+    width: 38,
+    height: 28,
+    backgroundColor: "#fbbf24",
+    borderRadius: 6,
+    justifyContent: "space-evenly",
+    paddingHorizontal: 4,
+    opacity: 0.9,
+  },
+  chipLine: { height: 1, backgroundColor: "#d97706", width: "100%" },
+  bankLogoText: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "900",
+    textTransform: "uppercase",
+    opacity: 0.9,
+  },
+  cardLabel: { color: "rgba(255,255,255,0.7)", fontSize: 12, marginBottom: 2 },
+  cardAmount: {
+    color: "#fff",
+    fontSize: 26,
+    fontWeight: "bold",
+    letterSpacing: 1,
+  },
+  pagination: { flexDirection: "row", marginTop: 20, gap: 8 },
+  dot: { width: 8, height: 8, borderRadius: 4 },
+  dotActive: { backgroundColor: "#6366f1", width: 20 },
+  dotInactive: { backgroundColor: "#cbd5e1" },
+  accountCard: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 16,
+    marginRight: 12,
+    minWidth: 140,
+    borderLeftWidth: 4,
+    elevation: 2,
+  },
+  accountName: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#374151",
+    marginBottom: 6,
+  },
+  accountBalance: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: "#111827",
+    marginBottom: 4,
+  },
+  accountType: { fontSize: 11, color: "#9ca3af", textTransform: "capitalize" },
+  emptyAccounts: {
+    padding: 20,
+    backgroundColor: "#f8fafc",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    borderStyle: "dashed",
+    width: 200,
+    alignItems: "center",
+  },
+  emptyAccountsText: { color: "#6b7280", fontSize: 13, fontWeight: "600" },
 });

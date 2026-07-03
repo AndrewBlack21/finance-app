@@ -2,9 +2,11 @@ import { useEffect } from "react";
 import { supabase, authService } from "@/services";
 import { useAuthStore } from "@/store/authStore";
 import type { AuthCredentials, RegisterCredentials } from "@/types";
+import { useRouter } from "expo-router";
 
 export function useAuth() {
   const store = useAuthStore();
+  const router = useRouter();
 
   useEffect(() => {
     let mounted = true;
@@ -77,6 +79,8 @@ export function useAuth() {
     store.clear();
     store.setHydrated(true);
     store.setLoading(false);
+
+    router.replace("/(auth)/login");
   };
 
   const forgotPassword = async (email: string) => {

@@ -9,6 +9,9 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
+  Platform,
+  TextInput,
+  RefreshControl,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useForm, Controller } from "react-hook-form";
@@ -62,12 +65,22 @@ export default function FixedExpensesScreen() {
     remove,
     refetch,
   } = useFixedExpenses();
-  const { accounts } = useAccounts();
+  const { accounts, create: createAccount } = useAccounts();
+  const [refreshing, setRefreshing] = useState(false);
+  // criação de conta:
+  const [accountModalVisible, setAccountModalVisible] = useState(false);
+  const [newBankName, setNewBankName] = useState("");
+  const [newBankColor, setNewBankColor] = useState("#830ad1");
+
   const { expense: expenseCategories } = useCategories();
 
   const [modalVisible, setModalVisible] = useState(false);
   const [editing, setEditing] = useState<FixedExpense | null>(null);
-
+  const onRefresh = async () => {
+    setRefreshing(true);
+    if (refetch) await refetch();
+    setRefreshing(false);
+  };
   const {
     control,
     handleSubmit,
@@ -121,13 +134,21 @@ export default function FixedExpensesScreen() {
     setModalVisible(false);
   };
 
-  const handlePay = (expense: FixedExpense) => {
+  const handlePay = async (expense: FixedExpense) => {
+    // ----------------------------------------------------
+    // LÓGICA 1: SE A CONTA JÁ ESTIVER PAGA (DESFAZER)
+    // ----------------------------------------------------
     if (expense.is_paid) {
-      // Já paga — oferece desfazer
-      Alert.alert(
-        "Conta paga",
-        `"${expense.title}" já foi marcada como paga. Deseja desfazer?`,
-        [
+      const msgDesfazer = `"${expense.title}" já foi marcada como paga. Deseja desfazer?`;
+
+      if (Platform.OS === "web") {
+        const confirmou = window.confirm(msgDesfazer);
+        if (confirmou) {
+          const { error } = await undoPaid(expense.id);
+          if (error) window.alert("Erro: " + error);
+        }
+      } else {
+        Alert.alert("Conta paga", msgDesfazer, [
           { text: "Cancelar", style: "cancel" },
           {
             text: "Desfazer pagamento",
@@ -137,15 +158,24 @@ export default function FixedExpensesScreen() {
               if (error) Alert.alert("Erro", error);
             },
           },
-        ],
-      );
+        ]);
+      }
       return;
     }
 
-    Alert.alert(
-      "Pagar conta",
-      `Confirmar pagamento de "${expense.title}"?\n${formatCurrency(expense.amount, expense.currency)}${!expense.account_id ? "\n\n⚠️ Sem conta vinculada — apenas marcará como paga." : ""}`,
-      [
+    // ----------------------------------------------------
+    // LÓGICA 2: SE A CONTA AINDA NÃO FOI PAGA (PAGAR)
+    // ----------------------------------------------------
+    const msgPagar = `Confirmar pagamento de "${expense.title}"?\n${formatCurrency(expense.amount, expense.currency)}${!expense.account_id ? "\n\n⚠️ Sem conta vinculada — apenas marcará como paga." : ""}`;
+
+    if (Platform.OS === "web") {
+      const confirmou = window.confirm(msgPagar);
+      if (confirmou) {
+        const { error } = await markAsPaid(expense);
+        if (error) window.alert("Erro: " + error);
+      }
+    } else {
+      Alert.alert("Pagar conta", msgPagar, [
         { text: "Cancelar", style: "cancel" },
         {
           text: "Confirmar",
@@ -154,15 +184,26 @@ export default function FixedExpensesScreen() {
             if (error) Alert.alert("Erro", error);
           },
         },
-      ],
-    );
+      ]);
+    }
   };
 
+  // Função atualizada para apagar contas fixas de forma segura
   const handleDelete = (item: FixedExpense) => {
-    Alert.alert(
-      "Remover conta fixa",
-      `Tem certeza que deseja remover "${item.title}"?\n\nEssa ação não pode ser desfeita.`,
-      [
+    const mensagem = `Tem certeza que deseja remover "${item.title}"?\n\nEssa ação não pode ser desfeita.`;
+
+    // Verificação para ambiente Web
+    if (Platform.OS === "web") {
+      const confirmou = window.confirm(mensagem);
+      if (confirmou) {
+        remove(item.id).then(({ error }) => {
+          if (error) window.alert("Erro ao remover: " + error);
+        });
+      }
+    }
+    // Verificação para ambiente Mobile (iOS/Android)
+    else {
+      Alert.alert("Remover conta fixa", mensagem, [
         { text: "Cancelar", style: "cancel" },
         {
           text: "Remover",
@@ -172,8 +213,8 @@ export default function FixedExpensesScreen() {
             if (error) Alert.alert("Erro ao remover", error);
           },
         },
-      ],
-    );
+      ]);
+    }
   };
 
   const handleEdit = (item: FixedExpense) => {
@@ -241,6 +282,13 @@ export default function FixedExpensesScreen() {
           data={sorted}
           keyExtractor={(e) => e.id}
           contentContainerStyle={s.list}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={["#6366f1"]}
+            />
+          }
           ListEmptyComponent={
             <View style={s.empty}>
               <Text style={s.emptyText}>Nenhuma conta fixa cadastrada</Text>
@@ -367,9 +415,9 @@ export default function FixedExpensesScreen() {
               )}
             />
 
-            {accounts.length > 0 && (
+            {accounts.length >= 0 && ( // Mudamos de > 0 para >= 0 para o botão sempre aparecer
               <>
-                <Text style={s.label}>Débitar da conta (opcional)</Text>
+                <Text style={s.label}>Debitar da conta (opcional)</Text>
                 <Controller
                   name="account_id"
                   control={control}
@@ -379,6 +427,25 @@ export default function FixedExpensesScreen() {
                       showsHorizontalScrollIndicator={false}
                     >
                       <View style={s.optionRow}>
+                        {/* NOVO BOTÃO: + Nova Conta */}
+                        <TouchableOpacity
+                          style={[
+                            s.optionBtn,
+                            {
+                              backgroundColor: "#eef2ff",
+                              borderColor: "#c7d2fe",
+                            },
+                          ]}
+                          onPress={() => setAccountModalVisible(true)}
+                        >
+                          <Text
+                            style={{ color: "#4f46e5", fontWeight: "bold" }}
+                          >
+                            + Nova
+                          </Text>
+                        </TouchableOpacity>
+
+                        {/* Lista de contas existentes */}
                         {accounts.map((a) => (
                           <TouchableOpacity
                             key={a.id}
@@ -402,6 +469,141 @@ export default function FixedExpensesScreen() {
                           </TouchableOpacity>
                         ))}
                       </View>
+
+                      {/* MODAL RÁPIDO DE NOVA CONTA */}
+                      <Modal
+                        visible={accountModalVisible}
+                        animationType="fade"
+                        transparent={true}
+                      >
+                        <View
+                          style={{
+                            flex: 1,
+                            backgroundColor: "rgba(0,0,0,0.5)",
+                            justifyContent: "center",
+                            padding: 20,
+                          }}
+                        >
+                          <View
+                            style={{
+                              backgroundColor: "#fff",
+                              padding: 20,
+                              borderRadius: 16,
+                            }}
+                          >
+                            <Text
+                              style={{
+                                fontSize: 18,
+                                fontWeight: "bold",
+                                marginBottom: 16,
+                              }}
+                            >
+                              Nova Conta
+                            </Text>
+
+                            <TextInput
+                              style={{
+                                borderWidth: 1,
+                                borderColor: "#d1d5db",
+                                padding: 12,
+                                borderRadius: 8,
+                                marginBottom: 16,
+                              }}
+                              placeholder="Nome do Banco (Ex: Nubank)"
+                              value={newBankName}
+                              onChangeText={setNewBankName}
+                            />
+
+                            <Text
+                              style={{ marginBottom: 8, fontWeight: "600" }}
+                            >
+                              Cor:
+                            </Text>
+                            <View
+                              style={{
+                                flexDirection: "row",
+                                gap: 10,
+                                marginBottom: 20,
+                                flexWrap: "wrap",
+                              }}
+                            >
+                              {[
+                                "#830ad1",
+                                "#ec7000",
+                                "#ff7a00",
+                                "#1d823b",
+                                "#e11d48",
+                                "#2563eb",
+                                "#16a34a",
+                                "#475569",
+                              ].map((color) => (
+                                <TouchableOpacity
+                                  key={color}
+                                  onPress={() => setNewBankColor(color)}
+                                  style={{
+                                    width: 35,
+                                    height: 35,
+                                    borderRadius: 20,
+                                    backgroundColor: color,
+                                    borderWidth: newBankColor === color ? 3 : 0,
+                                  }}
+                                />
+                              ))}
+                            </View>
+
+                            <View style={{ flexDirection: "row", gap: 10 }}>
+                              <TouchableOpacity
+                                style={{
+                                  flex: 1,
+                                  padding: 12,
+                                  backgroundColor: "#f3f4f6",
+                                  borderRadius: 8,
+                                  alignItems: "center",
+                                }}
+                                onPress={() => setAccountModalVisible(false)}
+                              >
+                                <Text
+                                  style={{
+                                    fontWeight: "bold",
+                                    color: "#4b5563",
+                                  }}
+                                >
+                                  Cancelar
+                                </Text>
+                              </TouchableOpacity>
+
+                              <TouchableOpacity
+                                style={{
+                                  flex: 1,
+                                  padding: 12,
+                                  backgroundColor: newBankColor,
+                                  borderRadius: 8,
+                                  alignItems: "center",
+                                }}
+                                onPress={async () => {
+                                  if (!newBankName) return;
+                                  await createAccount({
+                                    name: newBankName,
+                                    color: newBankColor,
+                                    type: "checking",
+                                    balance: 0,
+                                    currency: "BRL",
+                                    due_day: null,
+                                  });
+                                  setNewBankName("");
+                                  setAccountModalVisible(false);
+                                }}
+                              >
+                                <Text
+                                  style={{ fontWeight: "bold", color: "#fff" }}
+                                >
+                                  Salvar
+                                </Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        </View>
+                      </Modal>
                     </ScrollView>
                   )}
                 />

@@ -5,7 +5,10 @@ import {
   ScrollView,
   StyleSheet,
   Switch,
+  Modal,
+  TextInput,
 } from "react-native";
+import { useState } from "react";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useForm, Controller } from "react-hook-form";
@@ -68,10 +71,14 @@ export function TransactionForm({
   isLoading,
   initialValues,
 }: TransactionFormProps) {
-  const { accounts } = useAccounts();
+  const { accounts, create: createAccount } = useAccounts();
   const router = useRouter();
   const { income, expense } = useCategories();
   const { create: createFixed } = useFixedExpenses();
+  // 3. Crie os estados para controlar o Modal de Nova Conta
+  const [accountModalVisible, setAccountModalVisible] = useState(false);
+  const [newBankName, setNewBankName] = useState("");
+  const [newBankColor, setNewBankColor] = useState("#830ad1");
 
   const today = new Date().toISOString().split("T")[0];
 
@@ -279,34 +286,43 @@ export function TransactionForm({
         name="account_id"
         control={control}
         render={({ field: { onChange, value } }) => (
-          <>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={s.optionRow}>
-                {accounts.map((a) => (
-                  <TouchableOpacity
-                    key={a.id}
-                    style={[
-                      s.optionBtn,
-                      value === a.id && { backgroundColor: a.color },
-                    ]}
-                    onPress={() => onChange(a.id)}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View style={s.optionRow}>
+              {/* NOVO BOTÃO: + Nova Conta */}
+              <TouchableOpacity
+                style={[
+                  s.optionBtn,
+                  { backgroundColor: "#eef2ff", borderColor: "#c7d2fe" },
+                ]}
+                onPress={() => setAccountModalVisible(true)}
+              >
+                <Text style={{ color: "#4f46e5", fontWeight: "bold" }}>
+                  + Nova
+                </Text>
+              </TouchableOpacity>
+
+              {/* Lista de contas existentes */}
+              {accounts.map((a) => (
+                <TouchableOpacity
+                  key={a.id}
+                  style={[
+                    s.optionBtn,
+                    value === a.id && {
+                      backgroundColor: a.color,
+                      borderColor: a.color,
+                    },
+                  ]}
+                  onPress={() => onChange(a.id)}
+                >
+                  <Text
+                    style={[s.optionText, value === a.id && { color: "#fff" }]}
                   >
-                    <Text
-                      style={[
-                        s.optionText,
-                        value === a.id && s.optionTextActive,
-                      ]}
-                    >
-                      {a.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </ScrollView>
-            {errors.account_id && (
-              <FormError message={errors.account_id.message!} />
-            )}
-          </>
+                    {a.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </ScrollView>
         )}
       />
 
@@ -406,6 +422,122 @@ export function TransactionForm({
           <Text style={s.saveText}>{isLoading ? "Salvando..." : "Salvar"}</Text>
         </TouchableOpacity>
       </View>
+
+      {/* MODAL RÁPIDO DE NOVA CONTA */}
+      <Modal
+        visible={accountModalVisible}
+        animationType="fade"
+        transparent={true}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(0,0,0,0.5)",
+            justifyContent: "center",
+            padding: 20,
+          }}
+        >
+          <View
+            style={{ backgroundColor: "#fff", padding: 20, borderRadius: 16 }}
+          >
+            <Text
+              style={{ fontSize: 18, fontWeight: "bold", marginBottom: 16 }}
+            >
+              Nova Conta
+            </Text>
+
+            <TextInput
+              style={{
+                borderWidth: 1,
+                borderColor: "#d1d5db",
+                padding: 12,
+                borderRadius: 8,
+                marginBottom: 16,
+              }}
+              placeholder="Nome do Banco (Ex: Nubank)"
+              value={newBankName}
+              onChangeText={setNewBankName}
+            />
+
+            <Text style={{ marginBottom: 8, fontWeight: "600" }}>Cor:</Text>
+            <View
+              style={{
+                flexDirection: "row",
+                gap: 10,
+                marginBottom: 20,
+                flexWrap: "wrap",
+              }}
+            >
+              {[
+                "#830ad1",
+                "#ec7000",
+                "#ff7a00",
+                "#1d823b",
+                "#e11d48",
+                "#2563eb",
+                "#16a34a",
+                "#475569",
+              ].map((color) => (
+                <TouchableOpacity
+                  key={color}
+                  onPress={() => setNewBankColor(color)}
+                  style={{
+                    width: 35,
+                    height: 35,
+                    borderRadius: 20,
+                    backgroundColor: color,
+                    borderWidth: newBankColor === color ? 3 : 0,
+                  }}
+                />
+              ))}
+            </View>
+
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <TouchableOpacity
+                style={{
+                  flex: 1,
+                  padding: 12,
+                  backgroundColor: "#f3f4f6",
+                  borderRadius: 8,
+                  alignItems: "center",
+                }}
+                onPress={() => setAccountModalVisible(false)}
+              >
+                <Text style={{ fontWeight: "bold", color: "#4b5563" }}>
+                  Cancelar
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={{
+                  flex: 1,
+                  padding: 12,
+                  backgroundColor: newBankColor,
+                  borderRadius: 8,
+                  alignItems: "center",
+                }}
+                onPress={async () => {
+                  if (!newBankName) return;
+                  await createAccount({
+                    name: newBankName,
+                    color: newBankColor,
+                    type: "checking",
+                    balance: 0,
+                    currency: "BRL",
+                    due_day: null, // <-- Correção do TypeScript garantida aqui!
+                  });
+                  setNewBankName("");
+                  setAccountModalVisible(false);
+                }}
+              >
+                <Text style={{ fontWeight: "bold", color: "#fff" }}>
+                  Salvar
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
