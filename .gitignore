@@ -45,3 +45,4 @@ expo-start.*.log
 # generated native folders
 /ios
 /android
+.vercel

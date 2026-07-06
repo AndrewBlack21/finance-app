@@ -98,14 +98,44 @@ export default function AccountDetailScreen() {
     [period, baseDate],
   );
 
-  const historyTransactions = useMemo(
-    () => transactions.filter((t) => isDateInsideRange(t.date, periodRange)),
-    [transactions, periodRange],
-  );
-  const historyTotals = historyTransactions.reduce(
-    (acc, t) => {
-      if (t.type === "income") acc.income += t.amount;
-      if (t.type === "expense") acc.expense += t.amount;
+  // 1. Cria uma lista unificada juntando Débito e Crédito para o Histórico
+  const unifiedHistory = useMemo(() => {
+    // A. Pega nas transações normais (Débito/Entradas)
+    const txs = transactions
+      .filter((t) => isDateInsideRange(t.date, periodRange))
+      .map((t) => ({
+        ...t,
+        isCredit: false,
+        displayDate: t.date,
+      }));
+
+    // B. Pega nas compras parceladas (Crédito) e transforma-as em despesas
+    const insts = installments
+      .map((i) => {
+        const dateString = i.start_date
+          ? i.start_date.split("T")[0]
+          : i.created_at.split("T")[0];
+        return {
+          ...i,
+          type: "expense", // Força a ser despesa para abater no resultado
+          amount: i.installment_amount, // Usa o valor da parcela
+          isCredit: true,
+          displayDate: dateString,
+        };
+      })
+      .filter((i) => isDateInsideRange(i.displayDate, periodRange));
+
+    // C. Junta tudo e ordena da data mais recente para a mais antiga
+    return [...txs, ...insts].sort((a, b) =>
+      b.displayDate.localeCompare(a.displayDate),
+    );
+  }, [transactions, installments, periodRange]);
+
+  // 2. Calcula os totais com base na lista unificada
+  const historyTotals = unifiedHistory.reduce(
+    (acc, item) => {
+      if (item.type === "income") acc.income += item.amount;
+      if (item.type === "expense") acc.expense += item.amount;
       return acc;
     },
     { income: 0, expense: 0 },
@@ -197,10 +227,14 @@ export default function AccountDetailScreen() {
           keyExtractor={(t) => t.id}
           contentContainerStyle={s.list}
           ListEmptyComponent={
-            <EmptyState text="Nenhuma transacao nesta conta" />
+            <EmptyState text="Nenhuma transação nesta conta" />
           }
+          // Passamos displayDate para manter o componente TransactionRow genérico
           renderItem={({ item }) => (
-            <TransactionRow transaction={item} currency={accountCurrency} />
+            <TransactionRow
+              item={{ ...item, displayDate: item.date }}
+              currency={accountCurrency}
+            />
           )}
         />
       ) : tab === "credito" ? (
@@ -217,8 +251,9 @@ export default function AccountDetailScreen() {
         />
       ) : (
         <FlatList
-          data={historyTransactions}
-          keyExtractor={(t) => t.id}
+          data={unifiedHistory}
+          // Garante que o ID não se repita caso uma transação e parcela tenham o mesmo ID acidentalmente
+          keyExtractor={(t) => t.id + (t.isCredit ? "-C" : "-D")}
           contentContainerStyle={s.list}
           ListHeaderComponent={
             <HistoryHeader
@@ -232,10 +267,10 @@ export default function AccountDetailScreen() {
             />
           }
           ListEmptyComponent={
-            <EmptyState text="Nenhum movimento neste periodo" />
+            <EmptyState text="Nenhum movimento neste período" />
           }
           renderItem={({ item }) => (
-            <TransactionRow transaction={item} currency={accountCurrency} />
+            <TransactionRow item={item} currency={accountCurrency} />
           )}
         />
       )}
@@ -402,9 +437,24 @@ function HistoryHeader({
 }
 
 // ... COMPONENTES DE CARTÃO E TRANSAÇÃO MANTIDOS ...
-function TransactionRow({ transaction: t, currency }: any) {
-  const isIncome = t.type === "income";
+// ============================================================
+// COMPONENTES DE LISTAGEM ATUALIZADOS
+// ============================================================
+
+function TransactionRow({ item, currency }: any) {
+  const isIncome = item.type === "income";
   const color = isIncome ? "#16a34a" : "#dc2626";
+
+  // Inteligência para gerar o subtítulo correto
+  let subtitle = "";
+  if (item.isCredit) {
+    subtitle = `Crédito · Parcela ${item.paid_installments + 1}/${item.total_installments}\nData prog.: ${formatDate(item.displayDate)}`;
+  } else {
+    const catName = item.category?.name ?? "Sem categoria";
+    const payType = isIncome ? "Entrada" : "Compra no débito";
+    subtitle = `${catName} (${payType})\nData: ${formatDate(item.displayDate)}`;
+  }
+
   return (
     <View style={s.item}>
       <View style={[s.itemIcon, { backgroundColor: `${color}18` }]}>
@@ -415,26 +465,69 @@ function TransactionRow({ transaction: t, currency }: any) {
         />
       </View>
       <View style={s.itemInfo}>
-        <Text style={s.itemTitle}>{t.title}</Text>
-        <Text style={s.itemSub}>
-          {t.category?.name ?? "Sem categoria"} · {formatDate(t.date)}
+        <Text style={s.itemTitle}>{item.title}</Text>
+        <Text style={[s.itemSub, { marginTop: 4, lineHeight: 16 }]}>
+          {subtitle}
         </Text>
       </View>
       <Text style={[s.itemAmount, { color }]}>
         {isIncome ? "+" : "-"}
-        {formatCurrency(t.amount, currency)}
+        {formatCurrency(item.amount, currency)}
       </Text>
     </View>
   );
 }
+
 function InstallmentCard({ installment: i, currency }: any) {
-  // Simplificado para o exemplo, mantenha o código do seu InstallmentCard atual
+  // Inteligência para extrair e formatar o mês da fatura de forma segura
+  const dateString = i.start_date
+    ? i.start_date.split("T")[0]
+    : i.created_at.split("T")[0];
+  const [year, month, day] = dateString.split("-");
+  const dateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+
+  const mesFatura = new Intl.DateTimeFormat("pt-BR", {
+    month: "long",
+    year: "numeric",
+  }).format(dateObj);
+
   return (
-    <View style={s.installCard}>
-      <Text>{i.title}</Text>
+    <View
+      style={[
+        s.installCard,
+        { flexDirection: "row", justifyContent: "space-between" },
+      ]}
+    >
+      <View style={{ flex: 1, paddingRight: 10 }}>
+        <Text style={s.itemTitle}>{i.title}</Text>
+        <Text style={[s.itemSub, { marginTop: 4 }]}>
+          Mês da fatura:{" "}
+          <Text
+            style={{
+              fontWeight: "700",
+              textTransform: "capitalize",
+              color: "#6366f1",
+            }}
+          >
+            {mesFatura}
+          </Text>
+        </Text>
+        <Text style={s.itemSub}>
+          Progresso: Parcela {i.paid_installments + 1} de {i.total_installments}
+        </Text>
+      </View>
+      <View style={{ alignItems: "flex-end", justifyContent: "center" }}>
+        <Text style={[s.itemAmount, { color: "#111827" }]}>
+          {formatCurrency(i.installment_amount, currency)}
+        </Text>
+        <Text style={{ fontSize: 11, color: "#9ca3af", marginTop: 4 }}>
+          Total: {formatCurrency(i.total_amount, currency)}
+        </Text>
+      </View>
     </View>
   );
 }
+
 function EmptyState({ text }: { text: string }) {
   return (
     <View style={s.empty}>

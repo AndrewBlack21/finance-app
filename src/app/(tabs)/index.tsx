@@ -109,7 +109,7 @@ export default function DashboardScreen() {
 
     // B. Soma parcelas do cartão de crédito
     installments.forEach((i) => {
-      if (i.paid_installments < i.total_installments) {
+      if (i.paid_installments < i.total_installments && i.start_date <= to) {
         const label = (i as any).category?.name ?? "Cartão de Crédito";
         const color = (i as any).category?.color ?? FALLBACK_COLORS[2];
         if (!grouped[label]) grouped[label] = { label, value: 0, color };
@@ -148,7 +148,7 @@ export default function DashboardScreen() {
 
     // FILTRO NOVO: Puxa apenas as compras parceladas que AINDA estão ativas
     const activeInstallments = installments.filter(
-      (i) => i.paid_installments < i.total_installments,
+      (i) => i.paid_installments < i.total_installments && i.start_date <= to,
     );
 
     const data = activeInstallments
@@ -174,7 +174,9 @@ export default function DashboardScreen() {
 
   // 3. Agrupamento para o Carrossel de Cartões
   const creditCategoryExpenses = installments
-    .filter((i) => i.paid_installments < i.total_installments)
+    .filter(
+      (i) => i.paid_installments < i.total_installments && i.start_date <= to,
+    )
     .reduce<{ label: string; value: number; color: string }[]>((acc, i) => {
       const existing = acc.find(
         (x) => x.label === (i.account?.name ?? "Crédito"),
@@ -296,7 +298,7 @@ export default function DashboardScreen() {
           </ScrollView>
         </View>
         {/* CARROSSEL DE CARTÕES */}
-        <View style={s.section}>
+        <ScrollView style={s.section}>
           <Text style={s.sectionTitle}>Faturas de Crédito Ativas</Text>
           <View
             style={[
@@ -313,7 +315,7 @@ export default function DashboardScreen() {
               />
             )}
           </View>
-        </View>
+        </ScrollView>
         {/* GRAFICO: GASTOS POR CATEGORIA (Débito e Crédito) */}
         <View style={s.section}>
           <Text style={s.sectionTitle}>Gastos por categoria</Text>
@@ -498,7 +500,16 @@ function CreditCardCarousel({
 
   const scrollToIndex = (index: number) => {
     if (index >= 0 && index < data.length) {
-      flatListRef.current?.scrollToIndex({ index, animated: true });
+      // Usamos Offset (matemática de pixels) em vez de Index. É muito mais estável na Web!
+      // Multiplicamos a largura do cartão pelo índice. Adicionamos uma margem de segurança (ex: 16px).
+      const offsetToScroll = index * (CARD_WIDTH + 16);
+
+      flatListRef.current?.scrollToOffset({
+        offset: offsetToScroll,
+        animated: true,
+      });
+
+      setActiveIndex(index); // Força a atualização da bolinha de paginação
     }
   };
 
@@ -522,6 +533,13 @@ function CreditCardCarousel({
           onScroll={handleScroll}
           scrollEventThrottle={16}
           keyExtractor={(item) => item.label}
+          // 👇 ADIÇÕES CRUCIAIS PARA CORRIGIR O BUG NA WEB 👇
+          style={{ flex: 1 }}
+          contentContainerStyle={{
+            paddingHorizontal: 16,
+          }}
+          // 👆 ========================================= 👆
+
           renderItem={({ item, index }) => {
             const isFocused = index === activeIndex;
             const nomeBanco = item.label.toLowerCase();
@@ -708,7 +726,13 @@ const s = StyleSheet.create({
 
   // Carousel
   carouselContainer: { alignItems: "center", marginTop: 4 },
-  carouselRow: { flexDirection: "row", alignItems: "center" },
+  carouselRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    overflow: "hidden",
+    justifyContent: "space-between",
+    width: "100%",
+  },
   arrowBtn: { padding: 8, zIndex: 10 },
   arrowText: { fontSize: 24, fontWeight: "bold", color: "#9ca3af" },
   physicalCard: {

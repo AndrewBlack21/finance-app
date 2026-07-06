@@ -16,7 +16,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useInstallments } from "@/hooks/useInstallments";
 import { useAccounts } from "@/hooks/useAccounts";
-import { formatCurrency } from "@/utils";
+import { formatCurrency, getCurrentMonthRange } from "@/utils";
 import type { Installment, Account } from "@/types";
 
 interface InvoiceGroup {
@@ -30,7 +30,7 @@ export default function CreditScreen() {
   const { installments, payFullInvoice, create, update, remove, refetch } =
     useInstallments();
   const { accounts, refetch: refetchAccounts } = useAccounts();
-
+  const { to } = getCurrentMonthRange();
   // 1. Estado para controlar quais faturas foram pagas nesta sessão
   const [paidThisMonth, setPaidThisMonth] = useState<string[]>([]);
 
@@ -39,33 +39,62 @@ export default function CreditScreen() {
   const [editingItem, setEditingItem] = useState<Installment | null>(null);
 
   // 3. Lógica de Agrupamento e Previsão
-  const invoiceGroups: InvoiceGroup[] = useMemo(() => {
-    return accounts.map((acc) => {
-      const active = installments.filter(
-        (i) =>
-          i.account_id === acc.id && i.paid_installments < i.total_installments,
+  // Agrupa os cartões e calcula as faturas com inteligência de data e parcelas
+  // Agrupa os cartões e calcula as faturas com matemática exata de parcelas e datas
+  const invoiceGroups = useMemo(() => {
+    return accounts
+      .map((acc) => {
+        // 1. Pega todas as compras ativas deste cartão que ainda não foram totalmente quitadas
+        const allActive = installments.filter(
+          (i) =>
+            i.account_id === acc.id &&
+            i.paid_installments < i.total_installments,
+        );
+
+        // 2. FATURA ATUAL (Julho): Só entram compras sem data OU com data deste mês para trás
+        const currentMonthInstallments = allActive.filter(
+          (i) => !i.start_date || i.start_date <= to,
+        );
+        const invoiceTotal = currentMonthInstallments.reduce(
+          (sum, i) => sum + i.installment_amount,
+          0,
+        );
+
+        // 3. PREVISÃO DO PRÓXIMO MÊS (Agosto) - Matemática à prova de falhas:
+        const nextInvoiceTotal = allActive.reduce((sum, i) => {
+          // CASO A: A compra foi marcada com o Checkbox (Fatura Fechada) -> Vai DIRETO para o mês que vem
+          if (i.start_date && i.start_date > to) {
+            return sum + i.installment_amount;
+          }
+
+          // CASO B: Compras normais/antigas (Ex: BambuLab ou compras 1 de 1)
+          if (!i.start_date || i.start_date <= to) {
+            // Se o utilizador pagar a parcela deste mês, quantas vão sobrar para o mês que vem?
+            const parcelasRestantesAposEsteMes =
+              i.total_installments - (i.paid_installments + 1);
+
+            // SE SOBRAR 0 OU MENOS (Ex: era 1 de 1, ou 12 de 12), ela ACABA ESTE MÊS e NÃO SOMA em Agosto!
+            if (parcelasRestantesAposEsteMes > 0) {
+              return sum + i.installment_amount;
+            }
+          }
+
+          return sum;
+        }, 0);
+
+        return {
+          account: acc,
+          // Exibe na lista de Julho apenas o que pertence a Julho
+          activeInstallments: currentMonthInstallments,
+          invoiceTotal,
+          nextInvoiceTotal,
+        };
+      })
+      .filter(
+        (group) =>
+          group.activeInstallments.length > 0 || group.nextInvoiceTotal > 0,
       );
-
-      // Fatura atual (tudo que está ativo)
-      const invoiceTotal = active.reduce(
-        (sum, i) => sum + i.installment_amount,
-        0,
-      );
-
-      // Fatura do próximo mês (só entram compras com mais de 1 parcela restante)
-      const nextInvoiceTotal = active.reduce((sum, i) => {
-        const remaining = i.total_installments - i.paid_installments;
-        return remaining > 1 ? sum + i.installment_amount : sum;
-      }, 0);
-
-      return {
-        account: acc,
-        activeInstallments: active,
-        invoiceTotal,
-        nextInvoiceTotal,
-      };
-    });
-  }, [accounts, installments]);
+  }, [accounts, installments, to]);
 
   // Separação das listas
   const pendingCards = invoiceGroups.filter(
@@ -302,7 +331,7 @@ function InstallmentFormModal({
   const [val1, setVal1] = useState(""); // Total (A) ou Parcela (B)
   const [val2, setVal2] = useState(""); // Qtd Parcelas (A) ou Restantes (B)
   const [accountId, setAccountId] = useState("");
-
+  const [isNextMonth, setIsNextMonth] = useState(false);
   useEffect(() => {
     if (visible) {
       if (initialData) {
@@ -326,10 +355,14 @@ function InstallmentFormModal({
     if (!title || isNaN(v1) || isNaN(v2))
       return Alert.alert("Erro", "Preencha os campos corretamente.");
 
-    let total_amount = 0;
-    let total_installments = 0;
-    let installment_amount = 0;
-    let paid_installments = initialData ? initialData.paid_installments : 0;
+    const dateObj = new Date();
+    if (isNextMonth) dateObj.setMonth(dateObj.getMonth() + 1);
+    const finalStartDate = dateObj.toISOString().split("T")[0];
+
+    let total_amount = 0,
+      total_installments = 0,
+      installment_amount = 0;
+    const paid_installments = initialData?.paid_installments ?? 0;
 
     if (mode === "A") {
       total_amount = v1;
@@ -337,8 +370,7 @@ function InstallmentFormModal({
       installment_amount = total_amount / total_installments;
     } else {
       installment_amount = v1;
-      const remaining = v2;
-      total_installments = paid_installments + remaining;
+      total_installments = paid_installments + v2;
       total_amount = installment_amount * total_installments;
     }
 
@@ -349,7 +381,7 @@ function InstallmentFormModal({
       installment_amount,
       account_id: accountId,
       currency: "BRL",
-      start_date: new Date().toISOString(),
+      start_date: finalStartDate, // ← data correta com lógica do checkbox
     });
   };
 
@@ -444,6 +476,44 @@ function InstallmentFormModal({
                   keyboardType="numeric"
                 />
               </View>
+              {/* NOVA CAIXINHA DE "FATURA FECHADA" */}
+              <TouchableOpacity
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  marginTop: 16,
+                }}
+                onPress={() => setIsNextMonth(!isNextMonth)}
+              >
+                <View
+                  style={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: 6,
+                    borderWidth: 2,
+                    borderColor: "#6366f1",
+                    marginRight: 10,
+                    backgroundColor: isNextMonth ? "#6366f1" : "transparent",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  {isNextMonth && (
+                    <Text
+                      style={{
+                        color: "#fff",
+                        fontSize: 14,
+                        fontWeight: "bold",
+                      }}
+                    >
+                      ✓
+                    </Text>
+                  )}
+                </View>
+                <Text style={{ color: "#374151", fontSize: 13, flex: 1 }}>
+                  Fatura já fechou? (Lançar apenas no próximo mês)
+                </Text>
+              </TouchableOpacity>
             </View>
 
             <View style={{ flexDirection: "row", gap: 10, marginTop: 24 }}>
