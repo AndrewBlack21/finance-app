@@ -18,6 +18,11 @@ import { useInstallments } from "@/hooks/useInstallments";
 import { useAccounts } from "@/hooks/useAccounts";
 import { formatCurrency, getCurrentMonthRange } from "@/utils";
 import type { Installment, Account } from "@/types";
+import {
+  transactionService,
+  accountService,
+  installmentService,
+} from "@/services";
 
 interface InvoiceGroup {
   account: Account;
@@ -27,88 +32,121 @@ interface InvoiceGroup {
 }
 
 export default function CreditScreen() {
-  const { installments, payFullInvoice, create, update, remove, refetch } =
-    useInstallments();
+  const {
+    installments,
+    payFullInvoice,
+    create,
+    update,
+    remove,
+    refetch: refetchInstallments,
+  } = useInstallments();
   const { accounts, refetch: refetchAccounts } = useAccounts();
   const { to } = getCurrentMonthRange();
   // 1. Estado para controlar quais faturas foram pagas nesta sessão
-  const [paidThisMonth, setPaidThisMonth] = useState<string[]>([]);
 
   // 2. Estados do Modal de Edição/Criação
   const [modalVisible, setModalVisible] = useState(false);
   const [editingItem, setEditingItem] = useState<Installment | null>(null);
+  const [payModalVisible, setPayModalVisible] = useState(false);
+  const [payingGroup, setPayingGroup] = useState<any>(null);
+  const [sourceAccountId, setSourceAccountId] = useState<string>("");
 
+  // A LÓGICA DO PAGAMENTO PERFEITO
+  const handleConfirmPayment = async () => {
+    if (!sourceAccountId || !payingGroup) return;
+
+    // 1. Desconta o valor do saldo da conta selecionada (Ex: Corrente)
+
+    // 2. Cria UMA ÚNICA Transação limpa no Histórico
+    await transactionService.create({
+      account_id: sourceAccountId,
+      title: `Pagamento Fatura ${payingGroup.account.name}`,
+      amount: payingGroup.invoiceTotal,
+      type: "expense",
+      date: new Date().toISOString().split("T")[0],
+      currency: payingGroup.account.currency ?? "BRL",
+
+      category_id: null,
+    } as any);
+
+    // 3. Atualiza as parcelas do cartão para "Pagas"
+    await payFullInvoice(payingGroup.account.id);
+
+    // 4. Sincroniza a tela para NUNCA MAIS voltar a pendente
+    setPayModalVisible(false);
+    setPayingGroup(null);
+    setSourceAccountId("");
+    await onRefresh();
+  };
   // 3. Lógica de Agrupamento e Previsão
   // Agrupa os cartões e calcula as faturas com inteligência de data e parcelas
   // Agrupa os cartões e calcula as faturas com matemática exata de parcelas e datas
+  // Agrupa os cartões e separa as faturas em "Atual" e "Próxima"
   const invoiceGroups = useMemo(() => {
+    const currentMonth = new Date().toISOString().slice(0, 7); // Ex: "2026-07"
+
     return accounts
       .map((acc) => {
-        // 1. Pega todas as compras ativas deste cartão que ainda não foram totalmente quitadas
-        const allActive = installments.filter(
+        const allActive = installments.filter((i) => i.account_id === acc.id);
+
+        // 2. LISTA DA FATURA ATUAL (Julho)
+        const currentInstallments = allActive.filter(
           (i) =>
-            i.account_id === acc.id &&
+            (!i.start_date || i.start_date <= to) &&
             i.paid_installments < i.total_installments,
         );
 
-        // 2. FATURA ATUAL (Julho): Só entram compras sem data OU com data deste mês para trás
-        const currentMonthInstallments = allActive.filter(
-          (i) => !i.start_date || i.start_date <= to,
-        );
-        const invoiceTotal = currentMonthInstallments.reduce(
-          (sum, i) => sum + i.installment_amount,
+        // A fatura está PAGA se todas as parcelas deste mês tiverem o marcador de mês correto
+        const isInvoicePaid =
+          allActive.length > 0 &&
+          allActive
+            .filter((i) => !i.start_date || i.start_date <= to)
+            .every((i) => i.invoice_paid_month === currentMonth);
+
+        // Se estiver paga, o valor total da fatura "pendente" é 0 (ou mantemos o valor para histórico)
+        const invoiceTotal = currentInstallments.reduce(
+          (sum, i) => sum + Number(i.installment_amount),
           0,
         );
 
-        // 3. PREVISÃO DO PRÓXIMO MÊS (Agosto) - Matemática à prova de falhas:
-        const nextInvoiceTotal = allActive.reduce((sum, i) => {
-          // CASO A: A compra foi marcada com o Checkbox (Fatura Fechada) -> Vai DIRETO para o mês que vem
-          if (i.start_date && i.start_date > to) {
-            return sum + i.installment_amount;
-          }
-
-          // CASO B: Compras normais/antigas (Ex: BambuLab ou compras 1 de 1)
+        // 3. LISTA DA PRÓXIMA FATURA (Agosto)
+        const nextInstallments = allActive.filter((i) => {
+          if (i.start_date && i.start_date > to) return true;
           if (!i.start_date || i.start_date <= to) {
-            // Se o utilizador pagar a parcela deste mês, quantas vão sobrar para o mês que vem?
-            const parcelasRestantesAposEsteMes =
-              i.total_installments - (i.paid_installments + 1);
-
-            // SE SOBRAR 0 OU MENOS (Ex: era 1 de 1, ou 12 de 12), ela ACABA ESTE MÊS e NÃO SOMA em Agosto!
-            if (parcelasRestantesAposEsteMes > 0) {
-              return sum + i.installment_amount;
-            }
+            return (
+              Number(i.total_installments) - (Number(i.paid_installments) + 1) >
+              0
+            );
           }
-
-          return sum;
-        }, 0);
+          return false;
+        });
+        const nextInvoiceTotal = nextInstallments.reduce(
+          (sum, i) => sum + Number(i.installment_amount),
+          0,
+        );
 
         return {
           account: acc,
-          // Exibe na lista de Julho apenas o que pertence a Julho
-          activeInstallments: currentMonthInstallments,
+          currentInstallments,
+          isInvoicePaid,
+          nextInstallments,
           invoiceTotal,
           nextInvoiceTotal,
+          // <--- Isso agora controla a UI
         };
       })
       .filter(
         (group) =>
-          group.activeInstallments.length > 0 || group.nextInvoiceTotal > 0,
+          group.currentInstallments.length > 0 ||
+          group.nextInstallments.length > 0 ||
+          group.isInvoicePaid, // Incluímos para mostrar as pagas na lista
       );
   }, [accounts, installments, to]);
 
   // Separação das listas
-  const pendingCards = invoiceGroups.filter(
-    (g) => !paidThisMonth.includes(g.account.id),
-  );
-  const paidCards = invoiceGroups.filter((g) =>
-    paidThisMonth.includes(g.account.id),
-  );
-
+  const pendingCards = invoiceGroups.filter((g) => !g.isInvoicePaid);
+  const paidCards = invoiceGroups.filter((g) => g.isInvoicePaid);
   // Ações da Tela
-  const handlePayInvoice = async (accountId: string) => {
-    await payFullInvoice(accountId);
-    setPaidThisMonth((prev) => [...prev, accountId]); // Move para a seção de pagos
-  };
 
   const handleOpenCreate = () => {
     setEditingItem(null);
@@ -155,9 +193,13 @@ export default function CreditScreen() {
             <InvoiceCard
               key={group.account.id}
               group={group}
-              onPayInvoice={handlePayInvoice}
+              onPayInvoice={() => {
+                setPayingGroup(group);
+                setPayModalVisible(true);
+              }}
               onEdit={handleOpenEdit}
               onDelete={remove}
+              isPaidMode={group.isInvoicePaid}
             />
           ))
         )}
@@ -171,10 +213,13 @@ export default function CreditScreen() {
               <InvoiceCard
                 key={group.account.id}
                 group={group}
-                onPayInvoice={handlePayInvoice}
+                onPayInvoice={() => {
+                  setPayingGroup(group);
+                  setPayModalVisible(true);
+                }}
                 onEdit={handleOpenEdit}
                 onDelete={remove}
-                isPaidMode
+                isPaidMode={group.isInvoicePaid}
               />
             ))}
           </>
@@ -187,7 +232,7 @@ export default function CreditScreen() {
         initialData={editingItem}
         accounts={accounts}
         onClose={() => setModalVisible(false)}
-        onSave={async (payload) => {
+        onSave={async (payload: any) => {
           if (editingItem) {
             await update(editingItem.id, payload);
           } else {
@@ -196,12 +241,98 @@ export default function CreditScreen() {
           setModalVisible(false);
         }}
       />
+
+      {/* ============================================================ */}
+      {/* MODAL DE PAGAMENTO DE FATURA (ESCOLHER CONTA ORIGEM)         */}
+      {/* ============================================================ */}
+      <Modal visible={payModalVisible} transparent animationType="fade">
+        <View style={s.modalOverlay}>
+          <View style={s.modalContent}>
+            <Text style={s.modalTitle}>Pagar Fatura</Text>
+
+            <Text style={{ fontSize: 14, color: "#374151", marginBottom: 16 }}>
+              Você está prestes a pagar a fatura do{" "}
+              <Text style={{ fontWeight: "bold" }}>
+                {payingGroup?.account?.name}
+              </Text>{" "}
+              no valor total de{" "}
+              <Text style={{ fontWeight: "bold", color: "#dc2626" }}>
+                {formatCurrency(payingGroup?.invoiceTotal || 0, "BRL")}
+              </Text>
+              .
+            </Text>
+
+            <Text style={s.label}>De qual conta o dinheiro vai sair?</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={{ marginBottom: 24, maxHeight: 40 }}
+            >
+              {accounts
+                .filter((a) => a.type !== "credit") // Impede de pagar um cartão com outro cartão!
+                .map((acc) => (
+                  <TouchableOpacity
+                    key={acc.id}
+                    style={[
+                      s.accBtn,
+                      sourceAccountId === acc.id && s.accBtnActive,
+                      { borderColor: acc.color },
+                    ]}
+                    onPress={() => setSourceAccountId(acc.id)}
+                  >
+                    <Text
+                      style={[
+                        s.accBtnText,
+                        sourceAccountId === acc.id && { color: "#fff" },
+                      ]}
+                    >
+                      {acc.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+            </ScrollView>
+
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <TouchableOpacity
+                style={[s.btn, { backgroundColor: "#e5e7eb" }]}
+                onPress={() => {
+                  setPayModalVisible(false);
+                  setSourceAccountId("");
+                }}
+              >
+                <Text style={{ color: "#374151", fontWeight: "bold" }}>
+                  Cancelar
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  s.btn,
+                  {
+                    backgroundColor: "#10b981",
+                    opacity: !sourceAccountId ? 0.5 : 1,
+                  },
+                ]}
+                onPress={handleConfirmPayment}
+                disabled={!sourceAccountId} // Bloqueia se o utilizador não escolher a conta
+              >
+                <Text style={{ color: "#fff", fontWeight: "bold" }}>
+                  Confirmar Pagamento
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
 
 // ============================================================
 // COMPONENTE DO CARD DO CARTÃO
+// ============================================================
+// ============================================================
+// COMPONENTE DO CARD DO CARTÃO (COM PREVIEW DA PRÓXIMA FATURA)
 // ============================================================
 function InvoiceCard({
   group,
@@ -211,24 +342,41 @@ function InvoiceCard({
   isPaidMode = false,
 }: any) {
   const [expanded, setExpanded] = useState(false);
-  const { account, activeInstallments, invoiceTotal, nextInvoiceTotal } = group;
+  const [showNextMonth, setShowNextMonth] = useState(false);
 
+  const { to } = getCurrentMonthRange();
+
+  // 1. PRIMEIRO desestruturamos o group e pegamos os dados!
+  const {
+    account,
+    currentInstallments = [],
+    nextInstallments = [],
+    invoiceTotal = 0,
+    nextInvoiceTotal = 0,
+    isInvoicePaid = false,
+  } = group ?? {};
+
+  // 2. AGORA criamos o dueDay (antes da mágica das datas)
   const dueDay = account.due_day || 10;
+  const displayList = showNextMonth ? nextInstallments : currentInstallments;
 
+  // 3. DEPOIS aplicamos a lógica da data
+  const today = new Date();
+  const targetMonth = today.getMonth() + (showNextMonth ? 1 : 0);
+  const invoiceDate = new Date(today.getFullYear(), targetMonth, dueDay);
+
+  const rawMonthName = new Intl.DateTimeFormat("pt-BR", {
+    month: "long",
+  }).format(invoiceDate);
+  const formattedMonth =
+    rawMonthName.charAt(0).toUpperCase() + rawMonthName.slice(1);
+
+  const headerTotal = showNextMonth ? nextInvoiceTotal : invoiceTotal;
+  // 👇 ADICIONE A FUNÇÃO QUE FALTAVA AQUI 👇
   const handlePayFull = () => {
-    if (Platform.OS === "web") {
-      const ok = window.confirm(
-        `Deseja marcar a fatura de ${account.name} como paga?`,
-      );
-      if (ok) onPayInvoice(account.id);
-    } else {
-      Alert.alert("Pagar Fatura", `Pagar a fatura de ${account.name}?`, [
-        { text: "Cancelar", style: "cancel" },
-        { text: "Sim, Pagar", onPress: () => onPayInvoice(account.id) },
-      ]);
-    }
+    onPayInvoice(); // Simplesmente avisa a tela principal para abrir o modal!
   };
-
+  // 👆 FIM DA FUNÇÃO 👆
   return (
     <View
       style={[
@@ -242,17 +390,24 @@ function InvoiceCard({
       <TouchableOpacity
         style={s.cardHeader}
         activeOpacity={0.7}
-        onPress={() => setExpanded(!expanded)}
+        onPress={() => {
+          setExpanded(!expanded);
+          if (expanded) setShowNextMonth(false);
+        }}
       >
         <View style={{ flex: 1 }}>
           <Text style={s.cardTitle}>
             {account.name} {isPaidMode && "✅"}
           </Text>
-          <Text style={s.cardSubtitle}>Vence dia {dueDay}</Text>
+          {/* 👇 ATUALIZAMOS O SUBTÍTULO AQUI 👇 */}
+          <Text style={s.cardSubtitle}>
+            Vence dia {dueDay} de {formattedMonth}
+          </Text>
         </View>
         <View style={{ alignItems: "flex-end", marginRight: 12 }}>
+          {/* 👇 ATUALIZAMOS O TOTAL AQUI 👇 */}
           <Text style={s.invoiceTotal}>
-            {formatCurrency(invoiceTotal, account.currency)}
+            {formatCurrency(headerTotal, account.currency)}
           </Text>
         </View>
         <Ionicons
@@ -264,18 +419,57 @@ function InvoiceCard({
 
       {expanded && (
         <View style={s.expandedArea}>
-          {/* AVISO DA PRÓXIMA FATURA */}
-          <View style={s.nextInvoiceBox}>
+          {/* CAIXA DE PREVISÃO AGORA É UM BOTÃO INTERATIVO */}
+          <TouchableOpacity
+            style={[
+              s.nextInvoiceBox,
+              showNextMonth && {
+                backgroundColor: "#c7d2fe",
+                borderColor: "#4f46e5",
+                borderWidth: 1,
+              },
+            ]}
+            activeOpacity={0.7}
+            onPress={() => setShowNextMonth(!showNextMonth)}
+          >
             <Ionicons name="calendar-outline" size={16} color="#4f46e5" />
-            <Text style={s.nextInvoiceText}>
-              Previsão para o próximo mês:{" "}
-              <Text style={{ fontWeight: "bold" }}>
-                {formatCurrency(nextInvoiceTotal, account.currency)}
+            <View style={{ flex: 1 }}>
+              <Text style={s.nextInvoiceText}>
+                Previsão para o próximo mês:{" "}
+                <Text style={{ fontWeight: "bold" }}>
+                  {formatCurrency(nextInvoiceTotal, account.currency)}
+                </Text>
               </Text>
-            </Text>
-          </View>
+              <Text
+                style={{
+                  fontSize: 11,
+                  color: "#4f46e5",
+                  marginTop: 2,
+                  fontWeight: "600",
+                }}
+              >
+                {showNextMonth
+                  ? "↑ Voltar para a fatura atual"
+                  : "↓ Clique para ver as compras do próximo mês"}
+              </Text>
+            </View>
+          </TouchableOpacity>
 
-          {!isPaidMode && (
+          <Text
+            style={{
+              fontSize: 14,
+              fontWeight: "bold",
+              color: "#374151",
+              marginBottom: 12,
+            }}
+          >
+            {showNextMonth
+              ? "Compras da Próxima Fatura:"
+              : "Compras Desta Fatura:"}
+          </Text>
+
+          {/* Ocultar o botão de pagar se o utilizador estiver a espreitar o mês que vem */}
+          {!isPaidMode && !showNextMonth && (
             <TouchableOpacity style={s.payInvoiceBtn} onPress={handlePayFull}>
               <Ionicons name="checkmark-done-circle" size={18} color="#fff" />
               <Text style={s.payInvoiceText}>Pagar Fatura Completa</Text>
@@ -284,32 +478,52 @@ function InvoiceCard({
 
           <View style={s.miniDivider} />
 
-          {activeInstallments.map((item: Installment) => (
-            <View key={item.id} style={s.itemRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={s.itemTitle}>{item.title}</Text>
-                <Text style={s.itemSub}>
-                  Parcela {item.paid_installments + 1} de{" "}
-                  {item.total_installments}
-                </Text>
-              </View>
-              <Text style={s.itemValue}>
-                {formatCurrency(item.installment_amount, account.currency)}
-              </Text>
+          {displayList.length === 0 && (
+            <Text
+              style={{
+                color: "#9ca3af",
+                fontStyle: "italic",
+                textAlign: "center",
+                marginBottom: 10,
+              }}
+            >
+              Nenhuma compra para exibir.
+            </Text>
+          )}
 
-              <View style={s.itemActions}>
-                <TouchableOpacity onPress={() => onEdit(item)}>
-                  <Ionicons name="pencil" size={18} color="#6b7280" />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => onDelete(item.id)}
-                  style={{ marginLeft: 12 }}
-                >
-                  <Ionicons name="trash" size={18} color="#dc2626" />
-                </TouchableOpacity>
+          {displayList.map((item: any) => {
+            // Lógica inteligente: Se estou a ver a próxima fatura, e a compra é antiga, mostro a parcela +2.
+            const currentParcel = Number(item.paid_installments) + 1;
+            const isOldItem = !item.start_date || item.start_date <= to;
+            const displayParcel =
+              showNextMonth && isOldItem ? currentParcel + 1 : currentParcel;
+
+            return (
+              <View key={item.id} style={s.itemRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.itemTitle}>{item.title}</Text>
+                  <Text style={s.itemSub}>
+                    Parcela {displayParcel} de {item.total_installments}
+                  </Text>
+                </View>
+                <Text style={s.itemValue}>
+                  {formatCurrency(item.installment_amount, account.currency)}
+                </Text>
+
+                <View style={s.itemActions}>
+                  <TouchableOpacity onPress={() => onEdit(item)}>
+                    <Ionicons name="pencil" size={18} color="#6b7280" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => onDelete(item.id)}
+                    style={{ marginLeft: 12 }}
+                  >
+                    <Ionicons name="trash" size={18} color="#dc2626" />
+                  </TouchableOpacity>
+                </View>
               </View>
-            </View>
-          ))}
+            );
+          })}
         </View>
       )}
     </View>
@@ -658,7 +872,7 @@ const s = StyleSheet.create({
     flexDirection: "row",
     backgroundColor: "#f3f4f6",
     borderRadius: 8,
-    pading: 4,
+    padding: 4,
     marginBottom: 16,
   },
   modeBtn: { flex: 1, padding: 10, alignItems: "center", borderRadius: 6 },

@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { installmentService } from "@/services";
 import type { Installment, CreateInstallment } from "@/types";
 import type { InstallmentGroup } from "@/types";
-
+import { supabase } from "@/services";
 export function useInstallments() {
   const [installments, setInstallments] = useState<Installment[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -130,24 +130,27 @@ export function useInstallments() {
       (a, b) => (a.due_day ?? 99) - (b.due_day ?? 99),
     );
   }, [installments]);
+
+  // Paga TODAS as parcelas do mês de um cartão e persiste o mês pago
   const payFullInvoice = async (accountId: string) => {
     setIsLoading(true);
-    // 1. Filtra apenas as parcelas ativas deste cartão
+    const currentMonth = new Date().toISOString().slice(0, 7);
+
     const activeInstallments = installments.filter(
       (i) =>
         i.account_id === accountId &&
         i.paid_installments < i.total_installments,
     );
 
-    // 2. Dispara o pagamento de todas ao mesmo tempo usando Promise.all
     const promises = activeInstallments.map((i) =>
-      installmentService.payInstallment(i.id, i.paid_installments),
+      installmentService.update(i.id, {
+        paid_installments: i.paid_installments + 1,
+        invoice_paid_month: currentMonth,
+      }),
     );
 
     await Promise.all(promises);
-
-    // 3. Atualiza os dados na tela
-    await fetch();
+    await fetch(); // Recarrega os dados do banco para o estado local
     setIsLoading(false);
   };
   return {

@@ -321,37 +321,56 @@ export default function TransactionsScreen() {
 
 function TransactionItem({ transaction: t, currency, onEdit, onDelete }: any) {
   const isIncome = t.type === "income";
+  // Inteligência: Deteta se é o pagamento de uma fatura
+  const isInvoicePayment = t.title && t.title.startsWith("Fatura");
+  const color = isIncome ? "#16a34a" : "#dc2626";
+
   return (
     <View style={s.item}>
       <View
         style={[
           s.itemIcon,
-          { backgroundColor: (t.category?.color ?? "#6366f1") + "20" },
+          {
+            backgroundColor: isInvoicePayment
+              ? "#6366f118"
+              : (t.category?.color ?? "#6366f1") + "20",
+          },
         ]}
       >
         <Ionicons
-          name={isIncome ? "arrow-up" : "arrow-down"}
+          name={
+            isInvoicePayment ? "card" : isIncome ? "arrow-up" : "arrow-down"
+          }
           size={20}
-          color={isIncome ? "#16a34a" : "#dc2626"}
+          color={isInvoicePayment ? "#6366f1" : color}
         />
       </View>
       <View style={s.itemInfo}>
         <Text style={s.itemTitle}>{t.title}</Text>
         <Text style={s.itemCategory}>
-          {t.category?.name ?? "Sem categoria"} · {formatDate(t.date)}
+          {isInvoicePayment
+            ? `Pagamento de Fatura · ${formatDate(t.date)}`
+            : `${t.category?.name ?? "Sem categoria"} · ${formatDate(t.date)}`}
         </Text>
       </View>
       <View style={s.itemRight}>
         <Text
-          style={[s.itemAmount, { color: isIncome ? "#16a34a" : "#dc2626" }]}
+          style={[
+            s.itemAmount,
+            { color: isInvoicePayment ? "#111827" : color },
+          ]}
         >
           {isIncome ? "+" : "-"}
           {formatCurrency(t.amount, currency)}
         </Text>
         <View style={s.itemActions}>
-          <TouchableOpacity onPress={onEdit} style={s.editBtn}>
-            <Ionicons name="create-outline" size={14} color="#6366f1" />
-          </TouchableOpacity>
+          {/* Escondemos o lápis de editar para faturas, pois o valor vem automático do cartão */}
+          {!isInvoicePayment && (
+            <TouchableOpacity onPress={onEdit} style={s.editBtn}>
+              <Ionicons name="create-outline" size={14} color="#6366f1" />
+            </TouchableOpacity>
+          )}
+          {/* O botão de excluir mantém-se para poder limpar os testes! */}
           <TouchableOpacity onPress={onDelete} style={s.deleteBtn}>
             <Ionicons name="trash-outline" size={14} color="#ef4444" />
           </TouchableOpacity>
@@ -360,7 +379,6 @@ function TransactionItem({ transaction: t, currency, onEdit, onDelete }: any) {
     </View>
   );
 }
-
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#f8fafc" },
   header: {

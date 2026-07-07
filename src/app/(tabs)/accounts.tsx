@@ -9,6 +9,7 @@ import {
   TextInput,
   Modal,
   Alert,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -52,7 +53,13 @@ export default function AccountDetailScreen() {
   const [newBankName, setNewBankName] = useState("");
   const [newBankColor, setNewBankColor] = useState("#830ad1");
   const [period, setPeriod] = useState<Period>("month");
-
+  // ADICIONE Para mudar vencimento
+  const [newBankType, setNewBankType] = useState<
+    "checking" | "savings" | "credit"
+  >("checking");
+  const [newBankBalance, setNewBankBalance] = useState("");
+  const [dueDay, setDueDay] = useState("10");
+  //  ===============================
   // Estado para controlar a data base do histórico
   const [baseDate, setBaseDate] = useState(new Date());
   const [monthPickerVisible, setMonthPickerVisible] = useState(false);
@@ -63,7 +70,63 @@ export default function AccountDetailScreen() {
   const [modalVisible, setModalVisible] = useState(false);
 
   const { openModal } = useLocalSearchParams<{ openModal?: string }>();
-  const { create: createAccount } = useAccounts();
+
+  // 1. Puxamos o accounts (lista) e a nova função updateAccount
+  const {
+    accounts,
+    create: createAccount,
+    update: updateAccount,
+    remove: removeAccount,
+  } = useAccounts();
+
+  // 2. Estado para saber se o modal está a CRIAR ou a EDITAR
+  const [isEditing, setIsEditing] = useState(false);
+
+  // 3. Pegamos todos os detalhes da conta atual (incluindo o vencimento)
+  const currentAccount = accounts.find((a) => a.id === id);
+
+  // 4. Função que preenche o modal com os dados atuais e o abre
+  const handleOpenEdit = () => {
+    // 1. Procura a conta garantindo que o ID é lido da mesma forma (evita bugs de Texto vs Número)
+    const acc = accounts.find((a) => String(a.id) === String(id));
+
+    // 2. Preenche os dados. Se a lista ainda estiver a carregar, usa os dados de backup que vieram do ecrã anterior!
+    setNewBankName(acc?.name || name);
+    setNewBankBalance(
+      acc ? String(acc.balance) : String(parseFloat(balance || "0")),
+    );
+    setNewBankType((acc?.type as any) || "checking");
+    setDueDay(acc?.due_day ? String(acc.due_day) : "10");
+    setNewBankColor(acc?.color || color || "#6366f1");
+
+    // 3. Abre o modal imediatamente
+    setIsEditing(true);
+    setModalVisible(true);
+  };
+
+  const handleDelete = () => {
+    const accName = currentAccount?.name || name;
+    const msg = `Tem a certeza que deseja excluir ${accName}?`;
+
+    if (Platform.OS === "web") {
+      const ok = window.confirm(msg);
+      if (ok) {
+        removeAccount(id).then(() => router.replace("/(tabs)/"));
+      }
+    } else {
+      Alert.alert("Excluir Conta", msg, [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Sim, Excluir",
+          style: "destructive",
+          onPress: async () => {
+            await removeAccount(id);
+            router.replace("/(tabs)/");
+          },
+        },
+      ]);
+    }
+  };
 
   useEffect(() => {
     loadData();
@@ -163,18 +226,58 @@ export default function AccountDetailScreen() {
   return (
     <SafeAreaView style={s.safe}>
       <View style={[s.header, { backgroundColor: accountColor }]}>
-        <TouchableOpacity onPress={() => router.back()} style={s.back}>
-          <Ionicons
-            name="chevron-back"
-            size={18}
-            color="rgba(255,255,255,0.86)"
-          />
-          <Text style={s.backText}>Voltar</Text>
-        </TouchableOpacity>
+        {/* LINHA SUPERIOR: Botão Voltar (Esquerda) e Ações (Direita) */}
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 12,
+          }}
+        >
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={{ flexDirection: "row", alignItems: "center", gap: 3 }}
+          >
+            <Ionicons
+              name="chevron-back"
+              size={18}
+              color="rgba(255,255,255,0.86)"
+            />
+            <Text style={s.backText}>Voltar</Text>
+          </TouchableOpacity>
+
+          <View style={{ flexDirection: "row", gap: 10 }}>
+            <TouchableOpacity
+              onPress={handleOpenEdit}
+              style={{
+                backgroundColor: "rgba(255,255,255,0.2)",
+                padding: 8,
+                borderRadius: 8,
+              }}
+            >
+              <Ionicons name="pencil" size={18} color="#fff" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleDelete}
+              style={{
+                backgroundColor: "rgba(255,0,0,0.4)",
+                padding: 8,
+                borderRadius: 8,
+              }}
+            >
+              <Ionicons name="trash" size={18} color="#fee2e2" />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* NOME E SALDO DA CONTA */}
         <Text style={s.accountName}>{name}</Text>
         <Text style={s.accountBalance}>
           {formatCurrency(parseFloat(balance ?? "0") || 0, accountCurrency)}
         </Text>
+
+        {/* ESTATÍSTICAS: Entradas e Saídas */}
         <View style={s.headerRow}>
           <View style={s.headerStat}>
             <View style={s.headerStatLabelRow}>
@@ -276,6 +379,9 @@ export default function AccountDetailScreen() {
       )}
 
       {/* MODAL DO SELETOR DE MÊS */}
+      {/* ============================================== */}
+      {/* MODAL DO SELETOR DE MÊS (PARA O HISTÓRICO)     */}
+      {/* ============================================== */}
       <Modal
         visible={monthPickerVisible}
         transparent={true}
@@ -314,7 +420,6 @@ export default function AccountDetailScreen() {
                 <Ionicons name="chevron-forward" size={20} color="#111827" />
               </TouchableOpacity>
             </View>
-
             <View style={s.monthGrid}>
               {monthNames.map((m, index) => {
                 const isSelected = baseDate.getMonth() === index;
@@ -336,7 +441,6 @@ export default function AccountDetailScreen() {
                 );
               })}
             </View>
-
             <TouchableOpacity
               style={s.closeCalendarBtn}
               onPress={() => setMonthPickerVisible(false)}
@@ -347,7 +451,231 @@ export default function AccountDetailScreen() {
         </View>
       </Modal>
 
-      {/* MODAL DE CONTA OMITIDO PARA ECONOMIZAR ESPAÇO, MANTENHA O SEU SE NECESSÁRIO */}
+      {/* ============================================== */}
+      {/* MODAL DE CRIAR/EDITAR CONTA (CORRIGIDO)        */}
+      {/* ============================================== */}
+      <Modal visible={modalVisible} animationType="slide" transparent={true}>
+        <View style={s.modalOverlay}>
+          <View style={s.calendarContainer}>
+            <Text style={s.calendarMonthName}>
+              {isEditing ? "Editar Conta / Cartão" : "Nova Conta / Cartão"}
+            </Text>
+
+            <View style={{ marginTop: 16 }}>
+              <Text style={{ fontSize: 13, color: "#374151", marginBottom: 4 }}>
+                Nome
+              </Text>
+              <TextInput
+                style={{
+                  borderWidth: 1,
+                  borderColor: "#d1d5db",
+                  borderRadius: 8,
+                  padding: 10,
+                  marginBottom: 12,
+                }}
+                placeholder="Ex: Nubank, Santander"
+                value={newBankName}
+                onChangeText={setNewBankName}
+              />
+
+              <Text style={{ fontSize: 13, color: "#374151", marginBottom: 4 }}>
+                Saldo Inicial / Limite
+              </Text>
+              <TextInput
+                style={{
+                  borderWidth: 1,
+                  borderColor: "#d1d5db",
+                  borderRadius: 8,
+                  padding: 10,
+                  marginBottom: 12,
+                }}
+                placeholder="R$ 0,00"
+                keyboardType="numeric"
+                value={newBankBalance}
+                onChangeText={setNewBankBalance}
+              />
+              {/* Tipo de Conta */}
+              <Text style={{ fontSize: 13, color: "#374151", marginBottom: 4 }}>
+                O que está a adicionar?
+              </Text>
+              <View style={{ flexDirection: "row", gap: 10, marginBottom: 12 }}>
+                <TouchableOpacity
+                  style={{
+                    flex: 1,
+                    padding: 8,
+                    borderWidth: 1,
+                    borderColor:
+                      newBankType === "checking" ? "#6366f1" : "#d1d5db",
+                    borderRadius: 8,
+                    alignItems: "center",
+                    backgroundColor:
+                      newBankType === "checking" ? "#eef2ff" : "#fff",
+                  }}
+                  onPress={() => setNewBankType("checking")}
+                >
+                  <Text
+                    style={{
+                      color: newBankType === "checking" ? "#6366f1" : "#6b7280",
+                      fontSize: 12,
+                      fontWeight: "bold",
+                      textAlign: "center",
+                    }}
+                  >
+                    🏦 Conta Bancária{"\n"}
+                    <Text style={{ fontSize: 10, fontWeight: "normal" }}>
+                      (Tem Saldo Real)
+                    </Text>
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={{
+                    flex: 1,
+                    padding: 8,
+                    borderWidth: 1,
+                    borderColor:
+                      newBankType === "credit" ? "#6366f1" : "#d1d5db",
+                    borderRadius: 8,
+                    alignItems: "center",
+                    backgroundColor:
+                      newBankType === "credit" ? "#eef2ff" : "#fff",
+                  }}
+                  onPress={() => setNewBankType("credit")}
+                >
+                  <Text
+                    style={{
+                      color: newBankType === "credit" ? "#6366f1" : "#6b7280",
+                      fontSize: 12,
+                      fontWeight: "bold",
+                      textAlign: "center",
+                    }}
+                  >
+                    💳 Cartão de Crédito{"\n"}
+                    <Text style={{ fontSize: 10, fontWeight: "normal" }}>
+                      (Gera Faturas)
+                    </Text>
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {newBankType === "credit" && (
+                <View style={{ marginBottom: 12 }}>
+                  <Text
+                    style={{ fontSize: 13, color: "#374151", marginBottom: 4 }}
+                  >
+                    Dia de Vencimento da Fatura
+                  </Text>
+                  <TextInput
+                    style={{
+                      borderWidth: 1,
+                      borderColor: "#d1d5db",
+                      borderRadius: 8,
+                      padding: 10,
+                    }}
+                    value={dueDay}
+                    onChangeText={(text) => {
+                      const num = text.replace(/[^0-9]/g, "");
+                      if (Number(num) <= 31) setDueDay(num);
+                    }}
+                    keyboardType="numeric"
+                    maxLength={2}
+                    placeholder="Ex: 10"
+                  />
+                </View>
+              )}
+
+              {/* PALETA DE CORES PERFEITAMENTE ALINHADA */}
+              <Text style={{ fontSize: 13, color: "#374151", marginBottom: 6 }}>
+                Cor de Identificação
+              </Text>
+              <View
+                style={{
+                  flexDirection: "row",
+                  gap: 10,
+                  flexWrap: "wrap",
+                  marginBottom: 16,
+                }}
+              >
+                {[
+                  "#6366f1",
+                  "#14b8a6",
+                  "#f97316",
+                  "#ec4899",
+                  "#8A05BE",
+                  "#EC7000",
+                  "#dc2626",
+                  "#111827",
+                ].map((corOpcao) => (
+                  <TouchableOpacity
+                    key={corOpcao}
+                    onPress={() => setNewBankColor(corOpcao)}
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 16,
+                      backgroundColor: corOpcao,
+                      borderWidth: newBankColor === corOpcao ? 3 : 0,
+                      borderColor: "#374151",
+                    }}
+                  />
+                ))}
+              </View>
+            </View>
+
+            {/* BOTÕES CANCELAR E SALVAR */}
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <TouchableOpacity
+                style={[
+                  s.closeCalendarBtn,
+                  { flex: 1, backgroundColor: "#e5e7eb", marginTop: 0 },
+                ]}
+                onPress={() => {
+                  setModalVisible(false);
+                  setIsEditing(false);
+                  setNewBankName("");
+                  setNewBankBalance("");
+                }}
+              >
+                <Text style={{ color: "#374151", fontWeight: "bold" }}>
+                  Cancelar
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  s.closeCalendarBtn,
+                  { flex: 1, backgroundColor: "#4f46e5", marginTop: 0 },
+                ]}
+                onPress={async () => {
+                  if (!newBankName) return;
+                  const payload = {
+                    name: newBankName,
+                    balance: parseFloat(newBankBalance.replace(",", ".")) || 0,
+                    type: newBankType,
+                    color: newBankColor,
+                    currency: "BRL",
+                    due_day:
+                      newBankType === "credit" ? parseInt(dueDay, 10) : null,
+                  };
+                  if (isEditing) {
+                    await updateAccount(id, payload);
+                  } else {
+                    await createAccount(payload);
+                  }
+                  setModalVisible(false);
+                  setIsEditing(false);
+                  setNewBankName("");
+                  setNewBankBalance("");
+                }}
+              >
+                <Text style={{ color: "#fff", fontWeight: "bold" }}>
+                  Salvar
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }

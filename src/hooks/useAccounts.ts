@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { accountService } from "@/services";
 import type { Account, CreateAccount } from "@/types";
 
@@ -22,14 +22,32 @@ export function useAccounts() {
     if (data) setAccounts((prev) => [...prev, data]);
     return { data, error };
   };
-
+  const update = async (id: string, payload: any) => {
+    const { data, error } = await accountService.update(id, payload);
+    if (data) {
+      setAccounts((prev) => prev.map((a) => (a.id === id ? data : a)));
+      fetch(); // Atualiza a lista para refletir as mudanças imediatamente
+    }
+    return { data, error };
+  };
   const remove = async (id: string) => {
     const { error } = await accountService.remove(id);
     if (!error) setAccounts((prev) => prev.filter((a) => a.id !== id));
     return { error };
   };
 
-  const totalBalance = accounts.reduce((sum, a) => sum + a.balance, 0);
-
-  return { accounts, isLoading, totalBalance, create, remove, refetch: fetch };
+  const totalBalance = useMemo(() => {
+    return accounts
+      .filter((acc) => acc.type === "checking") // <--- ADICIONE ESTE FILTRO
+      .reduce((sum, acc) => sum + acc.balance, 0);
+  }, [accounts]);
+  return {
+    accounts,
+    isLoading,
+    totalBalance,
+    create,
+    update,
+    remove,
+    refetch: fetch,
+  };
 }

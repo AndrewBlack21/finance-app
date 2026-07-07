@@ -173,28 +173,65 @@ export default function DashboardScreen() {
   }, [installments]);
 
   // 3. Agrupamento para o Carrossel de Cartões
-  const creditCategoryExpenses = installments
-    .filter(
-      (i) => i.paid_installments < i.total_installments && i.start_date <= to,
-    )
-    .reduce<{ label: string; value: number; color: string }[]>((acc, i) => {
-      const existing = acc.find(
-        (x) => x.label === (i.account?.name ?? "Crédito"),
-      );
-      if (existing) {
-        existing.value += i.installment_amount;
-      } else {
-        acc.push({
-          label: i.account?.name ?? "Crédito",
-          value: i.installment_amount,
-          color: FALLBACK_COLORS[acc.length % FALLBACK_COLORS.length],
-        });
-      }
-      return acc;
-    }, [])
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 6);
+  const creditCardsStatus = useMemo(() => {
+    const currentMonth = new Date().toISOString().slice(0, 7); // Ex: "2026-07"
+    const today = new Date();
 
+    // Filtra apenas as contas que são de crédito
+    const creditAccounts = accounts.filter((acc) => acc.type === "credit");
+
+    return creditAccounts
+      .map((acc) => {
+        // Puxa as parcelas desta conta
+        const allActive = installments.filter((i) => i.account_id === acc.id);
+
+        // Filtra as parcelas que caem no mês atual e ainda não foram pagas
+        const currentInstallments = allActive.filter(
+          (i) =>
+            (!i.start_date || i.start_date <= to) &&
+            i.paid_installments < i.total_installments,
+        );
+
+        // Verifica no banco se a fatura já foi paga
+        const isInvoicePaid =
+          allActive.length > 0 &&
+          allActive
+            .filter((i) => !i.start_date || i.start_date <= to)
+            .every((i) => i.invoice_paid_month === currentMonth);
+
+        // Se está pago, o valor da fatura pendente é 0
+        const invoiceTotal = isInvoicePaid
+          ? 0
+          : currentInstallments.reduce(
+              (sum, i) => sum + Number(i.installment_amount),
+              0,
+            );
+
+        // --- Lógica das Cores (Verde, Amarelo, Vermelho) ---
+        const dueDay = acc.due_day || 10;
+        const dueDate = new Date(today.getFullYear(), today.getMonth(), dueDay);
+
+        let statusColor = "#f59e0b"; // Amarelo (Pendente)
+        let statusLabel = "Pendente";
+
+        if (isInvoicePaid) {
+          statusColor = "#4ade80"; // Verde (Pago) - Tom mais claro para contrastar com o fundo do cartão
+          statusLabel = "Pago";
+        } else if (today > dueDate) {
+          statusColor = "#f87171"; // Vermelho (Vencido) - Tom mais claro para contraste
+          statusLabel = "Vencido";
+        }
+
+        return {
+          label: acc.name,
+          color: acc.color || FALLBACK_COLORS[0],
+          value: invoiceTotal, // Enviamos o valor da fatura do mês
+          statusColor,
+          statusLabel,
+        };
+      })
+      .filter((card) => card.value > 0 || card.statusLabel === "Pago"); // Mostra faturas com valor ou já pagas
+  }, [accounts, installments, to]);
   return (
     <SafeAreaView style={s.safe}>
       <ScrollView
@@ -221,16 +258,15 @@ export default function DashboardScreen() {
 
         {/* CARD SALDO TOTAL */}
         <View style={s.balanceCard}>
-          <Text style={s.balanceLabel}>Saldo do Mês</Text>
+          <Text style={s.balanceLabel}>Saldo Atual (Todas as Contas)</Text>
           <Text
             style={[
               s.balanceValue,
-              summary.balance < 0 ? { color: "#ef4444" } : { color: "#fff" },
+              totalBalance < 0 ? { color: "#ef4444" } : { color: "#fff" },
             ]}
           >
-            {summary.balance < 0 ? "⚠️ " : ""}
-            {/* Trocamos totalBalance por summary.balance */}
-            {formatCurrency(summary.balance, currency)}
+            {totalBalance < 0 ? "⚠️ " : ""}
+            {formatCurrency(totalBalance, currency)}
           </Text>
 
           <View style={s.balanceRow}>
@@ -284,13 +320,25 @@ export default function DashboardScreen() {
                   }
                 >
                   <Text style={s.accountName}>{account.name}</Text>
-                  <Text style={s.accountBalance}>
-                    {formatCurrency(account.balance, account.currency)}
-                  </Text>
+
+                  {/* ADICIONE ESTA CONDIÇÃO PARA O SALDO */}
+                  {account.type === "checking" ? (
+                    <Text style={s.accountBalance}>
+                      {formatCurrency(account.balance, account.currency)}
+                    </Text>
+                  ) : (
+                    <Text
+                      style={[
+                        s.accountBalance,
+                        { fontSize: 12, color: "#9ca3af" },
+                      ]}
+                    >
+                      Cartão de Crédito
+                    </Text>
+                  )}
+
                   <Text style={s.accountType}>
-                    {account.type === "checking"
-                      ? "Conta Corrente"
-                      : account.type}
+                    {account.type === "checking" ? "Conta Corrente" : "Crédito"}
                   </Text>
                 </TouchableOpacity>
               ))
@@ -306,11 +354,11 @@ export default function DashboardScreen() {
               { backgroundColor: "transparent", elevation: 0, padding: 0 },
             ]}
           >
-            {creditCategoryExpenses.length === 0 ? (
+            {creditCardsStatus.length === 0 ? (
               <EmptyChart message="Sem gastos de cartão cadastrados este mês." />
             ) : (
               <CreditCardCarousel
-                data={creditCategoryExpenses}
+                data={creditCardsStatus}
                 currency={currency}
               />
             )}
@@ -566,8 +614,39 @@ function CreditCardCarousel({
                   </View>
                   <Text style={s.bankLogoText}>{item.label}</Text>
                 </View>
+
                 <View>
-                  <Text style={s.cardLabel}>Total Gasto</Text>
+                  {/* NOVA LINHA: Status com Bolinha */}
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      marginBottom: 6,
+                    }}
+                  >
+                    <View
+                      style={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: 5,
+                        backgroundColor: item.statusColor,
+                        marginRight: 6,
+                        borderWidth: 1,
+                        borderColor: "rgba(255,255,255,0.3)", // Bordinha para destacar
+                      }}
+                    />
+                    <Text
+                      style={{
+                        color: item.statusColor,
+                        fontSize: 13,
+                        fontWeight: "bold",
+                      }}
+                    >
+                      {item.statusLabel}
+                    </Text>
+                  </View>
+
+                  <Text style={s.cardLabel}>Valor da Fatura</Text>
                   <Text style={s.cardAmount}>
                     {formatCurrency(item.value, currency)}
                   </Text>

@@ -180,6 +180,7 @@ export interface Installment {
   // Calculados no frontend
   remaining_installments?: number;
   progress?: number;
+  invoice_paid_month: string | null; // ex: "2026-07"
 }
 
 export type CreateInstallment = Omit<
