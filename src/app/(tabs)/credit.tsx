@@ -476,45 +476,46 @@ function InstallmentFormModal({
                   keyboardType="numeric"
                 />
               </View>
-              {/* NOVA CAIXINHA DE "FATURA FECHADA" */}
-              <TouchableOpacity
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  marginTop: 16,
-                }}
-                onPress={() => setIsNextMonth(!isNextMonth)}
-              >
-                <View
-                  style={{
-                    width: 22,
-                    height: 22,
-                    borderRadius: 6,
-                    borderWidth: 2,
-                    borderColor: "#6366f1",
-                    marginRight: 10,
-                    backgroundColor: isNextMonth ? "#6366f1" : "transparent",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  {isNextMonth && (
-                    <Text
-                      style={{
-                        color: "#fff",
-                        fontSize: 14,
-                        fontWeight: "bold",
-                      }}
-                    >
-                      ✓
-                    </Text>
-                  )}
-                </View>
-                <Text style={{ color: "#374151", fontSize: 13, flex: 1 }}>
-                  Fatura já fechou? (Lançar apenas no próximo mês)
-                </Text>
-              </TouchableOpacity>
             </View>
+            {/* NOVA CAIXINHA DE "FATURA FECHADA" */}
+            <TouchableOpacity
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                marginTop: 16,
+                marginBottom: 8, // Dei um espacinho extra aqui embaixo
+              }}
+              onPress={() => setIsNextMonth(!isNextMonth)}
+            >
+              <View
+                style={{
+                  width: 22,
+                  height: 22,
+                  borderRadius: 6,
+                  borderWidth: 2,
+                  borderColor: "#6366f1",
+                  marginRight: 10,
+                  backgroundColor: isNextMonth ? "#6366f1" : "transparent",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                {isNextMonth && (
+                  <Text
+                    style={{
+                      color: "#fff",
+                      fontSize: 14,
+                      fontWeight: "bold",
+                    }}
+                  >
+                    ✓
+                  </Text>
+                )}
+              </View>
+              <Text style={{ color: "#374151", fontSize: 13, flex: 1 }}>
+                Fatura já fechou? (Lançar apenas no próximo mês)
+              </Text>
+            </TouchableOpacity>
 
             <View style={{ flexDirection: "row", gap: 10, marginTop: 24 }}>
               <TouchableOpacity
