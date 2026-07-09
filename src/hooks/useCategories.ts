@@ -23,8 +23,26 @@ export function useCategories() {
     return { data, error };
   };
 
+  const remove = async (id: string) => {
+    setIsLoading(true);
+    const { error } = await categoryService.remove(id);
+    if (!error) {
+      setCategories((prev) => prev.filter((c) => c.id !== id));
+    }
+    setIsLoading(false);
+    return { error };
+  };
+
   const income = categories.filter((c) => c.type === "income");
   const expense = categories.filter((c) => c.type === "expense");
 
-  return { categories, income, expense, isLoading, create, refetch: fetch };
+  return {
+    categories,
+    income,
+    expense,
+    isLoading,
+    remove,
+    create,
+    refetch: fetch,
+  };
 }

@@ -8,6 +8,7 @@ import {
   ScrollView,
   StyleSheet,
   Alert,
+  Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -64,7 +65,7 @@ const ICONS: { key: string; name: keyof typeof Ionicons.glyphMap }[] = [
 
 export default function CategoriesScreen() {
   const router = useRouter();
-  const { categories, income, expense, refetch } = useCategories();
+  const { categories, income, expense, refetch, remove } = useCategories();
   const [modalVisible, setModalVisible] = useState(false);
   const [tab, setTab] = useState<CategoryType>("expense");
   const [isLoading, setIsLoading] = useState(false);
@@ -99,19 +100,40 @@ export default function CategoriesScreen() {
   };
 
   const handleDelete = (cat: Category) => {
-    if (!cat.user_id)
-      return Alert.alert("Aviso", "Categorias padrão não podem ser removidas.");
-    Alert.alert("Remover categoria", `Remover "${cat.name}"?`, [
-      { text: "Cancelar", style: "cancel" },
-      {
-        text: "Remover",
-        style: "destructive",
-        onPress: async () => {
-          await categoryService.remove(cat.id);
-          await refetch();
+    if (!cat.user_id) {
+      if (Platform.OS === "web") {
+        window.alert("Aviso: Categorias padrão não podem ser removidas.");
+      } else {
+        Alert.alert("Aviso", "Categorias padrão não podem ser removidas.");
+      }
+      return;
+    }
+
+    const mensagem = `Tem certeza que deseja remover "${cat.name}"?`;
+
+    // Lógica para PWA (Web / iPhone Safari)
+    if (Platform.OS === "web") {
+      const confirmou = window.confirm(mensagem);
+      if (confirmou) {
+        remove(cat.id).then(({ error }) => {
+          if (error) window.alert("Erro: " + error);
+        });
+      }
+    }
+    // Lógica para Aplicativo Nativo (App Store / Play Store)
+    else {
+      Alert.alert("Remover categoria", mensagem, [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Remover",
+          style: "destructive",
+          onPress: async () => {
+            const { error } = await remove(cat.id);
+            if (error) Alert.alert("Erro", error);
+          },
         },
-      },
-    ]);
+      ]);
+    }
   };
 
   const displayed = tab === "income" ? income : expense;

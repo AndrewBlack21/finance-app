@@ -16,10 +16,15 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useAccounts } from "@/hooks/useAccounts";
 import { Ionicons } from "@expo/vector-icons";
 import { transactionService, installmentService } from "@/services";
-import { formatCurrency, formatDate, formatDateFull } from "@/utils";
+import {
+  formatCurrency,
+  formatDate,
+  formatDateFull,
+  getCurrentMonthRange,
+  getCurrentMonthName,
+} from "@/utils";
 import type { Transaction, Installment } from "@/types";
 import { useInstallments } from "@/hooks/useInstallments";
-
 type Tab = "debito" | "credito" | "historico";
 type Period = "day" | "week" | "month";
 
@@ -71,6 +76,7 @@ export default function AccountDetailScreen() {
 
   const { openModal } = useLocalSearchParams<{ openModal?: string }>();
 
+  const { to } = getCurrentMonthRange();
   // 1. Puxamos o accounts (lista) e a nova função updateAccount
   const {
     accounts,
@@ -273,9 +279,108 @@ export default function AccountDetailScreen() {
 
         {/* NOME E SALDO DA CONTA */}
         <Text style={s.accountName}>{name}</Text>
-        <Text style={s.accountBalance}>
-          {formatCurrency(parseFloat(balance ?? "0") || 0, accountCurrency)}
-        </Text>
+
+        {(() => {
+          // Lógica apenas para Cartão de Crédito
+          if (currentAccount?.type === "credit") {
+            const currentMonthIso = new Date().toISOString().slice(0, 7);
+            const currentMonthName = getCurrentMonthName();
+
+            const allActive = installments.filter(
+              (i) =>
+                i.account_id === id &&
+                i.paid_installments < i.total_installments,
+            );
+
+            const pendingCurrent = allActive.filter(
+              (i) =>
+                (!i.start_date || i.start_date <= to) &&
+                i.invoice_paid_month !== currentMonthIso,
+            );
+
+            let displayValue = 0;
+            let subtitleLabel = "";
+            let subtitleColor = "rgba(255,255,255,0.78)";
+
+            if (pendingCurrent.length > 0) {
+              // Fatura Deste Mês
+              displayValue = pendingCurrent.reduce(
+                (sum, i) => sum + Number(i.installment_amount),
+                0,
+              );
+              subtitleLabel = `Fatura de ${currentMonthName}`;
+            } else {
+              // Fatura do Próximo Mês
+              const nextMonthDate = new Date();
+              nextMonthDate.setMonth(nextMonthDate.getMonth() + 1);
+              const rawNextMonth = new Intl.DateTimeFormat("pt-BR", {
+                month: "long",
+              }).format(nextMonthDate);
+              const nextMonthName =
+                rawNextMonth.charAt(0).toUpperCase() + rawNextMonth.slice(1);
+              const nextMonthEnd = new Date(
+                nextMonthDate.getFullYear(),
+                nextMonthDate.getMonth() + 1,
+                0,
+              )
+                .toISOString()
+                .split("T")[0];
+
+              const nextInstallments = allActive.filter(
+                (i) => !i.start_date || i.start_date <= nextMonthEnd,
+              );
+
+              displayValue = nextInstallments.reduce(
+                (sum, i) => sum + Number(i.installment_amount),
+                0,
+              );
+              subtitleLabel =
+                displayValue > 0
+                  ? `Fatura de ${nextMonthName}`
+                  : "Nenhuma fatura pendente";
+            }
+
+            return (
+              <>
+                <Text style={s.accountBalance}>
+                  {formatCurrency(displayValue, accountCurrency)}
+                </Text>
+                <Text
+                  style={{
+                    color: subtitleColor,
+                    fontSize: 13,
+                    marginBottom: 16,
+                    marginTop: -12,
+                  }}
+                >
+                  {subtitleLabel}
+                </Text>
+              </>
+            );
+          }
+
+          // Lógica para Conta Corrente (Mantém o original)
+          return (
+            <>
+              <Text style={s.accountBalance}>
+                {formatCurrency(
+                  parseFloat(balance ?? "0") || 0,
+                  accountCurrency,
+                )}
+              </Text>
+              <Text
+                style={{
+                  color: "rgba(255,255,255,0.78)",
+                  fontSize: 13,
+                  marginBottom: 16,
+                  marginTop: -12,
+                }}
+              >
+                Conta Corrente
+              </Text>
+            </>
+          );
+        })()}
 
         {/* ESTATÍSTICAS: Entradas e Saídas */}
         <View style={s.headerRow}>

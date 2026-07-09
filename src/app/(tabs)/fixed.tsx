@@ -289,6 +289,8 @@ export default function FixedExpensesScreen() {
               colors={["#6366f1"]}
             />
           }
+          bounces={false} // <--- ADICIONE ISTO
+          overScrollMode="never" // <--- ADICIONE ISTO
           ListEmptyComponent={
             <View style={s.empty}>
               <Text style={s.emptyText}>Nenhuma conta fixa cadastrada</Text>

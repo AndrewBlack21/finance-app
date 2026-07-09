@@ -25,7 +25,12 @@ export const transactionService = {
     if (filters.currency) query = query.eq("currency", filters.currency);
     if (filters.date_from) query = query.gte("date", filters.date_from);
     if (filters.date_to) query = query.lte("date", filters.date_to);
-
+    if ((filters as any).limit) query = query.limit((filters as any).limit);
+    if ((filters as any).offset)
+      query = query.range(
+        (filters as any).offset,
+        (filters as any).offset + ((filters as any).limit ?? 15) - 1,
+      );
     const { data, error } = await query;
     return { data, error: error?.message ?? null };
   },

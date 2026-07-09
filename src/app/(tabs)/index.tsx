@@ -244,6 +244,8 @@ export default function DashboardScreen() {
             colors={["#6366f1"]}
           />
         }
+        bounces={false} // <--- ADICIONE ISTO
+        overScrollMode="never" // <--- ADICIONE ISTO
       >
         {/* HEADER */}
         <View style={s.header}>

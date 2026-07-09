@@ -36,6 +36,9 @@ export default function TransactionsScreen() {
     summary,
     setFilters,
     refetch,
+    fetchMore,
+    isLoadingMore, // <-- ADICIONADO: Controla a bolinha de carregar no rodapé
+    hasMore,
   } = useTransactions();
 
   const [modalVisible, setModalVisible] = useState(false);
@@ -216,6 +219,20 @@ export default function TransactionsScreen() {
           data={transactions}
           keyExtractor={(t) => t.id}
           contentContainerStyle={s.list}
+          onEndReached={fetchMore} // carrega mais ao chegar no fim
+          onEndReachedThreshold={0.3}
+          ListFooterComponent={
+            isLoadingMore ? (
+              <ActivityIndicator
+                color="#6366f1"
+                style={{ marginVertical: 16 }}
+              />
+            ) : !hasMore ? (
+              <Text style={s.endText}>— Fim do histórico —</Text>
+            ) : null
+          }
+          bounces={false} // <--- ADICIONE ISTO
+          overScrollMode="never"
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -523,5 +540,11 @@ const s = StyleSheet.create({
     borderRadius: 8,
     alignItems: "center",
     marginTop: 16,
+  },
+  endText: {
+    textAlign: "center",
+    color: "#9ca3af",
+    fontSize: 12,
+    paddingVertical: 16,
   },
 });
