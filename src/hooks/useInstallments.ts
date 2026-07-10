@@ -131,16 +131,23 @@ export function useInstallments() {
     );
   }, [installments]);
 
-  // Paga TODAS as parcelas do mês de um cartão e persiste o mês pago
+  // Paga TODAS as parcelas PENDENTES do mês de um cartão
   const payFullInvoice = async (accountId: string) => {
     setIsLoading(true);
     const currentMonth = new Date().toISOString().slice(0, 7);
 
+    // Filtramos apenas as que AINDA NÃO FORAM PAGAS este mês!
     const activeInstallments = installments.filter(
       (i) =>
         i.account_id === accountId &&
-        i.paid_installments < i.total_installments,
+        i.paid_installments < i.total_installments &&
+        i.invoice_paid_month !== currentMonth, // <--- Trava de Segurança Crítica
     );
+
+    if (activeInstallments.length === 0) {
+      setIsLoading(false);
+      return;
+    }
 
     const promises = activeInstallments.map((i) =>
       installmentService.update(i.id, {
@@ -150,7 +157,7 @@ export function useInstallments() {
     );
 
     await Promise.all(promises);
-    await fetch(); // Recarrega os dados do banco para o estado local
+    await fetch(); // Recarrega os dados do banco
     setIsLoading(false);
   };
   return {

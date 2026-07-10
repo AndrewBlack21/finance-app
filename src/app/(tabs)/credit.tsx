@@ -83,43 +83,69 @@ export default function CreditScreen() {
   // Agrupa os cartões e calcula as faturas com matemática exata de parcelas e datas
   // Agrupa os cartões e separa as faturas em "Atual" e "Próxima"
   const invoiceGroups = useMemo(() => {
-    const currentMonth = new Date().toISOString().slice(0, 7); // Ex: "2026-07"
+    const currentMonthIso = new Date().toISOString().slice(0, 7); // Ex: "2026-07"
 
     return accounts
       .map((acc) => {
-        const allActive = installments.filter((i) => i.account_id === acc.id);
-
-        // 2. LISTA DA FATURA ATUAL (Julho)
-        const currentInstallments = allActive.filter(
+        // 1. Pega TODAS as compras ativas (parcelas restantes > 0)
+        const allActive = installments.filter(
           (i) =>
-            (!i.start_date || i.start_date <= to) &&
-            i.paid_installments < i.total_installments,
+            i.account_id === acc.id &&
+            Number(i.paid_installments) < Number(i.total_installments),
         );
 
-        // A fatura está PAGA se todas as parcelas deste mês tiverem o marcador de mês correto
-        const isInvoicePaid =
-          allActive.length > 0 &&
-          allActive
-            .filter((i) => !i.start_date || i.start_date <= to)
-            .every((i) => i.invoice_paid_month === currentMonth);
+        // 2. LISTA DA FATURA ATUAL (Tudo que vence até este mês)
+        const currentInstallments = allActive.filter(
+          (i) => !i.start_date || i.start_date <= to,
+        );
 
-        // Se estiver paga, o valor total da fatura "pendente" é 0 (ou mantemos o valor para histórico)
-        const invoiceTotal = currentInstallments.reduce(
+        // 3. FILTRO DE PENDENTES (O segredo do erro de 5 mil estava aqui!)
+        // Filtramos apenas o que ainda NÃO foi pago neste mês
+        const pendingCurrent = currentInstallments.filter(
+          (i) => i.invoice_paid_month !== currentMonthIso,
+        );
+
+        // A fatura está totalmente paga se havia compras para o mês, mas nenhuma pendente
+        const isInvoicePaid =
+          currentInstallments.length > 0 && pendingCurrent.length === 0;
+
+        // O Valor Total soma APENAS o que está pendente, igual ao accounts.tsx!
+        const invoiceTotal = pendingCurrent.reduce(
           (sum, i) => sum + Number(i.installment_amount),
           0,
         );
 
-        // 3. LISTA DA PRÓXIMA FATURA (Agosto)
+        // 4. LISTA DA PRÓXIMA FATURA
+        const nextMonthDate = new Date();
+        nextMonthDate.setMonth(nextMonthDate.getMonth() + 1);
+        const nextMonthEnd = new Date(
+          nextMonthDate.getFullYear(),
+          nextMonthDate.getMonth() + 1,
+          0,
+        )
+          .toISOString()
+          .split("T")[0];
+
         const nextInstallments = allActive.filter((i) => {
-          if (i.start_date && i.start_date > to) return true;
+          // Ignora compras que só começam daqui a 2 meses ou mais
+          if (i.start_date && i.start_date > nextMonthEnd) return false;
+
+          // Se a compra já estava ativa neste mês (Julho)
           if (!i.start_date || i.start_date <= to) {
+            // Se já foi paga neste mês, a parcela que sobrou cai no mês que vem com certeza
+            if (i.invoice_paid_month === currentMonthIso) {
+              return true;
+            }
+            // Se NÃO foi paga, precisa sobrar mais de 1 parcela (a de hoje + a do mês que vem)
             return (
-              Number(i.total_installments) - (Number(i.paid_installments) + 1) >
-              0
+              Number(i.total_installments) - Number(i.paid_installments) > 1
             );
           }
-          return false;
+
+          // Se a compra começa exatamente no mês que vem
+          return true;
         });
+
         const nextInvoiceTotal = nextInstallments.reduce(
           (sum, i) => sum + Number(i.installment_amount),
           0,
@@ -127,19 +153,21 @@ export default function CreditScreen() {
 
         return {
           account: acc,
-          currentInstallments,
-          isInvoicePaid,
+          // Se já pagou, mostra a lista inteira do mês. Se não pagou, mostra só as que faltam pagar para não confundir o utilizador!
+          currentInstallments: isInvoicePaid
+            ? currentInstallments
+            : pendingCurrent,
           nextInstallments,
           invoiceTotal,
           nextInvoiceTotal,
-          // <--- Isso agora controla a UI
+          isInvoicePaid,
         };
       })
       .filter(
         (group) =>
           group.currentInstallments.length > 0 ||
           group.nextInstallments.length > 0 ||
-          group.isInvoicePaid, // Incluímos para mostrar as pagas na lista
+          group.isInvoicePaid,
       );
   }, [accounts, installments, to]);
 

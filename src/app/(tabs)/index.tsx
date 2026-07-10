@@ -25,6 +25,7 @@ import {
   getCurrentMonthName,
 } from "@/utils";
 import type { Installment, Transaction } from "@/types";
+import { Ionicons } from "@expo/vector-icons"; // <--- ADICIONE ESTA LINHA AQUI
 
 const FALLBACK_COLORS = [
   "#6366f1",
@@ -295,56 +296,81 @@ export default function DashboardScreen() {
               <Text style={s.seeAll}>Ver todas</Text>
             </TouchableOpacity>
           </View>
+
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {accounts.length === 0 ? (
-              <View style={s.emptyAccounts}>
-                <Text style={s.emptyAccountsText}>Nenhuma conta criada</Text>
-              </View>
-            ) : (
-              accounts.map((account) => (
-                <TouchableOpacity
-                  key={account.id}
-                  style={[
-                    s.accountCard,
-                    { borderLeftColor: account.color || "#6366f1" },
-                  ]}
-                  onPress={() =>
-                    router.push({
-                      pathname: "/(tabs)/accounts",
-                      params: {
-                        id: account.id,
-                        name: account.name,
-                        balance: String(account.balance),
-                        currency: account.currency,
-                        color: account.color,
-                      },
-                    })
-                  }
-                >
-                  <Text style={s.accountName}>{account.name}</Text>
-
-                  {/* ADICIONE ESTA CONDIÇÃO PARA O SALDO */}
-                  {account.type === "checking" ? (
-                    <Text style={s.accountBalance}>
-                      {formatCurrency(account.balance, account.currency)}
-                    </Text>
-                  ) : (
-                    <Text
-                      style={[
-                        s.accountBalance,
-                        { fontSize: 12, color: "#9ca3af" },
-                      ]}
-                    >
-                      Cartão de Crédito
-                    </Text>
-                  )}
-
-                  <Text style={s.accountType}>
-                    {account.type === "checking" ? "Conta Corrente" : "Crédito"}
+            {/* 1. SEÇÃO DE CONTAS EXISTENTES */}
+            {accounts.map((account) => (
+              <TouchableOpacity
+                key={account.id}
+                style={[
+                  s.accountCard,
+                  { borderLeftColor: account.color || "#6366f1" },
+                ]}
+                onPress={() =>
+                  router.push({
+                    pathname: "/(tabs)/accounts",
+                    params: {
+                      id: account.id,
+                      name: account.name,
+                      balance: String(account.balance),
+                      currency: account.currency,
+                      color: account.color,
+                    },
+                  })
+                }
+              >
+                <Text style={s.accountName}>{account.name}</Text>
+                {account.type === "checking" ? (
+                  <Text style={s.accountBalance}>
+                    {formatCurrency(account.balance, account.currency)}
                   </Text>
-                </TouchableOpacity>
-              ))
-            )}
+                ) : (
+                  <Text
+                    style={[
+                      s.accountBalance,
+                      { fontSize: 12, color: "#9ca3af" },
+                    ]}
+                  >
+                    Cartão de Crédito
+                  </Text>
+                )}
+                <Text style={s.accountType}>
+                  {account.type === "checking" ? "Conta Corrente" : "Crédito"}
+                </Text>
+              </TouchableOpacity>
+            ))}
+
+            {/* 2. CARD DE CRIAR NOVA CONTA (Fixo no final) */}
+            <TouchableOpacity
+              activeOpacity={0.7}
+              style={{
+                width: 140,
+                height: 90,
+                borderRadius: 16,
+                borderWidth: 2,
+                borderColor: "#d1d5db",
+                borderStyle: "dashed",
+                justifyContent: "center",
+                alignItems: "center",
+                backgroundColor: "#f8fafc",
+                marginRight: 16,
+                marginLeft: accounts.length === 0 ? 0 : 8,
+              }}
+              onPress={() => router.push("/(tabs)/accounts?openModal=1")}
+            >
+              <Ionicons name="add-circle-outline" size={28} color="#9ca3af" />
+              <Text
+                style={{
+                  color: "#6b7280",
+                  fontSize: 13,
+                  fontWeight: "600",
+                  marginTop: 8,
+                  textAlign: "center",
+                }}
+              >
+                Criar Nova{"\n"}Conta
+              </Text>
+            </TouchableOpacity>
           </ScrollView>
         </View>
         {/* CARROSSEL DE CARTÕES */}
@@ -356,14 +382,7 @@ export default function DashboardScreen() {
               { backgroundColor: "transparent", elevation: 0, padding: 0 },
             ]}
           >
-            {creditCardsStatus.length === 0 ? (
-              <EmptyChart message="Sem gastos de cartão cadastrados este mês." />
-            ) : (
-              <CreditCardCarousel
-                data={creditCardsStatus}
-                currency={currency}
-              />
-            )}
+            <CreditCardCarousel data={creditCardsStatus} currency={currency} />
           </View>
         </ScrollView>
         {/* GRAFICO: GASTOS POR CATEGORIA (Débito e Crédito) */}
@@ -540,6 +559,7 @@ function CreditCardCarousel({
 }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const flatListRef = useRef<FlatList>(null);
+  const router = useRouter(); // Navegação
   const CARD_WIDTH = 280;
 
   const handleScroll = (event: any) => {
@@ -549,17 +569,14 @@ function CreditCardCarousel({
   };
 
   const scrollToIndex = (index: number) => {
-    if (index >= 0 && index < data.length) {
-      // Usamos Offset (matemática de pixels) em vez de Index. É muito mais estável na Web!
-      // Multiplicamos a largura do cartão pelo índice. Adicionamos uma margem de segurança (ex: 16px).
+    // Agora o limite é data.length (para incluir o botão "Novo Cartão")
+    if (index >= 0 && index <= data.length) {
       const offsetToScroll = index * (CARD_WIDTH + 16);
-
       flatListRef.current?.scrollToOffset({
         offset: offsetToScroll,
         animated: true,
       });
-
-      setActiveIndex(index); // Força a atualização da bolinha de paginação
+      setActiveIndex(index);
     }
   };
 
@@ -583,13 +600,39 @@ function CreditCardCarousel({
           onScroll={handleScroll}
           scrollEventThrottle={16}
           keyExtractor={(item) => item.label}
-          // 👇 ADIÇÕES CRUCIAIS PARA CORRIGIR O BUG NA WEB 👇
           style={{ flex: 1 }}
-          contentContainerStyle={{
-            paddingHorizontal: 16,
-          }}
-          // 👆 ========================================= 👆
-
+          contentContainerStyle={{ paddingHorizontal: 16 }}
+          /* CARD DE CRIAR NOVO CARTÃO VAI AQUI NO RODAPÉ DA LISTA! */
+          ListFooterComponent={
+            <TouchableOpacity
+              activeOpacity={0.7}
+              style={{
+                width: CARD_WIDTH,
+                height: 170,
+                borderRadius: 16,
+                borderWidth: 2,
+                borderColor: "#d1d5db",
+                borderStyle: "dashed",
+                justifyContent: "center",
+                alignItems: "center",
+                backgroundColor: "#f8fafc",
+                marginHorizontal: 8,
+              }}
+              onPress={() => router.push("/(tabs)/accounts?openModal=1")}
+            >
+              <Ionicons name="card-outline" size={36} color="#9ca3af" />
+              <Text
+                style={{
+                  color: "#6b7280",
+                  fontSize: 16,
+                  fontWeight: "bold",
+                  marginTop: 12,
+                }}
+              >
+                Novo Cartão
+              </Text>
+            </TouchableOpacity>
+          }
           renderItem={({ item, index }) => {
             const isFocused = index === activeIndex;
             const nomeBanco = item.label.toLowerCase();
@@ -618,7 +661,6 @@ function CreditCardCarousel({
                 </View>
 
                 <View>
-                  {/* NOVA LINHA: Status com Bolinha */}
                   <View
                     style={{
                       flexDirection: "row",
@@ -634,7 +676,7 @@ function CreditCardCarousel({
                         backgroundColor: item.statusColor,
                         marginRight: 6,
                         borderWidth: 1,
-                        borderColor: "rgba(255,255,255,0.3)", // Bordinha para destacar
+                        borderColor: "rgba(255,255,255,0.3)",
                       }}
                     />
                     <Text
@@ -666,7 +708,8 @@ function CreditCardCarousel({
         </TouchableOpacity>
       </View>
       <View style={s.pagination}>
-        {data.map((_, index) => (
+        {/* O +1 existe para adicionar a bolinha do novo botão tracejado */}
+        {Array.from({ length: data.length + 1 }).map((_, index) => (
           <View
             key={index}
             style={[s.dot, activeIndex === index ? s.dotActive : s.dotInactive]}
