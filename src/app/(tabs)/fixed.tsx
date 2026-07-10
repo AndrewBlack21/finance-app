@@ -368,7 +368,7 @@ export default function FixedExpensesScreen() {
                     <Input
                       label="Valor"
                       placeholder="0,00"
-                      keyboardType="numeric"
+                      keyboardType="decimal-pad"
                       onChangeText={onChange}
                       value={value}
                       error={errors.amount?.message}
@@ -384,7 +384,7 @@ export default function FixedExpensesScreen() {
                     <Input
                       label="Dia venc."
                       placeholder="15"
-                      keyboardType="numeric"
+                      keyboardType="decimal-pad"
                       onChangeText={onChange}
                       value={value}
                       error={errors.due_day?.message}

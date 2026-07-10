@@ -676,7 +676,7 @@ function InstallmentFormModal({
                   style={s.input}
                   value={val1}
                   onChangeText={setVal1}
-                  keyboardType="numeric"
+                  keyboardType="decimal-pad"
                 />
               </View>
               <View style={{ flex: 1 }}>
@@ -687,7 +687,7 @@ function InstallmentFormModal({
                   style={s.input}
                   value={val2}
                   onChangeText={setVal2}
-                  keyboardType="numeric"
+                  keyboardType="decimal-pad"
                 />
               </View>
             </View>

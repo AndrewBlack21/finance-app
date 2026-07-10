@@ -595,7 +595,7 @@ export default function AccountDetailScreen() {
                   marginBottom: 12,
                 }}
                 placeholder="R$ 0,00"
-                keyboardType="numeric"
+                keyboardType="decimal-pad"
                 value={newBankBalance}
                 onChangeText={setNewBankBalance}
               />
@@ -682,7 +682,7 @@ export default function AccountDetailScreen() {
                       const num = text.replace(/[^0-9]/g, "");
                       if (Number(num) <= 31) setDueDay(num);
                     }}
-                    keyboardType="numeric"
+                    keyboardType="decimal-pad"
                     maxLength={2}
                     placeholder="Ex: 10"
                   />
