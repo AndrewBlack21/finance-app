@@ -205,7 +205,7 @@ export function TransactionForm({
             <Input
               label="Dia de vencimento"
               placeholder="Ex: 10"
-              keyboardType="numeric"
+              keyboardType="decimal-pad"
               onChangeText={onChange}
               value={value ?? ""}
             />
@@ -238,7 +238,7 @@ export function TransactionForm({
               <Input
                 label="Valor"
                 placeholder="0,00"
-                keyboardType="numeric"
+                keyboardType="decimal-pad"
                 onChangeText={onChange}
                 value={value}
                 error={errors.amount?.message}
