@@ -8,42 +8,72 @@ export function useAuth() {
   const store = useAuthStore();
   const router = useRouter();
 
-  // Garante que o onAuthChange disparou ao menos 1x antes de libertar a tela
-  const authListenerFired = useRef(false);
+  // Variável para garantir que o ecrã só é libertado uma única vez
+  const authInitialized = useRef(false);
 
   useEffect(() => {
     let mounted = true;
 
-    // 1. Escuta mudanças — dispara imediatamente com a sessão atual do telemóvel
+    // ETAPA 1: Busca ativa e imediata da sessão ao abrir a aplicação
+    const fetchInitialSession = async () => {
+      try {
+        const { data: session } = await authService.getSession();
+
+        if (session && mounted) {
+          store.setSession(session);
+          store.setUser(session.user);
+
+          // Busca os dados do perfil (Nome, Moeda, etc.)
+          const { data } = await supabase
+            .from("profiles")
+            .select("*")
+            .eq("id", session.user.id)
+            .single();
+
+          if (data && mounted) store.setProfile(data);
+        } else if (mounted) {
+          store.clear();
+        }
+      } catch (error) {
+        console.log("Erro ao carregar sessão:", error);
+      } finally {
+        // ETAPA 2: Assim que os dados são lidos, remove o ecrã de carregamento
+        if (mounted && !authInitialized.current) {
+          authInitialized.current = true;
+          store.setHydrated(true);
+        }
+      }
+    };
+
+    fetchInitialSession();
+
+    // ETAPA 3: O "escutador" fica apenas para manter a segurança (ex: caso faça logout)
     const subscription = authService.onAuthChange(async (session) => {
       if (!mounted) return;
 
-      store.setSession(session);
-      store.setUser(session?.user ?? null);
+      // Só processa se a busca inicial já tiver terminado, para não atropelar a Etapa 1
+      if (authInitialized.current) {
+        store.setSession(session);
+        store.setUser(session?.user ?? null);
 
-      if (session?.user) {
-        const { data } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", session.user.id)
-          .single();
-        if (data && mounted) store.setProfile(data);
-      } else {
-        store.clear();
-      }
-
-      // 2. Só marca "hydrated" (e liberta a tela preta/branca) APÓS o listener disparar pela primeira vez!
-      if (!authListenerFired.current) {
-        authListenerFired.current = true;
-        if (mounted) store.setHydrated(true);
+        if (session?.user) {
+          const { data } = await supabase
+            .from("profiles")
+            .select("*")
+            .eq("id", session.user.id)
+            .single();
+          if (data && mounted) store.setProfile(data);
+        } else {
+          store.clear();
+          router.replace("/(auth)/login");
+        }
       }
     });
 
-    // 3. Timeout de segurança — se a leitura demorar > 3s, liberta a tela para não travar o utilizador
+    // ETAPA 4: Tempo limite de segurança caso a base de dados falhe completamente
     const timeout = setTimeout(() => {
-      if (mounted && !authListenerFired.current) {
-        console.log("Auth timeout — forçando hydration");
-        authListenerFired.current = true;
+      if (mounted && !authInitialized.current) {
+        authInitialized.current = true;
         store.setHydrated(true);
       }
     }, 3000);
@@ -54,6 +84,8 @@ export function useAuth() {
       subscription.unsubscribe();
     };
   }, []);
+
+  // --- Funções de Autenticação Padrão ---
 
   const register = async (credentials: RegisterCredentials) => {
     store.setLoading(true);
@@ -75,8 +107,6 @@ export function useAuth() {
     store.clear();
     store.setHydrated(true);
     store.setLoading(false);
-
-    // O router que você tinha antes para redirecionar
     router.replace("/(auth)/login");
   };
 
