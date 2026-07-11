@@ -27,30 +27,37 @@ export function useFixedExpenses() {
 
   // Paga a conta e cria transação de despesa automaticamente
   const markAsPaid = async (expense: FixedExpense) => {
-    // sem bloqueio — permite pagar mesmo sem conta vinculada
+    // 👇 TRAVA DE SEGURANÇA NO BACKEND 👇
+    if (!expense.account_id) {
+      return {
+        error:
+          "É necessário vincular uma conta bancária para realizar o pagamento.",
+      };
+    }
 
-    // Cria a transação de despesa
+    // Cria a transação de despesa (Já não tem a linha "amount" duplicada que estava a dar erro de compilação antes)
     const { error: txError } = await transactionService.create({
       title: `${expense.title} (Conta Fixa)`,
       amount: expense.amount,
       currency: expense.currency,
-      amount: expense.amount,
       type: "expense",
       account_id: expense.account_id,
       category_id: expense.category_id,
       date: new Date().toISOString().split("T")[0],
       notes: "Gerado automaticamente por conta fixa",
       recurring: true,
-    });
+    } as any);
+
     if (txError) return { error: txError };
 
     // Marca como paga
     const { data, error } = await fixedExpenseService.markAsPaid(
       expense.id,
-      expense.account_id ?? "",
+      expense.account_id,
     );
     if (data)
       setExpenses((prev) => prev.map((e) => (e.id === expense.id ? data : e)));
+
     return { error };
   };
 
@@ -65,7 +72,7 @@ export function useFixedExpenses() {
     const { data, error } = await fixedExpenseService.update(id, {
       is_paid: false,
       paid_at: null,
-    });
+    } as any);
     if (data) setExpenses((prev) => prev.map((e) => (e.id === id ? data : e)));
     setIsLoading(false);
     return { error };

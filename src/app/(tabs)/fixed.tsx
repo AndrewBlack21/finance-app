@@ -166,7 +166,20 @@ export default function FixedExpensesScreen() {
     // ----------------------------------------------------
     // LÓGICA 2: SE A CONTA AINDA NÃO FOI PAGA (PAGAR)
     // ----------------------------------------------------
-    const msgPagar = `Confirmar pagamento de "${expense.title}"?\n${formatCurrency(expense.amount, expense.currency)}${!expense.account_id ? "\n\n⚠️ Sem conta vinculada — apenas marcará como paga." : ""}`;
+    // 👇 NOVA TRAVA: ALERTA DE CONTA NÃO VINCULADA 👇
+    if (!expense.account_id) {
+      const msgErro =
+        "Para realizar o pagamento, edite esta conta fixa e selecione de qual banco o dinheiro irá sair.";
+      if (Platform.OS === "web") {
+        window.alert("⚠️ Conta não vinculada!\n\n" + msgErro);
+      } else {
+        Alert.alert("⚠️ Conta não vinculada!", msgErro);
+      }
+      return; // 🛑 Para o código aqui, impedindo o erro no banco de dados!
+    }
+    // 👆 FIM DA TRAVA 👆
+
+    const msgPagar = `Confirmar pagamento de "${expense.title}"?\n${formatCurrency(expense.amount, expense.currency)}`;
 
     if (Platform.OS === "web") {
       const confirmou = window.confirm(msgPagar);
@@ -187,7 +200,6 @@ export default function FixedExpensesScreen() {
       ]);
     }
   };
-
   // Função atualizada para apagar contas fixas de forma segura
   const handleDelete = (item: FixedExpense) => {
     const mensagem = `Tem certeza que deseja remover "${item.title}"?\n\nEssa ação não pode ser desfeita.`;
