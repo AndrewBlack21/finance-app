@@ -178,60 +178,61 @@ export default function DashboardScreen() {
     const currentMonth = new Date().toISOString().slice(0, 7); // Ex: "2026-07"
     const today = new Date();
 
-    // Filtra apenas as contas que são de crédito
     const creditAccounts = accounts.filter((acc) => acc.type === "credit");
 
     return creditAccounts
       .map((acc) => {
-        // Puxa as parcelas desta conta
-        const allActive = installments.filter((i) => i.account_id === acc.id);
-
-        // Filtra as parcelas que caem no mês atual e ainda não foram pagas
-        const currentInstallments = allActive.filter(
+        // 1. Puxa as ativas + as que foram finalizadas (pagas) exatamente NESTE mês
+        const allRelevant = installments.filter(
           (i) =>
-            (!i.start_date || i.start_date <= to) &&
-            i.paid_installments < i.total_installments,
+            i.account_id === acc.id &&
+            (Number(i.paid_installments) < Number(i.total_installments) ||
+              i.invoice_paid_month === currentMonth),
         );
 
-        // Verifica no banco se a fatura já foi paga
+        // 2. Filtra as que caem no mês atual
+        const currentInstallments = allRelevant.filter(
+          (i) => !i.start_date || i.start_date <= to,
+        );
+
+        // 3. Verifica no banco se tem alguma pendente
+        const pendingCurrent = currentInstallments.filter(
+          (i) => i.invoice_paid_month !== currentMonth,
+        );
+
         const isInvoicePaid =
-          allActive.length > 0 &&
-          allActive
-            .filter((i) => !i.start_date || i.start_date <= to)
-            .every((i) => i.invoice_paid_month === currentMonth);
+          currentInstallments.length > 0 && pendingCurrent.length === 0;
 
-        // Se está pago, o valor da fatura pendente é 0
-        const invoiceTotal = isInvoicePaid
-          ? 0
-          : currentInstallments.reduce(
-              (sum, i) => sum + Number(i.installment_amount),
-              0,
-            );
+        // 💡 O SEGREDO ESTÁ AQUI: Soma TUDO (pagas ou não) para manter o valor visual
+        const invoiceTotal = currentInstallments.reduce(
+          (sum, i) => sum + Number(i.installment_amount),
+          0,
+        );
 
-        // --- Lógica das Cores (Verde, Amarelo, Vermelho) ---
+        // Lógica das Cores
         const dueDay = acc.due_day || 10;
         const dueDate = new Date(today.getFullYear(), today.getMonth(), dueDay);
 
-        let statusColor = "#f59e0b"; // Amarelo (Pendente)
+        let statusColor = "#f59e0b"; // Amarelo
         let statusLabel = "Pendente";
 
         if (isInvoicePaid) {
-          statusColor = "#4ade80"; // Verde (Pago) - Tom mais claro para contrastar com o fundo do cartão
+          statusColor = "#4ade80"; // Verde (Pago)
           statusLabel = "Pago";
         } else if (today > dueDate) {
-          statusColor = "#f87171"; // Vermelho (Vencido) - Tom mais claro para contraste
+          statusColor = "#f87171"; // Vermelho (Vencido)
           statusLabel = "Vencido";
         }
 
         return {
           label: acc.name,
           color: acc.color || FALLBACK_COLORS[0],
-          value: invoiceTotal, // Enviamos o valor da fatura do mês
+          value: invoiceTotal, // O valor real mantém-se na tela!
           statusColor,
           statusLabel,
         };
       })
-      .filter((card) => card.value > 0 || card.statusLabel === "Pago"); // Mostra faturas com valor ou já pagas
+      .filter((card) => card.value > 0 || card.statusLabel === "Pago");
   }, [accounts, installments, to]);
   return (
     <SafeAreaView style={s.safe}>

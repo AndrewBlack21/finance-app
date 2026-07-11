@@ -83,34 +83,33 @@ export default function CreditScreen() {
   // Agrupa os cartões e calcula as faturas com matemática exata de parcelas e datas
   // Agrupa os cartões e separa as faturas em "Atual" e "Próxima"
   const invoiceGroups = useMemo(() => {
-    const currentMonthIso = new Date().toISOString().slice(0, 7); // Ex: "2026-07"
+    const currentMonthIso = new Date().toISOString().slice(0, 7);
 
     return accounts
       .map((acc) => {
-        // 1. Pega TODAS as compras ativas (parcelas restantes > 0)
-        const allActive = installments.filter(
+        // 1. Ativas + Finalizadas no mês atual
+        const allRelevant = installments.filter(
           (i) =>
             i.account_id === acc.id &&
-            Number(i.paid_installments) < Number(i.total_installments),
+            (Number(i.paid_installments) < Number(i.total_installments) ||
+              i.invoice_paid_month === currentMonthIso),
         );
 
-        // 2. LISTA DA FATURA ATUAL (Tudo que vence até este mês)
-        const currentInstallments = allActive.filter(
+        // 2. Fatura Atual
+        const currentInstallments = allRelevant.filter(
           (i) => !i.start_date || i.start_date <= to,
         );
 
-        // 3. FILTRO DE PENDENTES (O segredo do erro de 5 mil estava aqui!)
-        // Filtramos apenas o que ainda NÃO foi pago neste mês
+        // 3. Pendentes
         const pendingCurrent = currentInstallments.filter(
           (i) => i.invoice_paid_month !== currentMonthIso,
         );
 
-        // A fatura está totalmente paga se havia compras para o mês, mas nenhuma pendente
         const isInvoicePaid =
           currentInstallments.length > 0 && pendingCurrent.length === 0;
 
-        // O Valor Total soma APENAS o que está pendente, igual ao accounts.tsx!
-        const invoiceTotal = pendingCurrent.reduce(
+        // 💡 CORREÇÃO: O total agora soma TODAS as compras do mês!
+        const invoiceTotal = currentInstallments.reduce(
           (sum, i) => sum + Number(i.installment_amount),
           0,
         );
@@ -126,23 +125,19 @@ export default function CreditScreen() {
           .toISOString()
           .split("T")[0];
 
-        const nextInstallments = allActive.filter((i) => {
-          // Ignora compras que só começam daqui a 2 meses ou mais
-          if (i.start_date && i.start_date > nextMonthEnd) return false;
+        // Para a próxima fatura, ignoramos as que já estão 100% pagas
+        const activeForNext = allRelevant.filter(
+          (i) => Number(i.paid_installments) < Number(i.total_installments),
+        );
 
-          // Se a compra já estava ativa neste mês (Julho)
+        const nextInstallments = activeForNext.filter((i) => {
+          if (i.start_date && i.start_date > nextMonthEnd) return false;
           if (!i.start_date || i.start_date <= to) {
-            // Se já foi paga neste mês, a parcela que sobrou cai no mês que vem com certeza
-            if (i.invoice_paid_month === currentMonthIso) {
-              return true;
-            }
-            // Se NÃO foi paga, precisa sobrar mais de 1 parcela (a de hoje + a do mês que vem)
+            if (i.invoice_paid_month === currentMonthIso) return true;
             return (
               Number(i.total_installments) - Number(i.paid_installments) > 1
             );
           }
-
-          // Se a compra começa exatamente no mês que vem
           return true;
         });
 
@@ -153,7 +148,6 @@ export default function CreditScreen() {
 
         return {
           account: acc,
-          // Se já pagou, mostra a lista inteira do mês. Se não pagou, mostra só as que faltam pagar para não confundir o utilizador!
           currentInstallments: isInvoicePaid
             ? currentInstallments
             : pendingCurrent,
@@ -520,11 +514,20 @@ function InvoiceCard({
           )}
 
           {displayList.map((item: any) => {
-            // Lógica inteligente: Se estou a ver a próxima fatura, e a compra é antiga, mostro a parcela +2.
-            const currentParcel = Number(item.paid_installments) + 1;
             const isOldItem = !item.start_date || item.start_date <= to;
-            const displayParcel =
-              showNextMonth && isOldItem ? currentParcel + 1 : currentParcel;
+
+            // Lógica inteligente para corrigir o número da parcela a ser exibido
+            let displayParcel = Number(item.paid_installments) + 1;
+
+            if (isPaidMode && !showNextMonth) {
+              // Se a fatura atual está paga, a parcela que você pagou foi a que está registada
+              displayParcel = Number(item.paid_installments);
+            } else if (showNextMonth && isOldItem) {
+              // Se estamos a ver o próximo mês
+              displayParcel = isPaidMode
+                ? Number(item.paid_installments) + 1
+                : Number(item.paid_installments) + 2;
+            }
 
             return (
               <View key={item.id} style={s.itemRow}>
