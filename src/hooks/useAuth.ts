@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { supabase, authService } from "@/services";
 import { useAuthStore } from "@/store/authStore";
 import type { AuthCredentials, RegisterCredentials } from "@/types";
@@ -8,53 +8,49 @@ export function useAuth() {
   const store = useAuthStore();
   const router = useRouter();
 
+  // Garante que o onAuthChange disparou ao menos 1x antes de libertar a tela
+  const authListenerFired = useRef(false);
+
   useEffect(() => {
     let mounted = true;
 
-    const hydrate = async () => {
-      try {
-        console.log("🔵 Iniciando hydrate...");
-        const { data: session } = await authService.getSession();
-        console.log("🟢 Sessão obtida:", session ? "logado" : "sem sessão");
-        if (!mounted) return;
-        if (session) {
-          store.setSession(session);
-          store.setUser(session.user);
-          const { data } = await supabase
-            .from("profiles")
-            .select("*")
-            .eq("id", session.user.id)
-            .single();
-          if (data && mounted) store.setProfile(data);
-        }
-      } catch (e) {
-        console.log("🔴 hydrate error:", e);
-      } finally {
-        console.log("🟡 Finalizando hydrate, setando isHydrated=true");
-        if (mounted) store.setHydrated(true);
-      }
-    };
-
-    hydrate();
-
+    // 1. Escuta mudanças — dispara imediatamente com a sessão atual do telemóvel
     const subscription = authService.onAuthChange(async (session) => {
       if (!mounted) return;
+
       store.setSession(session);
       store.setUser(session?.user ?? null);
+
       if (session?.user) {
         const { data } = await supabase
           .from("profiles")
           .select("*")
           .eq("id", session.user.id)
           .single();
-        if (data) store.setProfile(data);
+        if (data && mounted) store.setProfile(data);
       } else {
         store.clear();
       }
+
+      // 2. Só marca "hydrated" (e liberta a tela preta/branca) APÓS o listener disparar pela primeira vez!
+      if (!authListenerFired.current) {
+        authListenerFired.current = true;
+        if (mounted) store.setHydrated(true);
+      }
     });
+
+    // 3. Timeout de segurança — se a leitura demorar > 3s, liberta a tela para não travar o utilizador
+    const timeout = setTimeout(() => {
+      if (mounted && !authListenerFired.current) {
+        console.log("Auth timeout — forçando hydration");
+        authListenerFired.current = true;
+        store.setHydrated(true);
+      }
+    }, 3000);
 
     return () => {
       mounted = false;
+      clearTimeout(timeout);
       subscription.unsubscribe();
     };
   }, []);
@@ -80,6 +76,7 @@ export function useAuth() {
     store.setHydrated(true);
     store.setLoading(false);
 
+    // O router que você tinha antes para redirecionar
     router.replace("/(auth)/login");
   };
 
