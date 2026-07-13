@@ -20,7 +20,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useFixedExpenses } from "@/hooks/useFixedExpenses";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useCategories } from "@/hooks/useCategories";
-import { fixedExpenseService } from "@/services";
+// 👇 Importamos o transactionService para mexer no saldo
+import { fixedExpenseService, transactionService } from "@/services";
 import { Input, Button } from "@/components/ui";
 import { formatCurrency } from "@/utils";
 import { useAuth } from "@/hooks/useAuth";
@@ -65,9 +66,14 @@ export default function FixedExpensesScreen() {
     remove,
     refetch,
   } = useFixedExpenses();
-  const { accounts, create: createAccount } = useAccounts();
+
+  // 👇 Pegamos também o refetchAccounts para atualizar o saldo na tela na hora
+  const {
+    accounts,
+    create: createAccount,
+    refetch: refetchAccounts,
+  } = useAccounts();
   const [refreshing, setRefreshing] = useState(false);
-  // criação de conta:
   const [accountModalVisible, setAccountModalVisible] = useState(false);
   const [newBankName, setNewBankName] = useState("");
   const [newBankColor, setNewBankColor] = useState("#830ad1");
@@ -76,11 +82,14 @@ export default function FixedExpensesScreen() {
 
   const [modalVisible, setModalVisible] = useState(false);
   const [editing, setEditing] = useState<FixedExpense | null>(null);
+
   const onRefresh = async () => {
     setRefreshing(true);
-    if (refetch) await refetch();
+    if (refetchAccounts) await refetchAccounts(); // Atualiza saldo
+    if (refetch) await refetch(); // Atualiza lista
     setRefreshing(false);
   };
+
   const {
     control,
     handleSubmit,
@@ -92,7 +101,6 @@ export default function FixedExpensesScreen() {
     defaultValues: { currency: "BRL" },
   });
 
-  // Preenche form ao editar
   useEffect(() => {
     if (editing) {
       setValue("title", editing.title);
@@ -136,27 +144,46 @@ export default function FixedExpensesScreen() {
 
   const handlePay = async (expense: FixedExpense) => {
     // ----------------------------------------------------
-    // LÓGICA 1: SE A CONTA JÁ ESTIVER PAGA (DESFAZER)
+    // LÓGICA 1: DESFAZER PAGAMENTO (Devolve o dinheiro)
     // ----------------------------------------------------
     if (expense.is_paid) {
       const msgDesfazer = `"${expense.title}" já foi marcada como paga. Deseja desfazer?`;
 
+      const undoAction = async () => {
+        const { error } = await undoPaid(expense.id);
+        if (error) {
+          Alert.alert("Erro", error);
+          return;
+        }
+
+        // 👇 Procura e apaga a transação que havia debitado o dinheiro
+        if (expense.account_id) {
+          const txRes = await transactionService.list({
+            account_id: expense.account_id,
+          });
+          const txToDelete = (txRes.data || []).find(
+            (t: any) =>
+              (t.title === `Conta Fixa: ${expense.title}` ||
+                t.title === expense.title) &&
+              t.amount === expense.amount,
+          );
+          if (txToDelete) {
+            await transactionService.remove(txToDelete.id);
+          }
+        }
+        await onRefresh();
+      };
+
       if (Platform.OS === "web") {
         const confirmou = window.confirm(msgDesfazer);
-        if (confirmou) {
-          const { error } = await undoPaid(expense.id);
-          if (error) window.alert("Erro: " + error);
-        }
+        if (confirmou) await undoAction();
       } else {
         Alert.alert("Conta paga", msgDesfazer, [
           { text: "Cancelar", style: "cancel" },
           {
             text: "Desfazer pagamento",
             style: "destructive",
-            onPress: async () => {
-              const { error } = await undoPaid(expense.id);
-              if (error) Alert.alert("Erro", error);
-            },
+            onPress: undoAction,
           },
         ]);
       }
@@ -164,67 +191,85 @@ export default function FixedExpensesScreen() {
     }
 
     // ----------------------------------------------------
-    // LÓGICA 2: SE A CONTA AINDA NÃO FOI PAGA (PAGAR)
+    // LÓGICA 2: PAGAR CONTA (Tira o dinheiro do saldo)
     // ----------------------------------------------------
-    // 👇 NOVA TRAVA: ALERTA DE CONTA NÃO VINCULADA 👇
     if (!expense.account_id) {
       const msgErro =
         "Para realizar o pagamento, edite esta conta fixa e selecione de qual banco o dinheiro irá sair.";
-      if (Platform.OS === "web") {
+      if (Platform.OS === "web")
         window.alert("⚠️ Conta não vinculada!\n\n" + msgErro);
-      } else {
-        Alert.alert("⚠️ Conta não vinculada!", msgErro);
-      }
-      return; // 🛑 Para o código aqui, impedindo o erro no banco de dados!
+      else Alert.alert("⚠️ Conta não vinculada!", msgErro);
+      return;
     }
-    // 👆 FIM DA TRAVA 👆
 
     const msgPagar = `Confirmar pagamento de "${expense.title}"?\n${formatCurrency(expense.amount, expense.currency)}`;
 
+    const payAction = async () => {
+      // 👇 Cria a transação real para debitar do saldo da conta
+      await transactionService.create({
+        account_id: expense.account_id!,
+        title: `Conta Fixa: ${expense.title}`,
+        amount: expense.amount,
+        type: "expense",
+        date: new Date().toISOString().split("T")[0],
+        currency: expense.currency ?? "BRL",
+        category_id: expense.category_id ?? null,
+      } as any);
+
+      const { error } = await markAsPaid(expense);
+      if (error) {
+        Alert.alert("Erro", error);
+        return;
+      }
+      await onRefresh();
+    };
+
     if (Platform.OS === "web") {
       const confirmou = window.confirm(msgPagar);
-      if (confirmou) {
-        const { error } = await markAsPaid(expense);
-        if (error) window.alert("Erro: " + error);
-      }
+      if (confirmou) await payAction();
     } else {
       Alert.alert("Pagar conta", msgPagar, [
         { text: "Cancelar", style: "cancel" },
-        {
-          text: "Confirmar",
-          onPress: async () => {
-            const { error } = await markAsPaid(expense);
-            if (error) Alert.alert("Erro", error);
-          },
-        },
+        { text: "Confirmar", onPress: payAction },
       ]);
     }
   };
-  // Função atualizada para apagar contas fixas de forma segura
+
   const handleDelete = (item: FixedExpense) => {
     const mensagem = `Tem certeza que deseja remover "${item.title}"?\n\nEssa ação não pode ser desfeita.`;
 
-    // Verificação para ambiente Web
+    const deleteAction = async () => {
+      // 👇 Se a conta já estava paga, apagamos a transação para devolver o dinheiro
+      if (item.is_paid && item.account_id) {
+        const txRes = await transactionService.list({
+          account_id: item.account_id,
+        });
+        const txToDelete = (txRes.data || []).find(
+          (t: any) =>
+            (t.title === `Conta Fixa: ${item.title}` ||
+              t.title === item.title) &&
+            t.amount === item.amount,
+        );
+        if (txToDelete) {
+          await transactionService.remove(txToDelete.id);
+        }
+      }
+
+      const { error } = await remove(item.id);
+      if (error) {
+        Alert.alert("Erro ao remover", error);
+      } else {
+        await onRefresh();
+      }
+    };
+
     if (Platform.OS === "web") {
       const confirmou = window.confirm(mensagem);
-      if (confirmou) {
-        remove(item.id).then(({ error }) => {
-          if (error) window.alert("Erro ao remover: " + error);
-        });
-      }
-    }
-    // Verificação para ambiente Mobile (iOS/Android)
-    else {
+      if (confirmou) deleteAction();
+    } else {
       Alert.alert("Remover conta fixa", mensagem, [
         { text: "Cancelar", style: "cancel" },
-        {
-          text: "Remover",
-          style: "destructive",
-          onPress: async () => {
-            const { error } = await remove(item.id);
-            if (error) Alert.alert("Erro ao remover", error);
-          },
-        },
+        { text: "Remover", style: "destructive", onPress: deleteAction },
       ]);
     }
   };
@@ -301,8 +346,8 @@ export default function FixedExpensesScreen() {
               colors={["#6366f1"]}
             />
           }
-          bounces={false} // <--- ADICIONE ISTO
-          overScrollMode="never" // <--- ADICIONE ISTO
+          bounces={false}
+          overScrollMode="never"
           ListEmptyComponent={
             <View style={s.empty}>
               <Text style={s.emptyText}>Nenhuma conta fixa cadastrada</Text>
@@ -429,7 +474,7 @@ export default function FixedExpensesScreen() {
               )}
             />
 
-            {accounts.length >= 0 && ( // Mudamos de > 0 para >= 0 para o botão sempre aparecer
+            {accounts.length >= 0 && (
               <>
                 <Text style={s.label}>Debitar da conta (opcional)</Text>
                 <Controller
@@ -441,7 +486,6 @@ export default function FixedExpensesScreen() {
                       showsHorizontalScrollIndicator={false}
                     >
                       <View style={s.optionRow}>
-                        {/* NOVO BOTÃO: + Nova Conta */}
                         <TouchableOpacity
                           style={[
                             s.optionBtn,
@@ -459,7 +503,6 @@ export default function FixedExpensesScreen() {
                           </Text>
                         </TouchableOpacity>
 
-                        {/* Lista de contas existentes */}
                         {accounts.map((a) => (
                           <TouchableOpacity
                             key={a.id}
@@ -484,7 +527,6 @@ export default function FixedExpensesScreen() {
                         ))}
                       </View>
 
-                      {/* MODAL RÁPIDO DE NOVA CONTA */}
                       <Modal
                         visible={accountModalVisible}
                         animationType="fade"
@@ -522,6 +564,7 @@ export default function FixedExpensesScreen() {
                                 padding: 12,
                                 borderRadius: 8,
                                 marginBottom: 16,
+                                fontSize: 16,
                               }}
                               placeholder="Nome do Banco (Ex: Nubank)"
                               value={newBankName}
@@ -746,7 +789,11 @@ function FixedExpenseCard({
 }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#f8fafc" },
+  safe: {
+    flex: 1,
+    backgroundColor: "#f8fafc",
+    ...(Platform.OS === "web" ? { overflow: "hidden", maxWidth: "100%" } : {}),
+  },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",

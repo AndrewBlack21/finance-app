@@ -6,9 +6,10 @@ export default function Root({ children }: { children: React.ReactNode }) {
       <head>
         <meta charSet="utf-8" />
         <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
+        {/* 👇 META VIEWPORT BLINDADA: Trava a escala em 1.0 e desativa o user-scalable */}
         <meta
           name="viewport"
-          content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover, maximum-scale=1.0, user-scalable=no"
+          content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0, shrink-to-fit=no, viewport-fit=cover"
         />
 
         {/* ── iOS PWA — ESSENCIAIS ─────────────────────────── */}
@@ -31,40 +32,34 @@ export default function Root({ children }: { children: React.ReactNode }) {
         <style
           dangerouslySetInnerHTML={{
             __html: `
+          /* 1. BLOQUEIO DE ZOOM DE DUPLO CLIQUE (Double Tap) */
           *, *::before, *::after {
             box-sizing: border-box;
-            touch-action: manipulation;
+            touch-action: manipulation !important; /* Desativa o double-tap to zoom */
             -webkit-tap-highlight-color: transparent;
           }
 
-          html {
-            position: fixed;
+          /* 2. TRAVA O "SAMBA" (EFEITO ELÁSTICO / RUBBER-BANDING) DO NAVEGADOR */
+          /* Note que removemos o 'position: fixed' que quebrava o teclado */
+          html, body, #root {
             width: 100%;
             height: 100%;
-            overflow: hidden;
-          }
-
-          body {
-            position: fixed;
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-            overscroll-behavior: none;
-            -webkit-overflow-scrolling: auto;
+            margin: 0;
+            padding: 0;
+            overflow: hidden !important; /* Esconde a rolagem da tela inteira */
+            overscroll-behavior-y: none !important; /* Trava a puxada elástica da janela */
             background-color: #f8fafc;
-            /* OS PADDINGS DA APPLE FORAM REMOVIDOS DAQUI PARA O MENU VOLTAR A APARECER */
           }
 
-          #root {
-            width: 100%;
-            height: 100dvh;
-            overflow: hidden;
-            position: relative;
+          /* 3. Evita que o texto redimensione sozinho ao virar o celular */
+          body {
+            -webkit-text-size-adjust: 100%;
           }
 
-          [data-rnw-class],
-          .css-view-175oi2r {
-            -webkit-overflow-scrolling: touch;
+          /* 4. ROLAGEM SUAVE APENAS DENTRO DAS LISTAS (ScrollViews) */
+          [data-rnw-class="ScrollView"], .css-view-175oi2r {
+            -webkit-overflow-scrolling: touch !important;
+            overscroll-behavior: contain !important; /* Impede que o scroll interno vaze e puxe a tela toda */
           }
         `,
           }}

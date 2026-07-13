@@ -10,7 +10,7 @@ import {
   RefreshControl,
   Modal,
   Platform,
-  Alert, // <--- ADICIONADO PARA EXIBIR ERRO SE FALHAR
+  Alert,
 } from "react-native";
 import React, { useState, useRef, useCallback, useMemo } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -236,6 +236,8 @@ export default function DashboardScreen() {
 
   return (
     <SafeAreaView style={s.safe}>
+      {/* 👇 BLOQUEIO DE ZOOM PARA NAVEGADORES */}
+
       <ScrollView
         contentContainerStyle={s.scroll}
         showsVerticalScrollIndicator={false}
@@ -542,14 +544,12 @@ export default function DashboardScreen() {
                 </Text>
               </TouchableOpacity>
 
-              {/* 👇 CORREÇÃO: Função de Sair aprimorada com redirecionamento e tratamento de erro */}
               <TouchableOpacity
                 style={[s.menuItem, { borderBottomWidth: 0 }]}
                 onPress={async () => {
                   setIsMenuVisible(false);
                   try {
                     await logout();
-                    // Força o aplicativo a voltar para a raiz, ativando a proteção de rotas (Login)
                     router.replace("/");
                   } catch (error) {
                     Alert.alert("Erro", "Não foi possível sair da conta.");
@@ -865,7 +865,12 @@ function CreditCardCarousel({
 }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#f8fafc" },
+  // 👇 ESTILO BLINDADO PARA NÃO VAZAR O TAMANHO DA JANELA
+  safe: {
+    flex: 1,
+    backgroundColor: "#f8fafc",
+    ...(Platform.OS === "web" ? { overflow: "hidden", maxWidth: "100%" } : {}),
+  },
   scroll: { paddingBottom: 32 },
 
   header: {

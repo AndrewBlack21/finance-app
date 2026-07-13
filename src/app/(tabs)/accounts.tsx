@@ -12,7 +12,7 @@ import {
   Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router"; // <-- Head ADICIONADO AQUI
 import { useAccounts } from "@/hooks/useAccounts";
 import { Ionicons } from "@expo/vector-icons";
 import { transactionService, installmentService } from "@/services";
@@ -55,7 +55,6 @@ export default function AccountDetailScreen() {
   }>();
   const router = useRouter();
 
-  // Detecta se estamos na visão de "Todas as Contas"
   const isAllAccounts = id === "all";
 
   const [tab, setTab] = useState<Tab>("debito");
@@ -201,7 +200,6 @@ export default function AccountDetailScreen() {
     { income: 0, expense: 0 },
   );
 
-  // Valores de Entradas e Saídas se ajustam conforme a Aba selecionada
   const { currentTotalIn, currentTotalOut } = useMemo(() => {
     if (tab === "debito") {
       const inc = transactions
@@ -232,17 +230,14 @@ export default function AccountDetailScreen() {
     };
   }, [tab, transactions, installments, historyTotals, to]);
 
-  // Saldo Principal da Tela (O que aparece em fonte grande)
   const calculatedBalance = useMemo(() => {
     if (!isAllAccounts) return parseFloat(balance ?? "0") || 0;
 
     if (tab === "debito" || tab === "historico") {
-      // Subtrai saídas das entradas para mostrar o que de fato SOBROU
       return currentTotalIn - currentTotalOut;
     }
 
     if (tab === "credito") {
-      // Soma APENAS as faturas PENDENTES do mês atual
       const currentMonthIso = new Date().toISOString().slice(0, 7);
       const pendingCurrent = installments.filter(
         (i) =>
@@ -250,7 +245,6 @@ export default function AccountDetailScreen() {
           (!i.start_date || i.start_date <= to) &&
           i.invoice_paid_month !== currentMonthIso,
       );
-      // Pega apenas o valor da parcela
       return pendingCurrent.reduce(
         (sum, i) => sum + Number(i.installment_amount),
         0,
@@ -730,6 +724,7 @@ export default function AccountDetailScreen() {
                   borderRadius: 8,
                   padding: 10,
                   marginBottom: 12,
+                  fontSize: 16, // <-- ADICIONADO PARA PREVENIR ZOOM NO IOS
                 }}
                 placeholder="Ex: Nubank, Santander"
                 value={newBankName}
@@ -746,6 +741,7 @@ export default function AccountDetailScreen() {
                   borderRadius: 8,
                   padding: 10,
                   marginBottom: 12,
+                  fontSize: 16, // <-- ADICIONADO PARA PREVENIR ZOOM NO IOS
                 }}
                 placeholder="R$ 0,00"
                 keyboardType="decimal-pad"
@@ -828,6 +824,7 @@ export default function AccountDetailScreen() {
                       borderColor: "#d1d5db",
                       borderRadius: 8,
                       padding: 10,
+                      fontSize: 16, // <-- ADICIONADO PARA PREVENIR ZOOM NO IOS
                     }}
                     value={dueDay}
                     onChangeText={(text) => {
@@ -1157,7 +1154,12 @@ function isDateInsideRange(date: string, range: PeriodRange) {
 }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#f8fafc" },
+  // 👇 ESTILO BLINDADO PARA NÃO VAZAR O TAMANHO DA JANELA
+  safe: {
+    flex: 1,
+    backgroundColor: "#f8fafc",
+    ...(Platform.OS === "web" ? { overflow: "hidden", maxWidth: "100%" } : {}),
+  },
   header: { padding: 20, paddingTop: 12, paddingBottom: 24 },
   back: {
     flexDirection: "row",

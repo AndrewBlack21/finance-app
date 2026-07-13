@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+
 import { useTransactions } from "@/hooks/useTransactions";
 import { TransactionForm } from "@/components/forms/TransactionForm";
 import { formatCurrency, formatDate } from "@/utils";
@@ -26,7 +27,6 @@ import type {
 export default function TransactionsScreen() {
   const { profile } = useAuth();
 
-  // Pegamos o setFilters para poder enviar a data do calendário para o banco
   const {
     transactions,
     isLoading,
@@ -37,28 +37,26 @@ export default function TransactionsScreen() {
     setFilters,
     refetch,
     fetchMore,
-    isLoadingMore, // <-- ADICIONADO: Controla a bolinha de carregar no rodapé
+    isLoadingMore,
     hasMore,
   } = useTransactions();
 
   const [modalVisible, setModalVisible] = useState(false);
   const [editing, setEditing] = useState<Transaction | null>(null);
-  // Atualizar tela com refresh
   const [refreshing, setRefreshing] = useState(false);
-  // Estados para o Filtro e Calendário
+
   const [dateFilter, setDateFilter] = useState("");
   const [calendarVisible, setCalendarVisible] = useState(false);
   const [currentMonthView, setCurrentMonthView] = useState(new Date());
 
-  // Efeito que dispara a busca no banco sempre que a data do filtro muda
   useEffect(() => {
     if (dateFilter) {
       setFilters({ date_from: dateFilter, date_to: dateFilter });
     } else {
-      setFilters({}); // Se limpar a data, remove os filtros
+      setFilters({});
     }
   }, [dateFilter, setFilters]);
-  // Atualizar tela com refresh
+
   const onRefresh = async () => {
     setRefreshing(true);
     if (refetch) await refetch();
@@ -107,7 +105,6 @@ export default function TransactionsScreen() {
     }
   };
 
-  // --- LÓGICA DO CALENDÁRIO ---
   const getDaysInMonth = (year: number, month: number) =>
     new Date(year, month + 1, 0).getDate();
   const getFirstDayOfMonth = (year: number, month: number) =>
@@ -120,11 +117,9 @@ export default function TransactionsScreen() {
     const firstDay = getFirstDayOfMonth(year, month);
 
     const days = [];
-    // Espaços vazios antes do dia 1
     for (let i = 0; i < firstDay; i++) {
       days.push(<View key={`empty-${i}`} style={s.calendarDay} />);
     }
-    // Dias do mês
     for (let i = 1; i <= daysInMonth; i++) {
       const dateString = `${year}-${String(month + 1).padStart(2, "0")}-${String(i).padStart(2, "0")}`;
       const isSelected = dateFilter === dateString;
@@ -184,7 +179,6 @@ export default function TransactionsScreen() {
         </View>
       </View>
 
-      {/* BOTÃO DO FILTRO DE DATA (Abre o Calendário) */}
       <View
         style={{
           paddingHorizontal: 20,
@@ -219,7 +213,7 @@ export default function TransactionsScreen() {
           data={transactions}
           keyExtractor={(t) => t.id}
           contentContainerStyle={s.list}
-          onEndReached={fetchMore} // carrega mais ao chegar no fim
+          onEndReached={fetchMore}
           onEndReachedThreshold={0.3}
           ListFooterComponent={
             isLoadingMore ? (
@@ -231,7 +225,7 @@ export default function TransactionsScreen() {
               <Text style={s.endText}>— Fim do histórico —</Text>
             ) : null
           }
-          bounces={false} // <--- ADICIONE ISTO
+          bounces={false}
           overScrollMode="never"
           refreshControl={
             <RefreshControl
@@ -259,7 +253,6 @@ export default function TransactionsScreen() {
         />
       )}
 
-      {/* MODAL DO CALENDÁRIO */}
       <Modal visible={calendarVisible} transparent={true} animationType="fade">
         <View style={s.modalOverlay}>
           <View style={s.calendarContainer}>
@@ -301,7 +294,6 @@ export default function TransactionsScreen() {
         </View>
       </Modal>
 
-      {/* MODAL DE TRANSAÇÃO */}
       <Modal
         visible={modalVisible}
         animationType="slide"
@@ -338,7 +330,6 @@ export default function TransactionsScreen() {
 
 function TransactionItem({ transaction: t, currency, onEdit, onDelete }: any) {
   const isIncome = t.type === "income";
-  // Inteligência: Deteta se é o pagamento de uma fatura
   const isInvoicePayment = t.title && t.title.startsWith("Fatura");
   const color = isIncome ? "#16a34a" : "#dc2626";
 
@@ -381,13 +372,11 @@ function TransactionItem({ transaction: t, currency, onEdit, onDelete }: any) {
           {formatCurrency(t.amount, currency)}
         </Text>
         <View style={s.itemActions}>
-          {/* Escondemos o lápis de editar para faturas, pois o valor vem automático do cartão */}
           {!isInvoicePayment && (
             <TouchableOpacity onPress={onEdit} style={s.editBtn}>
               <Ionicons name="create-outline" size={14} color="#6366f1" />
             </TouchableOpacity>
           )}
-          {/* O botão de excluir mantém-se para poder limpar os testes! */}
           <TouchableOpacity onPress={onDelete} style={s.deleteBtn}>
             <Ionicons name="trash-outline" size={14} color="#ef4444" />
           </TouchableOpacity>
@@ -397,7 +386,12 @@ function TransactionItem({ transaction: t, currency, onEdit, onDelete }: any) {
   );
 }
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#f8fafc" },
+  // 👇 ESTILO BLINDADO PARA EVITAR SCROLL NO NAVEGADOR
+  safe: {
+    flex: 1,
+    backgroundColor: "#f8fafc",
+    ...(Platform.OS === "web" ? { overflow: "hidden", maxWidth: "100%" } : {}),
+  },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -471,7 +465,6 @@ const s = StyleSheet.create({
   modalTitle: { fontSize: 18, fontWeight: "bold", color: "#111827" },
   modalClose: { color: "#6366f1", fontWeight: "600" },
 
-  // Estilos do Botão de Filtro
   filterBtn: {
     flex: 1,
     flexDirection: "row",
@@ -486,7 +479,6 @@ const s = StyleSheet.create({
   filterBtnText: { color: "#374151", fontSize: 14 },
   clearBtn: { justifyContent: "center", padding: 8 },
 
-  // Estilos do Modal do Calendário
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",

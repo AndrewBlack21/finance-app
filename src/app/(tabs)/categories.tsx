@@ -19,7 +19,7 @@ import { useCategories } from "@/hooks/useCategories";
 import { categoryService } from "@/services";
 import { Input } from "@/components/ui";
 import type { Category, CategoryType } from "@/types";
-import { useRouter } from "expo-router";
+import { useRouter } from "expo-router"; // <-- ADICIONADO
 
 const schema = z.object({
   name: z.string().min(1, "Nome obrigatório"),
@@ -111,7 +111,6 @@ export default function CategoriesScreen() {
 
     const mensagem = `Tem certeza que deseja remover "${cat.name}"?`;
 
-    // Lógica para PWA (Web / iPhone Safari)
     if (Platform.OS === "web") {
       const confirmou = window.confirm(mensagem);
       if (confirmou) {
@@ -119,9 +118,7 @@ export default function CategoriesScreen() {
           if (error) window.alert("Erro: " + error);
         });
       }
-    }
-    // Lógica para Aplicativo Nativo (App Store / Play Store)
-    else {
+    } else {
       Alert.alert("Remover categoria", mensagem, [
         { text: "Cancelar", style: "cancel" },
         {
@@ -156,7 +153,6 @@ export default function CategoriesScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* TABS */}
       <View style={s.tabs}>
         <TouchableOpacity
           style={[s.tab, tab === "expense" && s.tabActive]}
@@ -213,7 +209,6 @@ export default function CategoriesScreen() {
 
       <Text style={s.hint}>Segure para remover categorias personalizadas</Text>
 
-      {/* MODAL */}
       <Modal
         visible={modalVisible}
         animationType="slide"
@@ -233,7 +228,6 @@ export default function CategoriesScreen() {
           </View>
 
           <ScrollView contentContainerStyle={s.form}>
-            {/* TIPO */}
             <Text style={s.label}>Tipo</Text>
             <Controller
               name="type"
@@ -296,7 +290,6 @@ export default function CategoriesScreen() {
               )}
             />
 
-            {/* ÍCONE */}
             <Text style={s.label}>Ícone</Text>
             <Controller
               name="icon"
@@ -320,7 +313,6 @@ export default function CategoriesScreen() {
               )}
             />
 
-            {/* COR */}
             <Text style={s.label}>Cor</Text>
             <Controller
               name="color"
@@ -373,7 +365,12 @@ export default function CategoriesScreen() {
 }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#f8fafc" },
+  // 👇 ESTILO BLINDADO PARA EVITAR SCROLL NO NAVEGADOR
+  safe: {
+    flex: 1,
+    backgroundColor: "#f8fafc",
+    ...(Platform.OS === "web" ? { overflow: "hidden", maxWidth: "100%" } : {}),
+  },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",

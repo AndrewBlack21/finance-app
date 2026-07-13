@@ -49,7 +49,6 @@ export default function CreditScreen() {
   const [payingGroup, setPayingGroup] = useState<any>(null);
   const [sourceAccountId, setSourceAccountId] = useState<string>("");
 
-  // 👇 CORREÇÃO 1: Filtra apenas contas que são do tipo crédito[cite: 3]
   const creditAccountsOnly = useMemo(() => {
     return accounts.filter((acc) => acc.type === "credit");
   }, [accounts]);
@@ -78,7 +77,6 @@ export default function CreditScreen() {
   const invoiceGroups = useMemo(() => {
     const currentMonthIso = new Date().toISOString().slice(0, 7);
 
-    // 👇 CORREÇÃO 2: Usa o creditAccountsOnly em vez de accounts[cite: 3]
     return creditAccountsOnly
       .map((acc) => {
         const allRelevant = installments.filter(
@@ -151,7 +149,7 @@ export default function CreditScreen() {
           group.nextInstallments.length > 0 ||
           group.isInvoicePaid,
       );
-  }, [creditAccountsOnly, installments, to]); // Atualizado as dependências[cite: 3]
+  }, [creditAccountsOnly, installments, to]);
 
   const pendingCards = invoiceGroups.filter((g) => !g.isInvoicePaid);
   const paidCards = invoiceGroups.filter((g) => g.isInvoicePaid);
@@ -176,6 +174,8 @@ export default function CreditScreen() {
 
   return (
     <SafeAreaView style={s.safe}>
+      {/* 👇 BLOQUEIO DE ZOOM */}
+
       <View style={s.header}>
         <Text style={s.title}>Meus Cartões</Text>
         <TouchableOpacity style={s.addBtn} onPress={handleOpenCreate}>
@@ -236,7 +236,7 @@ export default function CreditScreen() {
       <InstallmentFormModal
         visible={modalVisible}
         initialData={editingItem}
-        accounts={creditAccountsOnly} // 👇 CORREÇÃO 3: Passa apenas cartões de crédito para o formulário[cite: 3]
+        accounts={creditAccountsOnly}
         onClose={() => setModalVisible(false)}
         onSave={async (payload: any) => {
           if (editingItem) {
@@ -271,7 +271,6 @@ export default function CreditScreen() {
               showsHorizontalScrollIndicator={false}
               style={{ marginBottom: 24, maxHeight: 40 }}
             >
-              {/* Aqui usamos a lista completa para pagar de uma conta corrente */}
               {accounts
                 .filter((a) => a.type !== "credit")
                 .map((acc) => (
@@ -606,7 +605,6 @@ function InstallmentFormModal({
               {initialData ? "Editar Compra" : "Nova Compra Parcelada"}
             </Text>
 
-            {/* 👇 CORREÇÃO 4: Alerta visual para o usuário[cite: 3] */}
             <View style={s.alertContainer}>
               <Ionicons name="information-circle" size={18} color="#1e40af" />
               <Text style={s.alertText}>
@@ -769,7 +767,12 @@ function InstallmentFormModal({
 }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#f8fafc" },
+  // 👇 ESTILO BLINDADO PARA EVITAR SCROLL NO NAVEGADOR
+  safe: {
+    flex: 1,
+    backgroundColor: "#f8fafc",
+    ...(Platform.OS === "web" ? { overflow: "hidden", maxWidth: "100%" } : {}),
+  },
   header: {
     padding: 20,
     paddingTop: 16,
@@ -865,6 +868,7 @@ const s = StyleSheet.create({
     padding: 12,
     borderRadius: 8,
     marginBottom: 16,
+    fontSize: 16, // 👇 PREVINE ZOOM NO INPUT NO iOS
   },
   btn: { flex: 1, padding: 14, alignItems: "center", borderRadius: 8 },
   accBtn: {
@@ -887,7 +891,6 @@ const s = StyleSheet.create({
   modeBtnActive: { backgroundColor: "#4f46e5" },
   modeText: { fontWeight: "bold", color: "#6b7280" },
 
-  // 👇 CORREÇÃO 5: Estilos da caixa de Alerta[cite: 3]
   alertContainer: {
     flexDirection: "row",
     backgroundColor: "#dbeafe",
