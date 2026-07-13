@@ -1,25 +1,27 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { supabase, authService } from "@/services";
 import { useAuthStore } from "@/store/authStore";
 import type { AuthCredentials, RegisterCredentials } from "@/types";
 import { useRouter } from "expo-router";
 
+// 👇 CORREÇÃO: Variável global. Garante que a sessão seja buscada apenas UMA VEZ
+// para o aplicativo inteiro, impedindo que uma tela cancele o login da outra.[cite: 16]
+let isGlobalAuthInitialized = false;
+
 export function useAuth() {
   const store = useAuthStore();
   const router = useRouter();
 
-  // Variável para garantir que o ecrã só é libertado uma única vez
-  const authInitialized = useRef(false);
-
   useEffect(() => {
-    let mounted = true;
+    if (isGlobalAuthInitialized) return;
+    isGlobalAuthInitialized = true;
 
     // ETAPA 1: Busca ativa e imediata da sessão ao abrir a aplicação
     const fetchInitialSession = async () => {
       try {
         const { data: session } = await authService.getSession();
 
-        if (session && mounted) {
+        if (session) {
           store.setSession(session);
           store.setUser(session.user);
 
@@ -30,59 +32,45 @@ export function useAuth() {
             .eq("id", session.user.id)
             .single();
 
-          if (data && mounted) store.setProfile(data);
-        } else if (mounted) {
+          // 👇 CORREÇÃO: O store global deve ser atualizado mesmo que a tela saia de foco[cite: 16]
+          if (data) store.setProfile(data);
+        } else {
           store.clear();
         }
       } catch (error) {
         console.log("Erro ao carregar sessão:", error);
       } finally {
-        // ETAPA 2: Assim que os dados são lidos, remove o ecrã de carregamento
-        if (mounted && !authInitialized.current) {
-          authInitialized.current = true;
-          store.setHydrated(true);
-        }
+        store.setHydrated(true);
       }
     };
 
     fetchInitialSession();
 
-    // ETAPA 3: O "escutador" fica apenas para manter a segurança (ex: caso faça logout)
-    const subscription = authService.onAuthChange(async (session) => {
-      if (!mounted) return;
+    // ETAPA 2: Escutador global contínuo (fica ativo no fundo do app)
+    authService.onAuthChange(async (session) => {
+      store.setSession(session);
+      store.setUser(session?.user ?? null);
 
-      // Só processa se a busca inicial já tiver terminado, para não atropelar a Etapa 1
-      if (authInitialized.current) {
-        store.setSession(session);
-        store.setUser(session?.user ?? null);
-
-        if (session?.user) {
-          const { data } = await supabase
-            .from("profiles")
-            .select("*")
-            .eq("id", session.user.id)
-            .single();
-          if (data && mounted) store.setProfile(data);
-        } else {
-          store.clear();
-          router.replace("/(auth)/login");
-        }
+      if (session?.user) {
+        const { data } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", session.user.id)
+          .single();
+          
+        if (data) store.setProfile(data);
+      } else {
+        store.clear();
+        router.replace("/(auth)/login");
       }
     });
 
-    // ETAPA 4: Tempo limite de segurança caso a base de dados falhe completamente
-    const timeout = setTimeout(() => {
-      if (mounted && !authInitialized.current) {
-        authInitialized.current = true;
-        store.setHydrated(true);
-      }
+    // ETAPA 3: Tempo limite de segurança caso a base de dados demore
+    setTimeout(() => {
+      store.setHydrated(true);
     }, 3000);
 
-    return () => {
-      mounted = false;
-      clearTimeout(timeout);
-      subscription.unsubscribe();
-    };
+    // 👇 CORREÇÃO: Removemos o return de cleanup. O escutador deve viver para sempre![cite: 16]
   }, []);
 
   // --- Funções de Autenticação Padrão ---
