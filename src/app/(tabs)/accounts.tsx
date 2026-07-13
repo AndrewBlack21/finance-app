@@ -25,6 +25,7 @@ import {
 } from "@/utils";
 import type { Transaction, Installment } from "@/types";
 import { useInstallments } from "@/hooks/useInstallments";
+
 type Tab = "debito" | "credito" | "historico";
 type Period = "day" | "week" | "month";
 
@@ -54,18 +55,19 @@ export default function AccountDetailScreen() {
   }>();
   const router = useRouter();
 
+  // Detecta se estamos na visão de "Todas as Contas"
+  const isAllAccounts = id === "all";
+
   const [tab, setTab] = useState<Tab>("debito");
   const [newBankName, setNewBankName] = useState("");
   const [newBankColor, setNewBankColor] = useState("#830ad1");
   const [period, setPeriod] = useState<Period>("month");
-  // ADICIONE Para mudar vencimento
   const [newBankType, setNewBankType] = useState<
     "checking" | "savings" | "credit"
   >("checking");
   const [newBankBalance, setNewBankBalance] = useState("");
   const [dueDay, setDueDay] = useState("10");
-  //  ===============================
-  // Estado para controlar a data base do histórico
+
   const [baseDate, setBaseDate] = useState(new Date());
   const [monthPickerVisible, setMonthPickerVisible] = useState(false);
 
@@ -75,9 +77,7 @@ export default function AccountDetailScreen() {
   const [modalVisible, setModalVisible] = useState(false);
 
   const { openModal } = useLocalSearchParams<{ openModal?: string }>();
-
   const { to } = getCurrentMonthRange();
-  // 1. Puxamos o accounts (lista) e a nova função updateAccount
   const {
     accounts,
     create: createAccount,
@@ -85,18 +85,13 @@ export default function AccountDetailScreen() {
     remove: removeAccount,
   } = useAccounts();
 
-  // 2. Estado para saber se o modal está a CRIAR ou a EDITAR
   const [isEditing, setIsEditing] = useState(false);
-
-  // 3. Pegamos todos os detalhes da conta atual (incluindo o vencimento)
   const currentAccount = accounts.find((a) => a.id === id);
 
-  // 4. Função que preenche o modal com os dados atuais e o abre
   const handleOpenEdit = () => {
-    // 1. Procura a conta garantindo que o ID é lido da mesma forma (evita bugs de Texto vs Número)
+    if (isAllAccounts) return;
     const acc = accounts.find((a) => String(a.id) === String(id));
 
-    // 2. Preenche os dados. Se a lista ainda estiver a carregar, usa os dados de backup que vieram do ecrã anterior!
     setNewBankName(acc?.name || name);
     setNewBankBalance(
       acc ? String(acc.balance) : String(parseFloat(balance || "0")),
@@ -105,12 +100,12 @@ export default function AccountDetailScreen() {
     setDueDay(acc?.due_day ? String(acc.due_day) : "10");
     setNewBankColor(acc?.color || color || "#6366f1");
 
-    // 3. Abre o modal imediatamente
     setIsEditing(true);
     setModalVisible(true);
   };
 
   const handleDelete = () => {
+    if (isAllAccounts) return;
     const accName = currentAccount?.name || name;
     const msg = `Tem a certeza que deseja excluir ${accName}?`;
 
@@ -139,37 +134,36 @@ export default function AccountDetailScreen() {
   }, [id]);
 
   useEffect(() => {
-    if (openModal === "1") {
+    if (openModal === "1" && !isAllAccounts) {
       setModalVisible(true);
       router.setParams({ openModal: "" });
     }
-  }, [openModal]);
+  }, [openModal, isAllAccounts]);
 
   const loadData = async () => {
     setIsLoading(true);
+    const txParams = isAllAccounts ? {} : { account_id: id };
+
     const [txResult, instResult] = await Promise.all([
-      transactionService.list({ account_id: id }),
+      transactionService.list(txParams),
       installmentService.list(),
     ]);
+
     setTransactions(txResult.data ?? []);
-    setInstallments((instResult.data ?? []).filter((i) => i.account_id === id));
+
+    const allInst = instResult.data ?? [];
+    setInstallments(
+      isAllAccounts ? allInst : allInst.filter((i) => i.account_id === id),
+    );
     setIsLoading(false);
   };
 
-  const income = transactions.filter((t) => t.type === "income");
-  const expense = transactions.filter((t) => t.type === "expense");
-  const totalIn = income.reduce((sum, t) => sum + t.amount, 0);
-  const totalOut = expense.reduce((sum, t) => sum + t.amount, 0);
-
-  // Calcula o Range usando a baseDate (data selecionada pelo utilizador)
   const periodRange = useMemo(
     () => getPeriodRange(period, baseDate),
     [period, baseDate],
   );
 
-  // 1. Cria uma lista unificada juntando Débito e Crédito para o Histórico
   const unifiedHistory = useMemo(() => {
-    // A. Pega nas transações normais (Débito/Entradas)
     const txs = transactions
       .filter((t) => isDateInsideRange(t.date, periodRange))
       .map((t) => ({
@@ -178,7 +172,6 @@ export default function AccountDetailScreen() {
         displayDate: t.date,
       }));
 
-    // B. Pega nas compras parceladas (Crédito) e transforma-as em despesas
     const insts = installments
       .map((i) => {
         const dateString = i.start_date
@@ -186,21 +179,19 @@ export default function AccountDetailScreen() {
           : i.created_at.split("T")[0];
         return {
           ...i,
-          type: "expense", // Força a ser despesa para abater no resultado
-          amount: i.installment_amount, // Usa o valor da parcela
+          type: "expense",
+          amount: i.installment_amount,
           isCredit: true,
           displayDate: dateString,
         };
       })
       .filter((i) => isDateInsideRange(i.displayDate, periodRange));
 
-    // C. Junta tudo e ordena da data mais recente para a mais antiga
     return [...txs, ...insts].sort((a, b) =>
       b.displayDate.localeCompare(a.displayDate),
     );
   }, [transactions, installments, periodRange]);
 
-  // 2. Calcula os totais com base na lista unificada
   const historyTotals = unifiedHistory.reduce(
     (acc, item) => {
       if (item.type === "income") acc.income += item.amount;
@@ -210,10 +201,77 @@ export default function AccountDetailScreen() {
     { income: 0, expense: 0 },
   );
 
-  const accountCurrency = currency ?? "BRL";
-  const accountColor = color ?? "#6366f1";
+  // Valores de Entradas e Saídas se ajustam conforme a Aba selecionada
+  const { currentTotalIn, currentTotalOut } = useMemo(() => {
+    if (tab === "debito") {
+      const inc = transactions
+        .filter((t) => t.type === "income")
+        .reduce((sum, t) => sum + t.amount, 0);
+      const exp = transactions
+        .filter((t) => t.type === "expense")
+        .reduce((sum, t) => sum + t.amount, 0);
+      return { currentTotalIn: inc, currentTotalOut: exp };
+    }
+    if (tab === "credito") {
+      const currentMonthIso = new Date().toISOString().slice(0, 7);
+      const currentMonthInst = installments.filter(
+        (i) =>
+          (!i.start_date || i.start_date <= to) &&
+          (i.paid_installments < i.total_installments ||
+            i.invoice_paid_month === currentMonthIso),
+      );
+      const exp = currentMonthInst.reduce(
+        (sum, i) => sum + Number(i.installment_amount),
+        0,
+      );
+      return { currentTotalIn: 0, currentTotalOut: exp };
+    }
+    return {
+      currentTotalIn: historyTotals.income,
+      currentTotalOut: historyTotals.expense,
+    };
+  }, [tab, transactions, installments, historyTotals, to]);
 
-  // Nomes dos meses para o Picker
+  // Saldo Principal da Tela (O que aparece em fonte grande)
+  const calculatedBalance = useMemo(() => {
+    if (!isAllAccounts) return parseFloat(balance ?? "0") || 0;
+
+    if (tab === "debito" || tab === "historico") {
+      // Subtrai saídas das entradas para mostrar o que de fato SOBROU
+      return currentTotalIn - currentTotalOut;
+    }
+
+    if (tab === "credito") {
+      // Soma APENAS as faturas PENDENTES do mês atual
+      const currentMonthIso = new Date().toISOString().slice(0, 7);
+      const pendingCurrent = installments.filter(
+        (i) =>
+          i.paid_installments < i.total_installments &&
+          (!i.start_date || i.start_date <= to) &&
+          i.invoice_paid_month !== currentMonthIso,
+      );
+      // Pega apenas o valor da parcela
+      return pendingCurrent.reduce(
+        (sum, i) => sum + Number(i.installment_amount),
+        0,
+      );
+    }
+
+    return 0;
+  }, [
+    isAllAccounts,
+    balance,
+    tab,
+    currentTotalIn,
+    currentTotalOut,
+    installments,
+    to,
+  ]);
+
+  const accountCurrency = currency ?? "BRL";
+  const accountColor = isAllAccounts ? "#6366f1" : (color ?? "#6366f1");
+  const displayName = isAllAccounts ? "Todas as Contas" : name;
+
   const monthNames = [
     "Jan",
     "Fev",
@@ -232,7 +290,6 @@ export default function AccountDetailScreen() {
   return (
     <SafeAreaView style={s.safe}>
       <View style={[s.header, { backgroundColor: accountColor }]}>
-        {/* LINHA SUPERIOR: Botão Voltar (Esquerda) e Ações (Direita) */}
         <View
           style={{
             flexDirection: "row",
@@ -253,35 +310,60 @@ export default function AccountDetailScreen() {
             <Text style={s.backText}>Voltar</Text>
           </TouchableOpacity>
 
-          <View style={{ flexDirection: "row", gap: 10 }}>
-            <TouchableOpacity
-              onPress={handleOpenEdit}
-              style={{
-                backgroundColor: "rgba(255,255,255,0.2)",
-                padding: 8,
-                borderRadius: 8,
-              }}
-            >
-              <Ionicons name="pencil" size={18} color="#fff" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={handleDelete}
-              style={{
-                backgroundColor: "rgba(255,0,0,0.4)",
-                padding: 8,
-                borderRadius: 8,
-              }}
-            >
-              <Ionicons name="trash" size={18} color="#fee2e2" />
-            </TouchableOpacity>
-          </View>
+          {!isAllAccounts && (
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <TouchableOpacity
+                onPress={handleOpenEdit}
+                style={{
+                  backgroundColor: "rgba(255,255,255,0.2)",
+                  padding: 8,
+                  borderRadius: 8,
+                }}
+              >
+                <Ionicons name="pencil" size={18} color="#fff" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleDelete}
+                style={{
+                  backgroundColor: "rgba(255,0,0,0.4)",
+                  padding: 8,
+                  borderRadius: 8,
+                }}
+              >
+                <Ionicons name="trash" size={18} color="#fee2e2" />
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
 
-        {/* NOME E SALDO DA CONTA */}
-        <Text style={s.accountName}>{name}</Text>
+        <Text style={s.accountName}>{displayName}</Text>
 
         {(() => {
-          // Lógica apenas para Cartão de Crédito
+          if (isAllAccounts) {
+            let subtitleText = "Saldo Geral";
+            if (tab === "debito") subtitleText = "Saldo Restante (Débito)";
+            if (tab === "credito")
+              subtitleText = "Faturas Pendentes (Neste Mês)";
+
+            return (
+              <>
+                <Text style={s.accountBalance}>
+                  {formatCurrency(calculatedBalance, accountCurrency)}
+                </Text>
+                <Text
+                  style={{
+                    color: "rgba(255,255,255,0.78)",
+                    fontSize: 13,
+                    marginBottom: 16,
+                    marginTop: -12,
+                  }}
+                >
+                  {subtitleText}
+                </Text>
+              </>
+            );
+          }
+
           if (currentAccount?.type === "credit") {
             const currentMonthIso = new Date().toISOString().slice(0, 7);
             const currentMonthName = getCurrentMonthName();
@@ -291,6 +373,21 @@ export default function AccountDetailScreen() {
                 i.account_id === id &&
                 i.paid_installments < i.total_installments,
             );
+
+            const usedLimit = allActive.reduce(
+              (sum, i) =>
+                sum +
+                (i.total_installments - i.paid_installments) *
+                  i.installment_amount,
+              0,
+            );
+            const totalLimit =
+              currentAccount?.balance || parseFloat(balance || "0") || 0;
+            const availableLimit = totalLimit - usedLimit;
+            const limitPercentage =
+              totalLimit > 0
+                ? Math.min((usedLimit / totalLimit) * 100, 100)
+                : 0;
 
             const pendingCurrent = allActive.filter(
               (i) =>
@@ -303,14 +400,12 @@ export default function AccountDetailScreen() {
             let subtitleColor = "rgba(255,255,255,0.78)";
 
             if (pendingCurrent.length > 0) {
-              // Fatura Deste Mês
               displayValue = pendingCurrent.reduce(
                 (sum, i) => sum + Number(i.installment_amount),
                 0,
               );
               subtitleLabel = `Fatura de ${currentMonthName}`;
             } else {
-              // Fatura do Próximo Mês
               const nextMonthDate = new Date();
               nextMonthDate.setMonth(nextMonthDate.getMonth() + 1);
               const rawNextMonth = new Intl.DateTimeFormat("pt-BR", {
@@ -355,11 +450,67 @@ export default function AccountDetailScreen() {
                 >
                   {subtitleLabel}
                 </Text>
+
+                <View style={{ marginBottom: 16 }}>
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      justifyContent: "space-between",
+                      marginBottom: 6,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: "rgba(255,255,255,0.9)",
+                        fontSize: 13,
+                        fontWeight: "600",
+                      }}
+                    >
+                      Limite: {formatCurrency(totalLimit, accountCurrency)}
+                    </Text>
+                    <Text
+                      style={{
+                        color: "rgba(255,255,255,0.9)",
+                        fontSize: 13,
+                        fontWeight: "600",
+                      }}
+                    >
+                      Utilizado: {formatCurrency(usedLimit, accountCurrency)}
+                    </Text>
+                  </View>
+                  <View
+                    style={{
+                      height: 6,
+                      backgroundColor: "rgba(255,255,255,0.3)",
+                      borderRadius: 3,
+                      overflow: "hidden",
+                    }}
+                  >
+                    <View
+                      style={{
+                        width: `${limitPercentage}%`,
+                        height: "100%",
+                        backgroundColor:
+                          limitPercentage > 90 ? "#ef4444" : "#4ade80",
+                      }}
+                    />
+                  </View>
+                  <Text
+                    style={{
+                      color: "rgba(255,255,255,0.7)",
+                      fontSize: 12,
+                      marginTop: 4,
+                      textAlign: "right",
+                    }}
+                  >
+                    Disponível:{" "}
+                    {formatCurrency(availableLimit, accountCurrency)}
+                  </Text>
+                </View>
               </>
             );
           }
 
-          // Lógica para Conta Corrente (Mantém o original)
           return (
             <>
               <Text style={s.accountBalance}>
@@ -382,7 +533,6 @@ export default function AccountDetailScreen() {
           );
         })()}
 
-        {/* ESTATÍSTICAS: Entradas e Saídas */}
         <View style={s.headerRow}>
           <View style={s.headerStat}>
             <View style={s.headerStatLabelRow}>
@@ -390,7 +540,7 @@ export default function AccountDetailScreen() {
               <Text style={s.headerStatLabel}>Entradas</Text>
             </View>
             <Text style={s.headerStatValue}>
-              {formatCurrency(totalIn, accountCurrency)}
+              {formatCurrency(currentTotalIn, accountCurrency)}
             </Text>
           </View>
           <View style={s.headerDivider} />
@@ -400,7 +550,7 @@ export default function AccountDetailScreen() {
               <Text style={s.headerStatLabel}>Saidas</Text>
             </View>
             <Text style={s.headerStatValue}>
-              {formatCurrency(totalOut, accountCurrency)}
+              {formatCurrency(currentTotalOut, accountCurrency)}
             </Text>
           </View>
         </View>
@@ -435,9 +585,14 @@ export default function AccountDetailScreen() {
           keyExtractor={(t) => t.id}
           contentContainerStyle={s.list}
           ListEmptyComponent={
-            <EmptyState text="Nenhuma transação nesta conta" />
+            <EmptyState
+              text={
+                isAllAccounts
+                  ? "Nenhuma transação encontrada"
+                  : "Nenhuma transação nesta conta"
+              }
+            />
           }
-          // Passamos displayDate para manter o componente TransactionRow genérico
           renderItem={({ item }) => (
             <TransactionRow
               item={{ ...item, displayDate: item.date }}
@@ -451,7 +606,13 @@ export default function AccountDetailScreen() {
           keyExtractor={(i) => i.id}
           contentContainerStyle={s.list}
           ListEmptyComponent={
-            <EmptyState text="Nenhuma compra parcelada nesta conta" />
+            <EmptyState
+              text={
+                isAllAccounts
+                  ? "Nenhuma compra parcelada encontrada"
+                  : "Nenhuma compra parcelada nesta conta"
+              }
+            />
           }
           renderItem={({ item }) => (
             <InstallmentCard installment={item} currency={accountCurrency} />
@@ -460,7 +621,6 @@ export default function AccountDetailScreen() {
       ) : (
         <FlatList
           data={unifiedHistory}
-          // Garante que o ID não se repita caso uma transação e parcela tenham o mesmo ID acidentalmente
           keyExtractor={(t) => t.id + (t.isCredit ? "-C" : "-D")}
           contentContainerStyle={s.list}
           ListHeaderComponent={
@@ -483,10 +643,6 @@ export default function AccountDetailScreen() {
         />
       )}
 
-      {/* MODAL DO SELETOR DE MÊS */}
-      {/* ============================================== */}
-      {/* MODAL DO SELETOR DE MÊS (PARA O HISTÓRICO)     */}
-      {/* ============================================== */}
       <Modal
         visible={monthPickerVisible}
         transparent={true}
@@ -556,9 +712,6 @@ export default function AccountDetailScreen() {
         </View>
       </Modal>
 
-      {/* ============================================== */}
-      {/* MODAL DE CRIAR/EDITAR CONTA (CORRIGIDO)        */}
-      {/* ============================================== */}
       <Modal visible={modalVisible} animationType="slide" transparent={true}>
         <View style={s.modalOverlay}>
           <View style={s.calendarContainer}>
@@ -599,7 +752,6 @@ export default function AccountDetailScreen() {
                 value={newBankBalance}
                 onChangeText={setNewBankBalance}
               />
-              {/* Tipo de Conta */}
               <Text style={{ fontSize: 13, color: "#374151", marginBottom: 4 }}>
                 O que está a adicionar?
               </Text>
@@ -689,7 +841,6 @@ export default function AccountDetailScreen() {
                 </View>
               )}
 
-              {/* PALETA DE CORES PERFEITAMENTE ALINHADA */}
               <Text style={{ fontSize: 13, color: "#374151", marginBottom: 6 }}>
                 Cor de Identificação
               </Text>
@@ -727,7 +878,6 @@ export default function AccountDetailScreen() {
               </View>
             </View>
 
-            {/* BOTÕES CANCELAR E SALVAR */}
             <View style={{ flexDirection: "row", gap: 10 }}>
               <TouchableOpacity
                 style={[
@@ -827,7 +977,6 @@ function HistoryHeader({
         })}
       </View>
 
-      {/* Botão para abrir o seletor quando estiver no modo "Mês" */}
       <TouchableOpacity
         style={s.rangePickerBtn}
         onPress={period === "month" ? onOpenMonthPicker : undefined}
@@ -869,16 +1018,10 @@ function HistoryHeader({
   );
 }
 
-// ... COMPONENTES DE CARTÃO E TRANSAÇÃO MANTIDOS ...
-// ============================================================
-// COMPONENTES DE LISTAGEM ATUALIZADOS
-// ============================================================
-
 function TransactionRow({ item, currency }: any) {
   const isIncome = item.type === "income";
   const color = isIncome ? "#16a34a" : "#dc2626";
 
-  // Inteligência para gerar o subtítulo correto
   let subtitle = "";
   if (item.isCredit) {
     subtitle = `Crédito · Parcela ${item.paid_installments + 1}/${item.total_installments}\nData prog.: ${formatDate(item.displayDate)}`;
@@ -912,7 +1055,6 @@ function TransactionRow({ item, currency }: any) {
 }
 
 function InstallmentCard({ installment: i, currency }: any) {
-  // Inteligência para extrair e formatar o mês da fatura de forma segura
   const dateString = i.start_date
     ? i.start_date.split("T")[0]
     : i.created_at.split("T")[0];
@@ -969,7 +1111,6 @@ function EmptyState({ text }: { text: string }) {
   );
 }
 
-// Lógica ajustada para aceitar o baseDate
 function getPeriodRange(period: Period, baseDate: Date): PeriodRange {
   const start = new Date(baseDate);
   const end = new Date(baseDate);
@@ -992,7 +1133,6 @@ function getPeriodRange(period: Period, baseDate: Date): PeriodRange {
       label: `${formatDate(start.toISOString())} ate ${formatDate(end.toISOString())}`,
     };
   }
-  // Month
   start.setDate(1);
   end.setMonth(baseDate.getMonth() + 1, 0);
   return {
@@ -1115,7 +1255,6 @@ const s = StyleSheet.create({
   periodText: { color: "#6b7280", fontSize: 12, fontWeight: "700" },
   periodTextActive: { color: "#fff" },
 
-  // Estilo do botão que abre o calendário no Histórico
   rangePickerBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -1158,7 +1297,6 @@ const s = StyleSheet.create({
   empty: { alignItems: "center", paddingVertical: 56, gap: 8 },
   emptyText: { fontSize: 14, color: "#9ca3af", textAlign: "center" },
 
-  // Estilos do Modal do Seletor de Mês
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",

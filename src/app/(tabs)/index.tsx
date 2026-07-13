@@ -8,6 +8,9 @@ import {
   useWindowDimensions,
   FlatList,
   RefreshControl,
+  Modal,
+  Platform,
+  Alert, // <--- ADICIONADO PARA EXIBIR ERRO SE FALHAR
 } from "react-native";
 import React, { useState, useRef, useCallback, useMemo } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -25,7 +28,7 @@ import {
   getCurrentMonthName,
 } from "@/utils";
 import type { Installment, Transaction } from "@/types";
-import { Ionicons } from "@expo/vector-icons"; // <--- ADICIONE ESTA LINHA AQUI
+import { Ionicons } from "@expo/vector-icons";
 
 const FALLBACK_COLORS = [
   "#6366f1",
@@ -36,17 +39,15 @@ const FALLBACK_COLORS = [
   "#0ea5e9",
 ];
 
-// ============================================================
-// DASHBOARD MOBILE
-// ============================================================
 export default function DashboardScreen() {
   const { profile, logout } = useAuth();
   const router = useRouter();
   const { from, to } = getCurrentMonthRange();
   const { width } = useWindowDimensions();
-  // 1. Variável que controla se a "rodinha" de carregamento está a girar
+
   const [refreshing, setRefreshing] = useState(false);
-  // Hooks do Banco de Dados
+  const [isMenuVisible, setIsMenuVisible] = useState(false);
+
   const { accounts, totalBalance, refetch: refetchAccounts } = useAccounts();
   const { installments, refetch: refetchInstallments } = useInstallments();
   const { expenses: fixedExpenses, refetch: refetchFixed } = useFixedExpenses();
@@ -68,16 +69,13 @@ export default function DashboardScreen() {
     if (refetchFixed) await refetchFixed();
     setRefreshing(false);
   };
-  // GATILHO DE ATUALIZAÇÃO: Recarrega a tela sempre que o usuário entra nela
+
   useFocusEffect(
     useCallback(() => {
       if (refetchAccounts) refetchAccounts();
       if (refetchInstallments) refetchInstallments();
       if (refetchTransactions) refetchTransactions();
       if (refetchFixed) refetchFixed();
-
-      // O SEGREDO ESTÁ AQUI NA LINHA ABAIXO:
-      // O array vazio [] impede o loop infinito de requisições!
     }, []),
   );
 
@@ -85,13 +83,8 @@ export default function DashboardScreen() {
   const month = getCurrentMonthName();
   const currency = profile?.currency ?? "BRL";
 
-  // ============================================================
-  // INTELIGÊNCIA DOS GRÁFICOS (Débito + Crédito + Porcentagem)
-  // ============================================================
   const expenses = transactions.filter((t) => t.type === "expense");
 
-  // 1. Gráfico de Categorias (Junta Transações Normais + Parcelas de Crédito)
-  // 1. Gráfico de Categorias (Débito + Crédito + Contas Fixas Pendentes)
   const { categoryData, totalCategoryExpenses } = useMemo(() => {
     let total = 0;
     const grouped: Record<
@@ -99,7 +92,6 @@ export default function DashboardScreen() {
       { label: string; value: number; color: string }
     > = {};
 
-    // A. Soma despesas normais (Aqui já entram as contas fixas que foram PAGAS)
     expenses.forEach((t) => {
       const label = t.category?.name ?? "Outros";
       const color = t.category?.color ?? FALLBACK_COLORS[0];
@@ -108,7 +100,6 @@ export default function DashboardScreen() {
       total += t.amount;
     });
 
-    // B. Soma parcelas do cartão de crédito
     installments.forEach((i) => {
       if (i.paid_installments < i.total_installments && i.start_date <= to) {
         const label = (i as any).category?.name ?? "Cartão de Crédito";
@@ -119,18 +110,16 @@ export default function DashboardScreen() {
       }
     });
 
-    // C. NOVO: Soma as contas fixas que AINDA NÃO FORAM PAGAS
     fixedExpenses.forEach((f) => {
       if (!f.is_paid) {
         const label = f.category?.name ?? "Contas Fixas";
-        const color = f.category?.color ?? "#f59e0b"; // Cor laranja padrão
+        const color = f.category?.color ?? "#f59e0b";
         if (!grouped[label]) grouped[label] = { label, value: 0, color };
         grouped[label].value += f.amount;
         total += f.amount;
       }
     });
 
-    // Calcula a percentagem final para o gráfico
     const dataList = Object.values(grouped)
       .sort((a, b) => b.value - a.value)
       .map((item) => ({
@@ -138,16 +127,14 @@ export default function DashboardScreen() {
         percentage:
           total > 0 ? Math.round((item.value / total) * 100) + "%" : "0%",
       }))
-      .slice(0, 6); // Mostra o top 6 para não poluir o gráfico
+      .slice(0, 6);
 
     return { categoryData: dataList, totalCategoryExpenses: total };
-  }, [expenses, installments, fixedExpenses]); // <-- Adicionamos fixedExpenses nas dependências
+  }, [expenses, installments, fixedExpenses]);
 
-  // 2. Gráfico de Maiores Gastos de Crédito (Agora em Pizza)
   const creditPurchasesChart = useMemo(() => {
     let total = 0;
 
-    // FILTRO NOVO: Puxa apenas as compras parceladas que AINDA estão ativas
     const activeInstallments = installments.filter(
       (i) => i.paid_installments < i.total_installments && i.start_date <= to,
     );
@@ -173,16 +160,14 @@ export default function DashboardScreen() {
     return { data: withPercentage, total };
   }, [installments]);
 
-  // 3. Agrupamento para o Carrossel de Cartões
   const creditCardsStatus = useMemo(() => {
-    const currentMonth = new Date().toISOString().slice(0, 7); // Ex: "2026-07"
+    const currentMonth = new Date().toISOString().slice(0, 7);
     const today = new Date();
 
     const creditAccounts = accounts.filter((acc) => acc.type === "credit");
 
     return creditAccounts
       .map((acc) => {
-        // 1. Puxa as ativas + as que foram finalizadas (pagas) exatamente NESTE mês
         const allRelevant = installments.filter(
           (i) =>
             i.account_id === acc.id &&
@@ -190,12 +175,10 @@ export default function DashboardScreen() {
               i.invoice_paid_month === currentMonth),
         );
 
-        // 2. Filtra as que caem no mês atual
         const currentInstallments = allRelevant.filter(
           (i) => !i.start_date || i.start_date <= to,
         );
 
-        // 3. Verifica no banco se tem alguma pendente
         const pendingCurrent = currentInstallments.filter(
           (i) => i.invoice_paid_month !== currentMonth,
         );
@@ -203,37 +186,54 @@ export default function DashboardScreen() {
         const isInvoicePaid =
           currentInstallments.length > 0 && pendingCurrent.length === 0;
 
-        // 💡 O SEGREDO ESTÁ AQUI: Soma TUDO (pagas ou não) para manter o valor visual
         const invoiceTotal = currentInstallments.reduce(
           (sum, i) => sum + Number(i.installment_amount),
           0,
         );
 
-        // Lógica das Cores
+        const allActiveForLimit = installments.filter(
+          (i) =>
+            i.account_id === acc.id &&
+            i.paid_installments < i.total_installments,
+        );
+        const usedLimit = allActiveForLimit.reduce((sum, i) => {
+          return (
+            sum +
+            (i.total_installments - i.paid_installments) * i.installment_amount
+          );
+        }, 0);
+        const totalLimit = acc.balance || 0;
+        const limitPercentage =
+          totalLimit > 0 ? Math.min((usedLimit / totalLimit) * 100, 100) : 0;
+
         const dueDay = acc.due_day || 10;
         const dueDate = new Date(today.getFullYear(), today.getMonth(), dueDay);
 
-        let statusColor = "#f59e0b"; // Amarelo
+        let statusColor = "#f59e0b";
         let statusLabel = "Pendente";
 
         if (isInvoicePaid) {
-          statusColor = "#4ade80"; // Verde (Pago)
+          statusColor = "#4ade80";
           statusLabel = "Pago";
         } else if (today > dueDate) {
-          statusColor = "#f87171"; // Vermelho (Vencido)
+          statusColor = "#f87171";
           statusLabel = "Vencido";
         }
 
         return {
           label: acc.name,
           color: acc.color || FALLBACK_COLORS[0],
-          value: invoiceTotal, // O valor real mantém-se na tela!
+          value: invoiceTotal,
           statusColor,
           statusLabel,
+          usedLimit,
+          totalLimit,
+          limitPercentage,
         };
       })
       .filter((card) => card.value > 0 || card.statusLabel === "Pago");
   }, [accounts, installments, to]);
+
   return (
     <SafeAreaView style={s.safe}>
       <ScrollView
@@ -246,21 +246,19 @@ export default function DashboardScreen() {
             colors={["#6366f1"]}
           />
         }
-        bounces={false} // <--- ADICIONE ISTO
-        overScrollMode="never" // <--- ADICIONE ISTO
+        bounces={false}
+        overScrollMode="never"
       >
-        {/* HEADER */}
         <View style={s.header}>
           <View>
             <Text style={s.greeting}>Olá, {firstName} 👋</Text>
             <Text style={s.monthLabel}>{month}</Text>
           </View>
-          <TouchableOpacity style={s.logoutBtn} onPress={logout}>
-            <Text style={s.logoutText}>Sair</Text>
+          <TouchableOpacity onPress={() => setIsMenuVisible(true)}>
+            <Ionicons name="menu-outline" size={34} color="#111827" />
           </TouchableOpacity>
         </View>
 
-        {/* CARD SALDO TOTAL */}
         <View style={s.balanceCard}>
           <Text style={s.balanceLabel}>Saldo Atual (Todas as Contas)</Text>
           <Text
@@ -289,17 +287,27 @@ export default function DashboardScreen() {
             </View>
           </View>
         </View>
-        {/* Minhas Contas */}
+
         <View style={s.section}>
           <View style={s.sectionHeader}>
             <Text style={s.sectionTitle}>Minhas Contas</Text>
-            <TouchableOpacity onPress={() => router.push("/(tabs)/accounts")}>
+            <TouchableOpacity
+              onPress={() =>
+                router.push({
+                  pathname: "/(tabs)/accounts",
+                  params: {
+                    id: "all",
+                    name: "Todas as Contas",
+                    color: "#6366f1",
+                  },
+                })
+              }
+            >
               <Text style={s.seeAll}>Ver todas</Text>
             </TouchableOpacity>
           </View>
 
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {/* 1. SEÇÃO DE CONTAS EXISTENTES */}
             {accounts.map((account) => (
               <TouchableOpacity
                 key={account.id}
@@ -341,7 +349,6 @@ export default function DashboardScreen() {
               </TouchableOpacity>
             ))}
 
-            {/* 2. CARD DE CRIAR NOVA CONTA (Fixo no final) */}
             <TouchableOpacity
               activeOpacity={0.7}
               style={{
@@ -374,7 +381,7 @@ export default function DashboardScreen() {
             </TouchableOpacity>
           </ScrollView>
         </View>
-        {/* CARROSSEL DE CARTÕES */}
+
         <ScrollView style={s.section}>
           <Text style={s.sectionTitle}>Faturas de Crédito Ativas</Text>
           <View
@@ -386,7 +393,7 @@ export default function DashboardScreen() {
             <CreditCardCarousel data={creditCardsStatus} currency={currency} />
           </View>
         </ScrollView>
-        {/* GRAFICO: GASTOS POR CATEGORIA (Débito e Crédito) */}
+
         <View style={s.section}>
           <Text style={s.sectionTitle}>Gastos por categoria</Text>
           <View style={s.chartCard}>
@@ -430,7 +437,6 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        {/* GRAFICO: MAIORES GASTOS NO CRÉDITO (Novo Grafico em Pizza) */}
         <View style={s.section}>
           <Text style={s.sectionTitle}>Maiores gastos no crédito</Text>
           <View style={s.chartCard}>
@@ -472,13 +478,98 @@ export default function DashboardScreen() {
           </View>
         </View>
       </ScrollView>
+
+      <Modal visible={isMenuVisible} transparent animationType="fade">
+        <View style={s.menuOverlay}>
+          <TouchableOpacity
+            style={s.menuCloseArea}
+            activeOpacity={1}
+            onPress={() => setIsMenuVisible(false)}
+          />
+          <View style={s.menuContent}>
+            <View style={s.menuHeader}>
+              <Text style={s.menuTitle}>Menu</Text>
+              <TouchableOpacity onPress={() => setIsMenuVisible(false)}>
+                <Ionicons name="close" size={28} color="#111827" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={s.menuBody}>
+              <TouchableOpacity
+                style={s.menuItem}
+                onPress={() => {
+                  setIsMenuVisible(false);
+                  alert("Em breve: Exportar para Excel");
+                }}
+              >
+                <View
+                  style={[s.menuIconWrapper, { backgroundColor: "#e0f2fe" }]}
+                >
+                  <Ionicons name="document-text" size={20} color="#0284c7" />
+                </View>
+                <Text style={s.menuItemText}>Exportar dados para planilha</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={s.menuItem}
+                onPress={() => {
+                  setIsMenuVisible(false);
+                  alert("Em breve: Central de Ajuda");
+                }}
+              >
+                <View
+                  style={[s.menuIconWrapper, { backgroundColor: "#fef08a" }]}
+                >
+                  <Ionicons name="help-circle" size={22} color="#ca8a04" />
+                </View>
+                <Text style={s.menuItemText}>Ajuda e Tutorial</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={s.menuFooter}>
+              <TouchableOpacity
+                style={s.menuItem}
+                onPress={() => {
+                  setIsMenuVisible(false);
+                  alert("Em breve: Configurações");
+                }}
+              >
+                <Ionicons name="settings-outline" size={24} color="#4b5563" />
+                <Text
+                  style={[s.menuItemText, { color: "#4b5563", marginLeft: 16 }]}
+                >
+                  Configurações
+                </Text>
+              </TouchableOpacity>
+
+              {/* 👇 CORREÇÃO: Função de Sair aprimorada com redirecionamento e tratamento de erro */}
+              <TouchableOpacity
+                style={[s.menuItem, { borderBottomWidth: 0 }]}
+                onPress={async () => {
+                  setIsMenuVisible(false);
+                  try {
+                    await logout();
+                    // Força o aplicativo a voltar para a raiz, ativando a proteção de rotas (Login)
+                    router.replace("/");
+                  } catch (error) {
+                    Alert.alert("Erro", "Não foi possível sair da conta.");
+                  }
+                }}
+              >
+                <Ionicons name="log-out-outline" size={24} color="#dc2626" />
+                <Text
+                  style={[s.menuItemText, { color: "#dc2626", marginLeft: 16 }]}
+                >
+                  Sair da conta
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
-
-// ============================================================
-// COMPONENTES DE APOIO E FUNÇÕES AUXILIARES
-// ============================================================
 
 function shortenLabel(label: string) {
   return label.length > 15 ? `${label.slice(0, 14)}...` : label;
@@ -560,7 +651,7 @@ function CreditCardCarousel({
 }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const flatListRef = useRef<FlatList>(null);
-  const router = useRouter(); // Navegação
+  const router = useRouter();
   const CARD_WIDTH = 280;
 
   const handleScroll = (event: any) => {
@@ -570,7 +661,6 @@ function CreditCardCarousel({
   };
 
   const scrollToIndex = (index: number) => {
-    // Agora o limite é data.length (para incluir o botão "Novo Cartão")
     if (index >= 0 && index <= data.length) {
       const offsetToScroll = index * (CARD_WIDTH + 16);
       flatListRef.current?.scrollToOffset({
@@ -603,13 +693,12 @@ function CreditCardCarousel({
           keyExtractor={(item) => item.label}
           style={{ flex: 1 }}
           contentContainerStyle={{ paddingHorizontal: 16 }}
-          /* CARD DE CRIAR NOVO CARTÃO VAI AQUI NO RODAPÉ DA LISTA! */
           ListFooterComponent={
             <TouchableOpacity
               activeOpacity={0.7}
               style={{
                 width: CARD_WIDTH,
-                height: 170,
+                height: 190,
                 borderRadius: 16,
                 borderWidth: 2,
                 borderColor: "#d1d5db",
@@ -695,6 +784,61 @@ function CreditCardCarousel({
                   <Text style={s.cardAmount}>
                     {formatCurrency(item.value, currency)}
                   </Text>
+
+                  <View style={{ marginTop: 12 }}>
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        justifyContent: "space-between",
+                        marginBottom: 4,
+                      }}
+                    >
+                      <Text
+                        style={{ color: "rgba(255,255,255,0.8)", fontSize: 11 }}
+                      >
+                        Limite Utilizado
+                      </Text>
+                      <Text
+                        style={{
+                          color: "rgba(255,255,255,0.9)",
+                          fontSize: 11,
+                          fontWeight: "bold",
+                        }}
+                      >
+                        {Math.round(item.limitPercentage)}%
+                      </Text>
+                    </View>
+                    <View
+                      style={{
+                        height: 4,
+                        backgroundColor: "rgba(255,255,255,0.3)",
+                        borderRadius: 2,
+                        overflow: "hidden",
+                      }}
+                    >
+                      <View
+                        style={{
+                          width: `${item.limitPercentage}%`,
+                          height: "100%",
+                          backgroundColor:
+                            item.limitPercentage > 90 ? "#f87171" : "#4ade80",
+                        }}
+                      />
+                    </View>
+                    <Text
+                      style={{
+                        color: "rgba(255,255,255,0.7)",
+                        fontSize: 10,
+                        marginTop: 4,
+                      }}
+                    >
+                      Disp:{" "}
+                      {formatCurrency(
+                        item.totalLimit - item.usedLimit,
+                        currency,
+                      )}
+                    </Text>
+                  </View>
                 </View>
               </View>
             );
@@ -709,7 +853,6 @@ function CreditCardCarousel({
         </TouchableOpacity>
       </View>
       <View style={s.pagination}>
-        {/* O +1 existe para adicionar a bolinha do novo botão tracejado */}
         {Array.from({ length: data.length + 1 }).map((_, index) => (
           <View
             key={index}
@@ -721,14 +864,10 @@ function CreditCardCarousel({
   );
 }
 
-// ============================================================
-// STYLES
-// ============================================================
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#f8fafc" },
   scroll: { paddingBottom: 32 },
 
-  // Header
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -752,7 +891,6 @@ const s = StyleSheet.create({
   },
   logoutText: { color: "#dc2626", fontSize: 13, fontWeight: "600" },
 
-  // Balance card
   balanceCard: {
     margin: 20,
     borderRadius: 20,
@@ -777,7 +915,6 @@ const s = StyleSheet.create({
     marginHorizontal: 16,
   },
 
-  // Section
   section: { marginTop: 8, paddingHorizontal: 20, marginBottom: 16 },
   sectionHeader: {
     flexDirection: "row",
@@ -793,7 +930,6 @@ const s = StyleSheet.create({
   },
   seeAll: { fontSize: 13, color: "#6366f1", fontWeight: "600" },
 
-  // Charts
   chartCard: {
     backgroundColor: "#fff",
     borderRadius: 12,
@@ -822,7 +958,6 @@ const s = StyleSheet.create({
     justifyContent: "center",
   },
 
-  // Transaction item
   transactionItem: {
     flexDirection: "row",
     alignItems: "center",
@@ -849,7 +984,6 @@ const s = StyleSheet.create({
   empty: { paddingVertical: 20, alignItems: "center" },
   emptyText: { color: "#9ca3af", fontSize: 14, fontStyle: "italic" },
 
-  // Carousel
   carouselContainer: { alignItems: "center", marginTop: 4 },
   carouselRow: {
     flexDirection: "row",
@@ -862,7 +996,7 @@ const s = StyleSheet.create({
   arrowText: { fontSize: 24, fontWeight: "bold", color: "#9ca3af" },
   physicalCard: {
     width: 280,
-    height: 170,
+    height: 190,
     borderRadius: 16,
     padding: 20,
     marginHorizontal: 8,
@@ -939,4 +1073,55 @@ const s = StyleSheet.create({
     alignItems: "center",
   },
   emptyAccountsText: { color: "#6b7280", fontSize: 13, fontWeight: "600" },
+
+  menuOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    flexDirection: "row",
+    justifyContent: "flex-end",
+  },
+  menuCloseArea: { flex: 1 },
+  menuContent: {
+    width: "75%",
+    maxWidth: 320,
+    height: "100%",
+    backgroundColor: "#fff",
+    padding: 24,
+    justifyContent: "space-between",
+    shadowColor: "#000",
+    shadowOffset: { width: -2, height: 0 },
+    shadowOpacity: 0.2,
+    elevation: 5,
+  },
+  menuHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 40,
+    marginTop: Platform.OS === "ios" ? 40 : 10,
+  },
+  menuTitle: { fontSize: 24, fontWeight: "bold", color: "#111827" },
+  menuBody: { flex: 1 },
+  menuItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f3f4f6",
+  },
+  menuIconWrapper: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 12,
+  },
+  menuItemText: { fontSize: 16, color: "#111827", fontWeight: "600", flex: 1 },
+  menuFooter: {
+    borderTopWidth: 1,
+    borderTopColor: "#e5e7eb",
+    paddingTop: 16,
+    paddingBottom: Platform.OS === "ios" ? 20 : 0,
+  },
 });
