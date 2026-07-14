@@ -40,7 +40,7 @@ const FALLBACK_COLORS = [
 ];
 
 export default function DashboardScreen() {
-  const { profile, logout } = useAuth();
+  const { profile, session, logout } = useAuth();
   const router = useRouter();
   const { from, to } = getCurrentMonthRange();
   const { width } = useWindowDimensions();
@@ -72,11 +72,14 @@ export default function DashboardScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      // 👇 TRAVA DE SEGURANÇA: Impede a busca antes do token de segurança estar pronto
+      if (!session?.user?.id) return;
+
       if (refetchAccounts) refetchAccounts();
       if (refetchInstallments) refetchInstallments();
       if (refetchTransactions) refetchTransactions();
       if (refetchFixed) refetchFixed();
-    }, []),
+    }, [session?.user?.id]), // <-- A MÁGICA: O Dashboard agora escuta a chegada da sessão!
   );
 
   const firstName = profile?.name?.split(" ")[0] ?? "Usuário";
@@ -246,10 +249,9 @@ export default function DashboardScreen() {
             refreshing={refreshing}
             onRefresh={onRefresh}
             colors={["#6366f1"]}
+            tintColor={"#6366f1"} // Adicionado para a bolinha também ficar roxa no iOS
           />
         }
-        bounces={false}
-        overScrollMode="never"
       >
         <View style={s.header}>
           <View>
