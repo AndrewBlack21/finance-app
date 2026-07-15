@@ -515,6 +515,23 @@ export default function DashboardScreen() {
             </View>
 
             <View style={s.menuBody}>
+              {/* 👇 NOVO BOTÃO DE GRÁFICOS ADICIONADO AQUI 👇 */}
+              <TouchableOpacity
+                style={s.menuItem}
+                onPress={() => {
+                  setIsMenuVisible(false); // Fecha o menu
+                  router.push("/(tabs)/charts"); // Navega para a nova tela
+                }}
+              >
+                <View
+                  style={[s.menuIconWrapper, { backgroundColor: "#e0e7ff" }]}
+                >
+                  <Ionicons name="pie-chart" size={20} color="#4f46e5" />
+                </View>
+                <Text style={s.menuItemText}>Gráficos Avançados</Text>
+              </TouchableOpacity>
+              {/* 👆 FIM DO NOVO BOTÃO 👆 */}
+
               <TouchableOpacity
                 style={s.menuItem}
                 onPress={() => {

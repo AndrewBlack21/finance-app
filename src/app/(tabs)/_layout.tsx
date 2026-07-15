@@ -115,6 +115,8 @@ export default function TabsLayout() {
         name="account-detail"
         options={{ href: null, headerShown: false }}
       />
+
+      <Tabs.Screen name="charts" options={{ href: null, headerShown: false }} />
     </Tabs>
   );
 }
