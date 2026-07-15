@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { transactionService } from "@/services";
+import { transactionService, supabase } from "@/services";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type {
   Transaction,
@@ -117,7 +117,10 @@ export function useTransactions(initialFilters: TransactionFilters = {}) {
 
   // Re-busca sempre que filtros mudam — igual ao original
   useEffect(() => {
-    fetch();
+    // Aguarda sessão antes de buscar transações
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) fetch();
+    });
   }, [fetch]);
 
   // ── CRUD — mantém comportamento original ─────────────────

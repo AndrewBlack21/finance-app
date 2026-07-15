@@ -12,7 +12,13 @@ import {
   Platform,
   Alert,
 } from "react-native";
-import React, { useState, useRef, useCallback, useMemo } from "react";
+import React, {
+  useState,
+  useRef,
+  useCallback,
+  useMemo,
+  useEffect,
+} from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
 import { PieChart } from "react-native-gifted-charts";
@@ -60,6 +66,13 @@ export default function DashboardScreen() {
     date_from: from,
     date_to: to,
   });
+
+  useEffect(() => {
+    if (profile?.id) {
+      refetchAccounts();
+      refetchTransactions(); // refetch das transactions
+    }
+  }, [profile?.id]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -258,9 +271,21 @@ export default function DashboardScreen() {
             <Text style={s.greeting}>Olá, {firstName} 👋</Text>
             <Text style={s.monthLabel}>{month}</Text>
           </View>
-          <TouchableOpacity onPress={() => setIsMenuVisible(true)}>
-            <Ionicons name="menu-outline" size={34} color="#111827" />
-          </TouchableOpacity>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            {/* Botão de refresh — útil no PWA onde pull-to-refresh não funciona */}
+            <TouchableOpacity
+              onPress={() => {
+                refetchAccounts();
+                refetchTransactions();
+              }}
+              style={{ padding: 8 }}
+            >
+              <Ionicons name="refresh-outline" size={22} color="#6366f1" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setIsMenuVisible(true)}>
+              <Ionicons name="menu-outline" size={34} color="#111827" />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={s.balanceCard}>

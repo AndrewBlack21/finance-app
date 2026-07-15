@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { accountService } from "@/services";
+import { accountService, supabase } from "@/services";
 import type { Account, CreateAccount } from "@/types";
 
 // ── Cache local simples — sem dependência de store externa ──
@@ -65,7 +65,15 @@ export function useAccounts() {
   };
 
   useEffect(() => {
+    // Aguarda o cliente Supabase ter o token antes de buscar
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) fetch();
+    });
+    // Tenta buscar imediatamente também (caso já tenha sessão)
     fetch();
+    return () => subscription.unsubscribe();
   }, []);
 
   const create = async (payload: CreateAccount) => {
