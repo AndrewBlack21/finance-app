@@ -13,8 +13,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-
 import { useTransactions } from "@/hooks/useTransactions";
+import { useAccounts } from "@/hooks/useAccounts"; // <-- ADICIONADO
 import { TransactionForm } from "@/components/forms/TransactionForm";
 import { formatCurrency, formatDate } from "@/utils";
 import { useAuth } from "@/hooks/useAuth";
@@ -26,6 +26,7 @@ import type {
 
 export default function TransactionsScreen() {
   const { profile } = useAuth();
+  const { accounts, update: updateAccount } = useAccounts(); // <-- ADICIONADO
 
   const {
     transactions,
@@ -44,7 +45,6 @@ export default function TransactionsScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-
   const [dateFilter, setDateFilter] = useState("");
   const [calendarVisible, setCalendarVisible] = useState(false);
   const [currentMonthView, setCurrentMonthView] = useState(new Date());
@@ -62,45 +62,87 @@ export default function TransactionsScreen() {
     if (refetch) await refetch();
     setRefreshing(false);
   };
+
   const handleCreate = async (data: CreateTransaction) => {
     const { error } = await create(data);
     if (error) Alert.alert("Erro", error);
     else {
+      // 👇 Ajusta o Saldo
+      const acc = accounts.find((a) => a.id === data.account_id);
+      if (acc) {
+        const modifier = data.type === "expense" ? -data.amount : data.amount;
+        await updateAccount(acc.id, {
+          balance: Number(acc.balance) + modifier,
+        });
+      }
       setModalVisible(false);
       setEditing(null);
+      onRefresh();
     }
   };
 
   const handleUpdate = async (data: CreateTransaction) => {
     if (!editing) return;
+
+    const oldAcc = accounts.find((a) => a.id === editing.account_id);
+    const newAcc = accounts.find((a) => a.id === data.account_id);
+
     const { error } = await update(editing.id, data as UpdateTransaction);
     if (error) Alert.alert("Erro", error);
     else {
+      // 👇 Transfere saldo se o banco mudar ou atualiza se o valor mudar
+      if (oldAcc && newAcc) {
+        const revertModifier =
+          editing.type === "expense" ? editing.amount : -editing.amount;
+        const oldBalance = Number(oldAcc.balance) + revertModifier;
+
+        if (oldAcc.id === newAcc.id) {
+          const applyModifier =
+            data.type === "expense" ? -data.amount : data.amount;
+          await updateAccount(oldAcc.id, {
+            balance: oldBalance + applyModifier,
+          });
+        } else {
+          await updateAccount(oldAcc.id, { balance: oldBalance });
+          const applyModifier =
+            data.type === "expense" ? -data.amount : data.amount;
+          await updateAccount(newAcc.id, {
+            balance: Number(newAcc.balance) + applyModifier,
+          });
+        }
+      }
       setModalVisible(false);
       setEditing(null);
+      onRefresh();
     }
   };
-
+  // 👇 Devolve o valor ao apagar
   const handleDelete = async (id: string) => {
-    if (Platform.OS === "web") {
-      const confirmou = window.confirm(
-        "Tem certeza que deseja remover esta transação?",
-      );
-      if (confirmou) {
-        const { error } = await remove(id);
-        if (error) window.alert("Erro ao remover: " + error);
+    const confirmAction = async () => {
+      // 👇 Devolve o saldo antes de apagar
+      const tx = transactions.find((t) => t.id === id);
+      if (tx && tx.account_id) {
+        const acc = accounts.find((a) => a.id === tx.account_id);
+        if (acc) {
+          const modifier = tx.type === "expense" ? tx.amount : -tx.amount;
+          await updateAccount(acc.id, {
+            balance: Number(acc.balance) + modifier,
+          });
+        }
       }
+
+      const { error } = await remove(id);
+      if (error) Alert.alert("Erro", error);
+      else onRefresh();
+    };
+
+    if (Platform.OS === "web") {
+      if (window.confirm("Deseja remover esta transação?"))
+        await confirmAction();
     } else {
       Alert.alert("Remover", "Tem certeza?", [
         { text: "Cancelar", style: "cancel" },
-        {
-          text: "Remover",
-          style: "destructive",
-          onPress: async () => {
-            const { error } = await remove(id);
-            if (error) Alert.alert("Erro", error);
-          },
-        },
+        { text: "Remover", style: "destructive", onPress: confirmAction },
       ]);
     }
   };
@@ -385,8 +427,8 @@ function TransactionItem({ transaction: t, currency, onEdit, onDelete }: any) {
     </View>
   );
 }
+
 const s = StyleSheet.create({
-  // 👇 ESTILO BLINDADO PARA EVITAR SCROLL NO NAVEGADOR
   safe: {
     flex: 1,
     backgroundColor: "#f8fafc",
@@ -464,7 +506,6 @@ const s = StyleSheet.create({
   },
   modalTitle: { fontSize: 18, fontWeight: "bold", color: "#111827" },
   modalClose: { color: "#6366f1", fontWeight: "600" },
-
   filterBtn: {
     flex: 1,
     flexDirection: "row",
@@ -478,7 +519,6 @@ const s = StyleSheet.create({
   },
   filterBtnText: { color: "#374151", fontSize: 14 },
   clearBtn: { justifyContent: "center", padding: 8 },
-
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",

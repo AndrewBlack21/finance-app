@@ -302,25 +302,30 @@ export function TransactionForm({
               </TouchableOpacity>
 
               {/* Lista de contas existentes */}
-              {accounts.map((a) => (
-                <TouchableOpacity
-                  key={a.id}
-                  style={[
-                    s.optionBtn,
-                    value === a.id && {
-                      backgroundColor: a.color,
-                      borderColor: a.color,
-                    },
-                  ]}
-                  onPress={() => onChange(a.id)}
-                >
-                  <Text
-                    style={[s.optionText, value === a.id && { color: "#fff" }]}
+              {accounts
+                .filter((a) => a.type !== "credit") // Filtra para esconder cartões
+                .map((a) => (
+                  <TouchableOpacity
+                    key={a.id}
+                    style={[
+                      s.optionBtn,
+                      value === a.id && {
+                        backgroundColor: a.color,
+                        borderColor: a.color,
+                      },
+                    ]}
+                    onPress={() => onChange(a.id)}
                   >
-                    {a.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+                    <Text
+                      style={[
+                        s.optionText,
+                        value === a.id && { color: "#fff" },
+                      ]}
+                    >
+                      {a.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
             </View>
           </ScrollView>
         )}

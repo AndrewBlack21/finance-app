@@ -40,7 +40,11 @@ export default function CreditScreen() {
     remove,
     refetch: refetchInstallments,
   } = useInstallments();
-  const { accounts, refetch: refetchAccounts } = useAccounts();
+  const {
+    accounts,
+    refetch: refetchAccounts,
+    update: updateAccount,
+  } = useAccounts();
   const { to } = getCurrentMonthRange();
 
   const [modalVisible, setModalVisible] = useState(false);
@@ -65,6 +69,14 @@ export default function CreditScreen() {
       currency: payingGroup.account.currency ?? "BRL",
       category_id: null,
     } as any);
+
+    // 👇 LÓGICA NOVA: Desconta o valor da fatura do banco de onde o dinheiro saiu
+    const acc = accounts.find((a) => a.id === sourceAccountId);
+    if (acc) {
+      await updateAccount(acc.id, {
+        balance: Number(acc.balance) - Number(payingGroup.invoiceTotal),
+      });
+    }
 
     await payFullInvoice(payingGroup.account.id);
 

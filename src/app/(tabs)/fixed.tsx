@@ -72,6 +72,7 @@ export default function FixedExpensesScreen() {
     accounts,
     create: createAccount,
     refetch: refetchAccounts,
+    update: updateAccount,
   } = useAccounts();
   const [refreshing, setRefreshing] = useState(false);
   const [accountModalVisible, setAccountModalVisible] = useState(false);
@@ -125,6 +126,42 @@ export default function FixedExpensesScreen() {
     };
 
     if (editing) {
+      // Se mudou de banco, transfere o histórico e ajusta os saldos
+      if (
+        editing.account_id &&
+        payload.account_id &&
+        editing.account_id !== payload.account_id
+      ) {
+        const txRes = await transactionService.list({
+          account_id: editing.account_id,
+        });
+        const linkedTxs = (txRes.data || []).filter(
+          (t: any) =>
+            t.title === `${editing.title} (Conta Fixa)` ||
+            t.title === `Conta Fixa: ${editing.title}`,
+        );
+
+        for (const tx of linkedTxs) {
+          await transactionService.update(tx.id, {
+            account_id: payload.account_id,
+          });
+
+          // Devolve para o banco antigo
+          const oldAcc = accounts.find((a) => a.id === editing.account_id);
+          if (oldAcc)
+            await updateAccount(oldAcc.id, {
+              balance: Number(oldAcc.balance) + Number(tx.amount),
+            });
+
+          // Desconta do banco novo
+          const newAcc = accounts.find((a) => a.id === payload.account_id);
+          if (newAcc)
+            await updateAccount(newAcc.id, {
+              balance: Number(newAcc.balance) - Number(tx.amount),
+            });
+        }
+      }
+
       const { error } = await fixedExpenseService.update(editing.id, payload);
       if (error) return Alert.alert("Erro", error);
       await refetch();
@@ -143,9 +180,6 @@ export default function FixedExpensesScreen() {
   };
 
   const handlePay = async (expense: FixedExpense) => {
-    // ----------------------------------------------------
-    // LÓGICA 1: DESFAZER PAGAMENTO (Devolve o dinheiro)
-    // ----------------------------------------------------
     if (expense.is_paid) {
       const msgDesfazer = `"${expense.title}" já foi marcada como paga. Deseja desfazer?`;
 
@@ -156,27 +190,37 @@ export default function FixedExpensesScreen() {
           return;
         }
 
-        // 👇 Procura e apaga a transação que havia debitado o dinheiro
         if (expense.account_id) {
           const txRes = await transactionService.list({
             account_id: expense.account_id,
           });
-          const txToDelete = (txRes.data || []).find(
+          // 👇 Procura por ambas as variações de nome para devolver o saldo corretamente e limpar as duplicadas
+          const txsToDelete = (txRes.data || []).filter(
             (t: any) =>
-              (t.title === `Conta Fixa: ${expense.title}` ||
-                t.title === expense.title) &&
+              (t.title === `${expense.title} (Conta Fixa)` ||
+                t.title === `Conta Fixa: ${expense.title}`) &&
               t.amount === expense.amount,
           );
-          if (txToDelete) {
-            await transactionService.remove(txToDelete.id);
+
+          let totalRefund = 0;
+          for (const tx of txsToDelete) {
+            await transactionService.remove(tx.id);
+            totalRefund += Number(tx.amount);
+          }
+
+          if (totalRefund > 0) {
+            const acc = accounts.find((a) => a.id === expense.account_id);
+            if (acc)
+              await updateAccount(acc.id, {
+                balance: Number(acc.balance) + totalRefund,
+              });
           }
         }
         await onRefresh();
       };
 
       if (Platform.OS === "web") {
-        const confirmou = window.confirm(msgDesfazer);
-        if (confirmou) await undoAction();
+        if (window.confirm(msgDesfazer)) await undoAction();
       } else {
         Alert.alert("Conta paga", msgDesfazer, [
           { text: "Cancelar", style: "cancel" },
@@ -190,45 +234,37 @@ export default function FixedExpensesScreen() {
       return;
     }
 
-    // ----------------------------------------------------
-    // LÓGICA 2: PAGAR CONTA (Tira o dinheiro do saldo)
-    // ----------------------------------------------------
     if (!expense.account_id) {
-      const msgErro =
-        "Para realizar o pagamento, edite esta conta fixa e selecione de qual banco o dinheiro irá sair.";
-      if (Platform.OS === "web")
-        window.alert("⚠️ Conta não vinculada!\n\n" + msgErro);
-      else Alert.alert("⚠️ Conta não vinculada!", msgErro);
+      Alert.alert(
+        "⚠️ Conta não vinculada!",
+        "Edite esta conta fixa e selecione de qual banco o dinheiro irá sair.",
+      );
       return;
     }
 
-    const msgPagar = `Confirmar pagamento de "${expense.title}"?\n${formatCurrency(expense.amount, expense.currency)}`;
-
     const payAction = async () => {
-      // 👇 Cria a transação real para debitar do saldo da conta
-      await transactionService.create({
-        account_id: expense.account_id!,
-        title: `Conta Fixa: ${expense.title}`,
-        amount: expense.amount,
-        type: "expense",
-        date: new Date().toISOString().split("T")[0],
-        currency: expense.currency ?? "BRL",
-        category_id: expense.category_id ?? null,
-      } as any);
-
+      // 👇 O próprio sistema original já gera a transação.
+      // Retiramos a nossa criação manual aqui para evitar a duplicação na lista!
       const { error } = await markAsPaid(expense);
       if (error) {
         Alert.alert("Erro", error);
         return;
       }
+
+      // Desconta do saldo real da conta
+      const acc = accounts.find((a) => a.id === expense.account_id);
+      if (acc)
+        await updateAccount(acc.id, {
+          balance: Number(acc.balance) - Number(expense.amount),
+        });
+
       await onRefresh();
     };
 
     if (Platform.OS === "web") {
-      const confirmou = window.confirm(msgPagar);
-      if (confirmou) await payAction();
+      if (window.confirm(`Confirmar pagamento?`)) await payAction();
     } else {
-      Alert.alert("Pagar conta", msgPagar, [
+      Alert.alert("Pagar conta", `Confirmar pagamento?`, [
         { text: "Cancelar", style: "cancel" },
         { text: "Confirmar", onPress: payAction },
       ]);
@@ -236,44 +272,48 @@ export default function FixedExpensesScreen() {
   };
 
   const handleDelete = (item: FixedExpense) => {
-    const mensagem = `Tem certeza que deseja remover "${item.title}"?\n\nEssa ação não pode ser desfeita.`;
-
     const deleteAction = async () => {
-      // 👇 Se a conta já estava paga, apagamos a transação para devolver o dinheiro
+      // Se estava pago, devolvemos o dinheiro primeiro
       if (item.is_paid && item.account_id) {
         const txRes = await transactionService.list({
           account_id: item.account_id,
         });
-        const txToDelete = (txRes.data || []).find(
+        const txsToDelete = (txRes.data || []).filter(
           (t: any) =>
-            (t.title === `Conta Fixa: ${item.title}` ||
-              t.title === item.title) &&
+            (t.title === `${item.title} (Conta Fixa)` ||
+              t.title === `Conta Fixa: ${item.title}`) &&
             t.amount === item.amount,
         );
-        if (txToDelete) {
-          await transactionService.remove(txToDelete.id);
+
+        let totalRefund = 0;
+        for (const tx of txsToDelete) {
+          await transactionService.remove(tx.id);
+          totalRefund += Number(tx.amount);
+        }
+
+        if (totalRefund > 0) {
+          const acc = accounts.find((a) => a.id === item.account_id);
+          if (acc)
+            await updateAccount(acc.id, {
+              balance: Number(acc.balance) + totalRefund,
+            });
         }
       }
 
       const { error } = await remove(item.id);
-      if (error) {
-        Alert.alert("Erro ao remover", error);
-      } else {
-        await onRefresh();
-      }
+      if (error) Alert.alert("Erro ao remover", error);
+      else await onRefresh();
     };
 
     if (Platform.OS === "web") {
-      const confirmou = window.confirm(mensagem);
-      if (confirmou) deleteAction();
+      if (window.confirm("Certeza que deseja remover?")) deleteAction();
     } else {
-      Alert.alert("Remover conta fixa", mensagem, [
+      Alert.alert("Remover", "Certeza que deseja remover?", [
         { text: "Cancelar", style: "cancel" },
         { text: "Remover", style: "destructive", onPress: deleteAction },
       ]);
     }
   };
-
   const handleEdit = (item: FixedExpense) => {
     setEditing(item);
     setModalVisible(true);
@@ -503,28 +543,30 @@ export default function FixedExpensesScreen() {
                           </Text>
                         </TouchableOpacity>
 
-                        {accounts.map((a) => (
-                          <TouchableOpacity
-                            key={a.id}
-                            style={[
-                              s.optionBtn,
-                              value === a.id && {
-                                backgroundColor: a.color,
-                                borderColor: a.color,
-                              },
-                            ]}
-                            onPress={() => onChange(a.id)}
-                          >
-                            <Text
+                        {accounts
+                          .filter((a) => a.type !== "credit") // 👇 Filtra para esconder cartões de crédito
+                          .map((a) => (
+                            <TouchableOpacity
+                              key={a.id}
                               style={[
-                                s.optionText,
-                                value === a.id && { color: "#fff" },
+                                s.optionBtn,
+                                value === a.id && {
+                                  backgroundColor: a.color,
+                                  borderColor: a.color,
+                                },
                               ]}
+                              onPress={() => onChange(a.id)}
                             >
-                              {a.name}
-                            </Text>
-                          </TouchableOpacity>
-                        ))}
+                              <Text
+                                style={[
+                                  s.optionText,
+                                  value === a.id && { color: "#fff" },
+                                ]}
+                              >
+                                {a.name}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
                       </View>
 
                       <Modal
