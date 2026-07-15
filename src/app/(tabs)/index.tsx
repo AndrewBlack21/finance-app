@@ -20,7 +20,7 @@ import React, {
   useEffect,
 } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter, useFocusEffect } from "expo-router";
+import { useRouter } from "expo-router";
 import { PieChart } from "react-native-gifted-charts";
 import { useAuth } from "@/hooks/useAuth";
 import { useTransactions } from "@/hooks/useTransactions";
@@ -67,13 +67,28 @@ export default function DashboardScreen() {
     date_to: to,
   });
 
+  // 👇 GATILHO ÚNICO E ROBUSTO: Dispara quando o usuário é reconhecido
   useEffect(() => {
-    if (profile?.id) {
-      refetchAccounts();
-      refetchTransactions(); // refetch das transactions
-    }
-  }, [profile?.id]);
+    let isMounted = true;
 
+    if (session?.user?.id && profile?.id) {
+      const loadAllData = async () => {
+        setRefreshing(true);
+        if (refetchAccounts) await refetchAccounts();
+        if (refetchInstallments) await refetchInstallments();
+        if (refetchTransactions) await refetchTransactions();
+        if (refetchFixed) await refetchFixed();
+        if (isMounted) setRefreshing(false);
+      };
+      loadAllData();
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, [session?.user?.id, profile?.id]);
+
+  // Mantemos o onRefresh apenas para ação manual de "puxar a tela"
   const onRefresh = async () => {
     setRefreshing(true);
     if (refetchAccounts) await refetchAccounts();
@@ -82,18 +97,6 @@ export default function DashboardScreen() {
     if (refetchFixed) await refetchFixed();
     setRefreshing(false);
   };
-
-  useFocusEffect(
-    useCallback(() => {
-      // 👇 TRAVA DE SEGURANÇA: Impede a busca antes do token de segurança estar pronto
-      if (!session?.user?.id) return;
-
-      if (refetchAccounts) refetchAccounts();
-      if (refetchInstallments) refetchInstallments();
-      if (refetchTransactions) refetchTransactions();
-      if (refetchFixed) refetchFixed();
-    }, [session?.user?.id]), // <-- A MÁGICA: O Dashboard agora escuta a chegada da sessão!
-  );
 
   const firstName = profile?.name?.split(" ")[0] ?? "Usuário";
   const month = getCurrentMonthName();
@@ -252,8 +255,6 @@ export default function DashboardScreen() {
 
   return (
     <SafeAreaView style={s.safe}>
-      {/* 👇 BLOQUEIO DE ZOOM PARA NAVEGADORES */}
-
       <ScrollView
         contentContainerStyle={s.scroll}
         showsVerticalScrollIndicator={false}
@@ -262,7 +263,7 @@ export default function DashboardScreen() {
             refreshing={refreshing}
             onRefresh={onRefresh}
             colors={["#6366f1"]}
-            tintColor={"#6366f1"} // Adicionado para a bolinha também ficar roxa no iOS
+            tintColor={"#6366f1"}
           />
         }
       >
@@ -272,16 +273,6 @@ export default function DashboardScreen() {
             <Text style={s.monthLabel}>{month}</Text>
           </View>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-            {/* Botão de refresh — útil no PWA onde pull-to-refresh não funciona */}
-            <TouchableOpacity
-              onPress={() => {
-                refetchAccounts();
-                refetchTransactions();
-              }}
-              style={{ padding: 8 }}
-            >
-              <Ionicons name="refresh-outline" size={22} color="#6366f1" />
-            </TouchableOpacity>
             <TouchableOpacity onPress={() => setIsMenuVisible(true)}>
               <Ionicons name="menu-outline" size={34} color="#111827" />
             </TouchableOpacity>
@@ -892,7 +883,6 @@ function CreditCardCarousel({
 }
 
 const s = StyleSheet.create({
-  // 👇 ESTILO BLINDADO PARA NÃO VAZAR O TAMANHO DA JANELA
   safe: {
     flex: 1,
     backgroundColor: "#f8fafc",
