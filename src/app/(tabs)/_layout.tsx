@@ -117,6 +117,14 @@ export default function TabsLayout() {
       />
 
       <Tabs.Screen name="charts" options={{ href: null, headerShown: false }} />
+
+      <Tabs.Screen
+        name="budget"
+        options={{
+          href: null, // <-- ISTO ESCONDE A TELA DO RODAPÉ
+          title: "Metas de Gastos",
+        }}
+      />
     </Tabs>
   );
 }

@@ -14,7 +14,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useTransactions } from "@/hooks/useTransactions";
-import { useAccounts } from "@/hooks/useAccounts"; // <-- ADICIONADO
+import { useAccounts } from "@/hooks/useAccounts";
 import { TransactionForm } from "@/components/forms/TransactionForm";
 import { formatCurrency, formatDate } from "@/utils";
 import { useAuth } from "@/hooks/useAuth";
@@ -26,7 +26,7 @@ import type {
 
 export default function TransactionsScreen() {
   const { profile } = useAuth();
-  const { accounts, update: updateAccount } = useAccounts(); // <-- ADICIONADO
+  const { accounts, update: updateAccount } = useAccounts();
 
   const {
     transactions,
@@ -67,10 +67,11 @@ export default function TransactionsScreen() {
     const { error } = await create(data);
     if (error) Alert.alert("Erro", error);
     else {
-      // 👇 Ajusta o Saldo
+      // 👇 Ajusta o Saldo garantindo Matemática Pura (Number)
       const acc = accounts.find((a) => a.id === data.account_id);
       if (acc) {
-        const modifier = data.type === "expense" ? -data.amount : data.amount;
+        const amount = Number(data.amount) || 0;
+        const modifier = data.type === "expense" ? -amount : amount;
         await updateAccount(acc.id, {
           balance: Number(acc.balance) + modifier,
         });
@@ -90,22 +91,23 @@ export default function TransactionsScreen() {
     const { error } = await update(editing.id, data as UpdateTransaction);
     if (error) Alert.alert("Erro", error);
     else {
-      // 👇 Transfere saldo se o banco mudar ou atualiza se o valor mudar
       if (oldAcc && newAcc) {
+        // 👇 Remove o valor antigo usando Matemática Pura
+        const oldAmount = Number(editing.amount) || 0;
         const revertModifier =
-          editing.type === "expense" ? editing.amount : -editing.amount;
+          editing.type === "expense" ? oldAmount : -oldAmount;
         const oldBalance = Number(oldAcc.balance) + revertModifier;
 
+        // 👇 Aplica o novo valor usando Matemática Pura
+        const newAmount = Number(data.amount) || 0;
+        const applyModifier = data.type === "expense" ? -newAmount : newAmount;
+
         if (oldAcc.id === newAcc.id) {
-          const applyModifier =
-            data.type === "expense" ? -data.amount : data.amount;
           await updateAccount(oldAcc.id, {
             balance: oldBalance + applyModifier,
           });
         } else {
           await updateAccount(oldAcc.id, { balance: oldBalance });
-          const applyModifier =
-            data.type === "expense" ? -data.amount : data.amount;
           await updateAccount(newAcc.id, {
             balance: Number(newAcc.balance) + applyModifier,
           });
@@ -116,15 +118,16 @@ export default function TransactionsScreen() {
       onRefresh();
     }
   };
-  // 👇 Devolve o valor ao apagar
+
   const handleDelete = async (id: string) => {
     const confirmAction = async () => {
-      // 👇 Devolve o saldo antes de apagar
+      // 👇 Devolve o saldo antes de apagar usando Matemática Pura
       const tx = transactions.find((t) => t.id === id);
       if (tx && tx.account_id) {
         const acc = accounts.find((a) => a.id === tx.account_id);
         if (acc) {
-          const modifier = tx.type === "expense" ? tx.amount : -tx.amount;
+          const amount = Number(tx.amount) || 0;
+          const modifier = tx.type === "expense" ? amount : -amount;
           await updateAccount(acc.id, {
             balance: Number(acc.balance) + modifier,
           });

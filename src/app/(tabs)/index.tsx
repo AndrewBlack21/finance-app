@@ -11,6 +11,7 @@ import {
   Modal,
   Platform,
   Alert,
+  TextInput,
 } from "react-native";
 import React, {
   useState,
@@ -20,19 +21,15 @@ import React, {
   useEffect,
 } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { PieChart } from "react-native-gifted-charts";
 import { useAuth } from "@/hooks/useAuth";
 import { useTransactions } from "@/hooks/useTransactions";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useInstallments } from "@/hooks/useInstallments";
 import { useFixedExpenses } from "@/hooks/useFixedExpenses";
-import {
-  formatCurrency,
-  formatDate,
-  getCurrentMonthRange,
-  getCurrentMonthName,
-} from "@/utils";
+import { useBudgetGoals } from "@/hooks/useBudgetGoals";
+import { formatCurrency, formatDate } from "@/utils";
 import type { Installment, Transaction } from "@/types";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -48,47 +45,84 @@ const FALLBACK_COLORS = [
 export default function DashboardScreen() {
   const { profile, session, logout } = useAuth();
   const router = useRouter();
-  const { from, to } = getCurrentMonthRange();
   const { width } = useWindowDimensions();
 
+  const [balanceView, setBalanceView] = useState<"month" | "week">("month");
   const [refreshing, setRefreshing] = useState(false);
   const [isMenuVisible, setIsMenuVisible] = useState(false);
+  const [monthOffset, setMonthOffset] = useState(0);
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
+
+  const {
+    totalBudget,
+    globalGoal,
+    upsert,
+    refetch: refetchGoals,
+  } = useBudgetGoals();
+
+  const [showGlobalModal, setShowGlobalModal] = useState(false);
+  const [globalInput, setGlobalInput] = useState("");
+
+  const getMonthRange = (offset: number) => {
+    const d = new Date();
+    d.setDate(1);
+    d.setMonth(d.getMonth() + offset);
+    const y = d.getFullYear(),
+      m = d.getMonth();
+    return {
+      from: new Date(y, m, 1).toISOString().split("T")[0],
+      to: new Date(y, m + 1, 0).toISOString().split("T")[0],
+      label: d
+        .toLocaleString("pt-BR", { month: "short" })
+        .toUpperCase()
+        .replace(".", ""),
+      fullLabel: d.toLocaleString("pt-BR", { month: "long", year: "numeric" }),
+    };
+  };
+
+  const {
+    from,
+    to,
+    label: dynMonthLabel,
+    fullLabel,
+  } = getMonthRange(monthOffset);
 
   const { accounts, totalBalance, refetch: refetchAccounts } = useAccounts();
+
+  const checkingBalance = useMemo(() => {
+    return accounts
+      .filter((acc) => acc.type === "checking")
+      .reduce((sum, acc) => sum + (Number(acc.balance) || 0), 0);
+  }, [accounts]);
+
   const { installments, refetch: refetchInstallments } = useInstallments();
   const { expenses: fixedExpenses, refetch: refetchFixed } = useFixedExpenses();
+
+  // 👇 PUXAMOS OS CONTROLOS DE PAGINAÇÃO DA API
   const {
     transactions,
     summary,
     isLoading,
+    isLoadingMore,
+    hasMore,
+    fetchMore,
     refetch: refetchTransactions,
-  } = useTransactions({
-    date_from: from,
-    date_to: to,
-  });
+    setFilters,
+  } = useTransactions({ date_from: from, date_to: to });
 
-  // 👇 GATILHO ÚNICO E ROBUSTO: Dispara quando o usuário é reconhecido
   useEffect(() => {
-    let isMounted = true;
+    setFilters({ date_from: from, date_to: to });
+  }, [from, to, setFilters]);
 
-    if (session?.user?.id && profile?.id) {
-      const loadAllData = async () => {
-        setRefreshing(true);
-        if (refetchAccounts) await refetchAccounts();
-        if (refetchInstallments) await refetchInstallments();
-        if (refetchTransactions) await refetchTransactions();
-        if (refetchFixed) await refetchFixed();
-        if (isMounted) setRefreshing(false);
-      };
-      loadAllData();
+  // 👇 O SEGREDO DE MESTRE: Burlar a Paginação no Dashboard!
+  // Como o Dashboard precisa de TODAS as transações para os gráficos e somas serem reais,
+  // fazemos um "loop silencioso" que carrega as páginas seguintes automaticamente.
+  useEffect(() => {
+    if (hasMore && !isLoading && !isLoadingMore && fetchMore) {
+      fetchMore();
     }
+  }, [hasMore, isLoading, isLoadingMore, fetchMore]);
 
-    return () => {
-      isMounted = false;
-    };
-  }, [session?.user?.id, profile?.id]);
-
-  // Mantemos o onRefresh apenas para ação manual de "puxar a tela"
   const onRefresh = async () => {
     setRefreshing(true);
     if (refetchAccounts) await refetchAccounts();
@@ -98,11 +132,78 @@ export default function DashboardScreen() {
     setRefreshing(false);
   };
 
-  const firstName = profile?.name?.split(" ")[0] ?? "Usuário";
-  const month = getCurrentMonthName();
-  const currency = profile?.currency ?? "BRL";
+  useFocusEffect(
+    useCallback(() => {
+      if (!session?.user?.id) return;
+      if (refetchAccounts) refetchAccounts();
+      if (refetchInstallments) refetchInstallments();
+      if (refetchTransactions) refetchTransactions();
+      if (refetchFixed) refetchFixed();
+      if (refetchGoals) refetchGoals();
+    }, [session?.user?.id]),
+  );
 
+  const firstName = profile?.name?.split(" ")[0] ?? "Usuário";
+  const currency = profile?.currency ?? "BRL";
   const expenses = transactions.filter((t) => t.type === "expense");
+
+  // SUPER CALCULADORA: Matemática Pura isolando as Contas Correntes
+  const totals = useMemo(() => {
+    let monthIncome = 0;
+    let monthExpense = 0;
+    let weekIncome = 0;
+    let weekExpense = 0;
+
+    const checkingAccIds = new Set(
+      accounts.filter((a) => a.type === "checking").map((a) => a.id),
+    );
+    const creditAccIds = new Set(
+      accounts.filter((a) => a.type === "credit").map((a) => a.id),
+    );
+
+    const today = new Date();
+    const startOfWeek = new Date(today);
+    startOfWeek.setDate(today.getDate() - today.getDay());
+    const endOfWeek = new Date(today);
+    endOfWeek.setDate(today.getDate() - today.getDay() + 6);
+
+    const startStr = startOfWeek.toISOString().split("T")[0];
+    const endStr = endOfWeek.toISOString().split("T")[0];
+
+    // Soma as Transações (agora com o histórico completo descarregado)
+    transactions.forEach((t) => {
+      const amt = Number(t.amount) || 0;
+      const isThisWeek = t.date >= startStr && t.date <= endStr;
+
+      if (t.type === "income") {
+        // Receitas (Ignora apenas o que é injetado diretamente em cartões)
+        if (!t.account_id || !creditAccIds.has(t.account_id)) {
+          monthIncome += amt;
+          if (isThisWeek) weekIncome += amt;
+        }
+      } else {
+        // Despesas (Exige que saia da conta corrente)
+        if (t.account_id && checkingAccIds.has(t.account_id)) {
+          monthExpense += amt;
+          if (isThisWeek) weekExpense += amt;
+        }
+      }
+    });
+
+    fixedExpenses.forEach((f) => {
+      const amt = Number(f.amount) || 0;
+      if (f.account_id && checkingAccIds.has(f.account_id)) {
+        const dueDay = f.due_day || 10;
+        const dueDateStr = `${to.slice(0, 8)}${String(dueDay).padStart(2, "0")}`;
+        const isThisWeek = dueDateStr >= startStr && dueDateStr <= endStr;
+
+        monthExpense += amt;
+        if (isThisWeek) weekExpense += amt;
+      }
+    });
+
+    return { monthIncome, monthExpense, weekIncome, weekExpense };
+  }, [transactions, fixedExpenses, accounts, to]);
 
   const { categoryData, totalCategoryExpenses } = useMemo(() => {
     let total = 0;
@@ -112,30 +213,36 @@ export default function DashboardScreen() {
     > = {};
 
     expenses.forEach((t) => {
+      const amt = Number(t.amount) || 0;
       const label = t.category?.name ?? "Outros";
       const color = t.category?.color ?? FALLBACK_COLORS[0];
       if (!grouped[label]) grouped[label] = { label, value: 0, color };
-      grouped[label].value += t.amount;
-      total += t.amount;
+      grouped[label].value += amt;
+      total += amt;
     });
 
     installments.forEach((i) => {
-      if (i.paid_installments < i.total_installments && i.start_date <= to) {
+      if (
+        i.paid_installments < i.total_installments &&
+        (!i.start_date || i.start_date <= to)
+      ) {
+        const amt = Number(i.installment_amount) || 0;
         const label = (i as any).category?.name ?? "Cartão de Crédito";
         const color = (i as any).category?.color ?? FALLBACK_COLORS[2];
         if (!grouped[label]) grouped[label] = { label, value: 0, color };
-        grouped[label].value += i.installment_amount;
-        total += i.installment_amount;
+        grouped[label].value += amt;
+        total += amt;
       }
     });
 
     fixedExpenses.forEach((f) => {
       if (!f.is_paid) {
+        const amt = Number(f.amount) || 0;
         const label = f.category?.name ?? "Contas Fixas";
         const color = f.category?.color ?? "#f59e0b";
         if (!grouped[label]) grouped[label] = { label, value: 0, color };
-        grouped[label].value += f.amount;
-        total += f.amount;
+        grouped[label].value += amt;
+        total += amt;
       }
     });
 
@@ -149,21 +256,49 @@ export default function DashboardScreen() {
       .slice(0, 6);
 
     return { categoryData: dataList, totalCategoryExpenses: total };
-  }, [expenses, installments, fixedExpenses]);
+  }, [expenses, installments, fixedExpenses, to]);
+
+  const { budgetSpent, budgetTop3 } = useMemo(() => {
+    let spent = 0;
+    const grouped: Record<
+      string,
+      { label: string; value: number; color: string }
+    > = {};
+
+    expenses.forEach((t) => {
+      const amt = Number(t.amount) || 0;
+      const label = t.category?.name ?? "Outros";
+      const color = t.category?.color ?? FALLBACK_COLORS[0];
+      if (!grouped[label]) grouped[label] = { label, value: 0, color };
+      grouped[label].value += amt;
+      spent += amt;
+    });
+
+    const top3 = Object.values(grouped)
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 3);
+
+    return { budgetSpent: spent, budgetTop3: top3 };
+  }, [expenses]);
+
+  const budgetPercentage =
+    totalBudget > 0 ? (budgetSpent / totalBudget) * 100 : 0;
 
   const creditPurchasesChart = useMemo(() => {
     let total = 0;
-
     const activeInstallments = installments.filter(
-      (i) => i.paid_installments < i.total_installments && i.start_date <= to,
+      (i) =>
+        i.paid_installments < i.total_installments &&
+        (!i.start_date || i.start_date <= to),
     );
 
     const data = activeInstallments
       .map((i, index) => {
-        total += i.total_amount;
+        const amt = Number(i.total_amount) || 0;
+        total += amt;
         return {
           label: shortenLabel(i.title),
-          value: i.total_amount,
+          value: amt,
           color: FALLBACK_COLORS[index % FALLBACK_COLORS.length],
         };
       })
@@ -177,12 +312,11 @@ export default function DashboardScreen() {
     }));
 
     return { data: withPercentage, total };
-  }, [installments]);
+  }, [installments, to]);
 
   const creditCardsStatus = useMemo(() => {
-    const currentMonth = new Date().toISOString().slice(0, 7);
+    const currentMonthIso = to.slice(0, 7);
     const today = new Date();
-
     const creditAccounts = accounts.filter((acc) => acc.type === "credit");
 
     return creditAccounts
@@ -191,7 +325,7 @@ export default function DashboardScreen() {
           (i) =>
             i.account_id === acc.id &&
             (Number(i.paid_installments) < Number(i.total_installments) ||
-              i.invoice_paid_month === currentMonth),
+              i.invoice_paid_month === currentMonthIso),
         );
 
         const currentInstallments = allRelevant.filter(
@@ -199,14 +333,14 @@ export default function DashboardScreen() {
         );
 
         const pendingCurrent = currentInstallments.filter(
-          (i) => i.invoice_paid_month !== currentMonth,
+          (i) => i.invoice_paid_month !== currentMonthIso,
         );
 
         const isInvoicePaid =
           currentInstallments.length > 0 && pendingCurrent.length === 0;
 
         const invoiceTotal = currentInstallments.reduce(
-          (sum, i) => sum + Number(i.installment_amount),
+          (sum, i) => sum + (Number(i.installment_amount) || 0),
           0,
         );
 
@@ -215,13 +349,16 @@ export default function DashboardScreen() {
             i.account_id === acc.id &&
             i.paid_installments < i.total_installments,
         );
+
         const usedLimit = allActiveForLimit.reduce((sum, i) => {
           return (
             sum +
-            (i.total_installments - i.paid_installments) * i.installment_amount
+            (i.total_installments - i.paid_installments) *
+              (Number(i.installment_amount) || 0)
           );
         }, 0);
-        const totalLimit = acc.balance || 0;
+
+        const totalLimit = Number(acc.balance) || 0;
         const limitPercentage =
           totalLimit > 0 ? Math.min((usedLimit / totalLimit) * 100, 100) : 0;
 
@@ -263,46 +400,108 @@ export default function DashboardScreen() {
             refreshing={refreshing}
             onRefresh={onRefresh}
             colors={["#6366f1"]}
-            tintColor={"#6366f1"}
+            tintColor="#6366f1"
           />
         }
       >
         <View style={s.header}>
           <View>
             <Text style={s.greeting}>Olá, {firstName} 👋</Text>
-            <Text style={s.monthLabel}>{month}</Text>
+            <Text style={s.monthLabel}>
+              {fullLabel.charAt(0).toUpperCase() + fullLabel.slice(1)}
+            </Text>
           </View>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+            <TouchableOpacity
+              style={s.monthBtn}
+              onPress={() => setShowMonthPicker(true)}
+            >
+              <Text style={s.monthBtnText}>{dynMonthLabel}</Text>
+              <Ionicons name="chevron-down" size={12} color="#6366f1" />
+            </TouchableOpacity>
+
             <TouchableOpacity onPress={() => setIsMenuVisible(true)}>
               <Ionicons name="menu-outline" size={34} color="#111827" />
             </TouchableOpacity>
           </View>
         </View>
-
         <View style={s.balanceCard}>
-          <Text style={s.balanceLabel}>Saldo Atual (Todas as Contas)</Text>
-          <Text
-            style={[
-              s.balanceValue,
-              totalBalance < 0 ? { color: "#ef4444" } : { color: "#fff" },
-            ]}
-          >
-            {totalBalance < 0 ? "⚠️ " : ""}
-            {formatCurrency(totalBalance, currency)}
-          </Text>
+          <View style={s.balanceCardHeader}>
+            <View>
+              <Text style={s.balanceLabel}>Saldo Atual (Contas Corrente)</Text>
+              <Text
+                style={[
+                  s.balanceValue,
+                  checkingBalance < 0
+                    ? { color: "#ef4444" }
+                    : { color: "#fff" },
+                ]}
+              >
+                {checkingBalance < 0 ? "⚠️ " : ""}
+                {formatCurrency(checkingBalance, currency)}
+              </Text>
+            </View>
+
+            <View style={s.balanceToggle}>
+              <TouchableOpacity
+                style={[
+                  s.balanceToggleBtn,
+                  balanceView === "month" && s.balanceToggleBtnActive,
+                ]}
+                onPress={() => setBalanceView("month")}
+              >
+                <Text
+                  style={[
+                    s.balanceToggleText,
+                    balanceView === "month" && s.balanceToggleTextActive,
+                  ]}
+                >
+                  Mês
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  s.balanceToggleBtn,
+                  balanceView === "week" && s.balanceToggleBtnActive,
+                ]}
+                onPress={() => setBalanceView("week")}
+              >
+                <Text
+                  style={[
+                    s.balanceToggleText,
+                    balanceView === "week" && s.balanceToggleTextActive,
+                  ]}
+                >
+                  Semana
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
 
           <View style={s.balanceRow}>
             <View style={s.balanceItem}>
               <Text style={s.balanceItemLabel}>↑ Receitas</Text>
               <Text style={[s.balanceItemValue, { color: "#4ade80" }]}>
-                {formatCurrency(summary.income, currency)}
+                {formatCurrency(
+                  balanceView === "month"
+                    ? totals.monthIncome
+                    : totals.weekIncome,
+                  currency,
+                )}
               </Text>
             </View>
+
             <View style={s.divider} />
+
             <View style={s.balanceItem}>
               <Text style={s.balanceItemLabel}>↓ Despesas</Text>
               <Text style={[s.balanceItemValue, { color: "#f87171" }]}>
-                {formatCurrency(summary.expense, currency)}
+                {formatCurrency(
+                  balanceView === "month"
+                    ? totals.monthExpense
+                    : totals.weekExpense,
+                  currency,
+                )}
               </Text>
             </View>
           </View>
@@ -401,7 +600,6 @@ export default function DashboardScreen() {
             </TouchableOpacity>
           </ScrollView>
         </View>
-
         <ScrollView style={s.section}>
           <Text style={s.sectionTitle}>Faturas de Crédito Ativas</Text>
           <View
@@ -413,7 +611,85 @@ export default function DashboardScreen() {
             <CreditCardCarousel data={creditCardsStatus} currency={currency} />
           </View>
         </ScrollView>
+        {totalBudget > 0 && (
+          <View style={s.section}>
+            <View style={s.sectionHeader}>
+              <Text style={s.sectionTitle}>Progresso das Metas</Text>
+              <TouchableOpacity onPress={() => router.push("/(tabs)/budget")}>
+                <Text style={s.seeAll}>Ver Metas</Text>
+              </TouchableOpacity>
+            </View>
 
+            <View style={s.budgetCard}>
+              <View style={s.budgetHeader}>
+                <Text style={s.budgetText}>Orçamento do Mês</Text>
+                <TouchableOpacity
+                  style={{
+                    backgroundColor: "rgba(255,255,255,0.2)",
+                    paddingHorizontal: 12,
+                    paddingVertical: 4,
+                    borderRadius: 12,
+                  }}
+                  onPress={() => {
+                    setGlobalInput(
+                      totalBudget > 0 ? totalBudget.toString() : "",
+                    );
+                    setShowGlobalModal(true);
+                  }}
+                >
+                  <Text
+                    style={{ color: "#fff", fontSize: 12, fontWeight: "bold" }}
+                  >
+                    {totalBudget > 0 ? "Editar Meta" : "+ Definir Meta"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={s.budgetBarBg}>
+                <View
+                  style={[
+                    s.budgetBarFill,
+                    {
+                      width: `${Math.min(budgetPercentage, 100)}%`,
+                      backgroundColor:
+                        budgetPercentage > 100 ? "#ef4444" : "#4ade80",
+                    },
+                  ]}
+                />
+              </View>
+
+              <Text style={s.budgetValues}>
+                {formatCurrency(budgetSpent, currency)} de{" "}
+                {formatCurrency(totalBudget, currency)}
+              </Text>
+
+              <View style={s.budgetTopCats}>
+                <Text style={s.budgetTopTitle}>Top 3 Gastos (Débito):</Text>
+                {budgetTop3.map((c, i) => (
+                  <View key={i} style={s.budgetTopRow}>
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 6,
+                      }}
+                    >
+                      <View
+                        style={[s.legendDot, { backgroundColor: c.color }]}
+                      />
+                      <Text style={s.budgetCatName} numberOfLines={1}>
+                        {c.label}
+                      </Text>
+                    </View>
+                    <Text style={s.budgetCatValue}>
+                      {formatCurrency(c.value, currency)}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          </View>
+        )}
         <View style={s.section}>
           <Text style={s.sectionTitle}>Gastos por categoria</Text>
           <View style={s.chartCard}>
@@ -456,49 +732,11 @@ export default function DashboardScreen() {
             )}
           </View>
         </View>
-
-        <View style={s.section}>
-          <Text style={s.sectionTitle}>Maiores gastos no crédito</Text>
-          <View style={s.chartCard}>
-            {creditPurchasesChart.data.length === 0 ? (
-              <EmptyChart message="Nenhuma compra de crédito cadastrada." />
-            ) : (
-              <>
-                <View style={s.pieWrap}>
-                  <PieChart
-                    data={creditPurchasesChart.data.map((item) => ({
-                      value: item.value,
-                      color: item.color,
-                    }))}
-                    donut
-                    radius={82}
-                    innerRadius={52}
-                    centerLabelComponent={() => (
-                      <View style={s.pieCenter}>
-                        <Text style={s.pieCenterLabel}>Total</Text>
-                        <Text style={s.pieCenterValue}>
-                          {formatCurrency(creditPurchasesChart.total, currency)}
-                        </Text>
-                      </View>
-                    )}
-                  />
-                </View>
-                <View style={s.legend}>
-                  {creditPurchasesChart.data.map((item) => (
-                    <ChartLegendItem
-                      key={item.label}
-                      label={item.label}
-                      color={item.color}
-                      value={`${formatCurrency(item.value, currency)} (${item.percentage})`}
-                    />
-                  ))}
-                </View>
-              </>
-            )}
-          </View>
-        </View>
       </ScrollView>
 
+      {/* ============================================== */}
+      {/* MENU LATERAL (MODAL)                           */}
+      {/* ============================================== */}
       <Modal visible={isMenuVisible} transparent animationType="fade">
         <View style={s.menuOverlay}>
           <TouchableOpacity
@@ -515,12 +753,11 @@ export default function DashboardScreen() {
             </View>
 
             <View style={s.menuBody}>
-              {/* 👇 NOVO BOTÃO DE GRÁFICOS ADICIONADO AQUI 👇 */}
               <TouchableOpacity
                 style={s.menuItem}
                 onPress={() => {
-                  setIsMenuVisible(false); // Fecha o menu
-                  router.push("/(tabs)/charts"); // Navega para a nova tela
+                  setIsMenuVisible(false);
+                  router.push("/(tabs)/charts");
                 }}
               >
                 <View
@@ -528,9 +765,23 @@ export default function DashboardScreen() {
                 >
                   <Ionicons name="pie-chart" size={20} color="#4f46e5" />
                 </View>
-                <Text style={s.menuItemText}>Gráficos Avançados</Text>
+                <Text style={s.menuItemText}>Análise Gráfica</Text>
               </TouchableOpacity>
-              {/* 👆 FIM DO NOVO BOTÃO 👆 */}
+
+              <TouchableOpacity
+                style={s.menuItem}
+                onPress={() => {
+                  setIsMenuVisible(false);
+                  router.push("/(tabs)/budget");
+                }}
+              >
+                <View
+                  style={[s.menuIconWrapper, { backgroundColor: "#dcfce7" }]}
+                >
+                  <Ionicons name="flag-outline" size={20} color="#22c55e" />
+                </View>
+                <Text style={s.menuItemText}>Metas de Gastos</Text>
+              </TouchableOpacity>
 
               <TouchableOpacity
                 style={s.menuItem}
@@ -602,9 +853,144 @@ export default function DashboardScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* ============================================== */}
+      {/* MODAL: SELETOR DE MÊS                          */}
+      {/* ============================================== */}
+      <Modal visible={showMonthPicker} transparent animationType="fade">
+        <TouchableOpacity
+          style={s.monthPickerOverlay}
+          activeOpacity={1}
+          onPress={() => setShowMonthPicker(false)}
+        >
+          <View style={s.monthPickerContent}>
+            <Text style={s.monthPickerTitle}>Selecionar mês</Text>
+            {Array.from({ length: 12 }, (_, i) => i - 11).map((offset) => {
+              const { fullLabel: fl } = getMonthRange(offset);
+              const active = offset === monthOffset;
+              return (
+                <TouchableOpacity
+                  key={offset}
+                  style={[s.monthPickerItem, active && s.monthPickerItemActive]}
+                  onPress={() => {
+                    setMonthOffset(offset);
+                    setShowMonthPicker(false);
+                  }}
+                >
+                  <Text
+                    style={[
+                      s.monthPickerItemText,
+                      active && s.monthPickerItemTextActive,
+                    ]}
+                  >
+                    {fl.charAt(0).toUpperCase() + fl.slice(1)}
+                  </Text>
+                  {active && (
+                    <Ionicons name="checkmark" size={16} color="#6366f1" />
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* MODAL: DEFINIR META GLOBAL DO MÊS */}
+      <Modal visible={showGlobalModal} transparent animationType="fade">
+        <TouchableOpacity
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(0,0,0,0.5)",
+            justifyContent: "center",
+            alignItems: "center",
+          }}
+          activeOpacity={1}
+          onPress={() => setShowGlobalModal(false)}
+        >
+          <TouchableOpacity
+            activeOpacity={1}
+            style={{
+              backgroundColor: "#fff",
+              padding: 24,
+              borderRadius: 20,
+              width: "90%",
+              maxWidth: 400,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 18,
+                fontWeight: "bold",
+                marginBottom: 8,
+                color: "#111827",
+              }}
+            >
+              Meta do Mês
+            </Text>
+            <Text style={{ fontSize: 13, color: "#6b7280", marginBottom: 20 }}>
+              Defina o valor máximo que pretende gastar no débito este mês.
+            </Text>
+
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                backgroundColor: "#f3f4f6",
+                padding: 14,
+                borderRadius: 12,
+                marginBottom: 20,
+              }}
+            >
+              <Text
+                style={{ fontWeight: "bold", color: "#6b7280", marginRight: 8 }}
+              >
+                {currency}
+              </Text>
+              <TextInput
+                style={{
+                  flex: 1,
+                  fontSize: 20,
+                  fontWeight: "bold",
+                  color: "#111827",
+                }}
+                value={globalInput}
+                onChangeText={setGlobalInput}
+                keyboardType="numeric"
+                placeholder="0,00"
+                autoFocus
+              />
+            </View>
+
+            <TouchableOpacity
+              style={{
+                backgroundColor: "#6366f1",
+                padding: 16,
+                borderRadius: 12,
+                alignItems: "center",
+              }}
+              onPress={async () => {
+                const val = parseFloat(globalInput.replace(",", "."));
+                if (isNaN(val) || val <= 0)
+                  return Alert.alert("Erro", "Digite um valor válido.");
+
+                await upsert(null, "Orçamento do Mês", val, currency);
+                setShowGlobalModal(false);
+              }}
+            >
+              <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 15 }}>
+                Salvar Meta
+              </Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
+
+// ============================================================
+// COMPONENTES AUXILIARES
+// ============================================================
 
 function shortenLabel(label: string) {
   return label.length > 15 ? `${label.slice(0, 14)}...` : label;
@@ -634,45 +1020,6 @@ function ChartLegendItem({
         {label}
       </Text>
       <Text style={s.legendValue}>{value}</Text>
-    </View>
-  );
-}
-
-function TransactionItem({
-  transaction: t,
-  currency,
-}: {
-  transaction: Transaction;
-  currency: string;
-}) {
-  const isIncome = t.type === "income";
-  return (
-    <View style={s.transactionItem}>
-      <View
-        style={[
-          s.transactionIcon,
-          { backgroundColor: t.category?.color ?? "#6366f1" + "20" },
-        ]}
-      >
-        <Text style={s.transactionEmoji}>{isIncome ? "↑" : "↓"}</Text>
-      </View>
-      <View style={s.transactionInfo}>
-        <Text style={s.transactionTitle}>{t.title}</Text>
-        <Text style={s.transactionCategory}>
-          {t.category?.name ?? "Sem categoria"}
-        </Text>
-      </View>
-      <View style={s.transactionRight}>
-        <Text
-          style={[
-            s.transactionAmount,
-            { color: isIncome ? "#16a34a" : "#dc2626" },
-          ]}
-        >
-          {isIncome ? "+" : "-"} {formatCurrency(t.amount, currency)}
-        </Text>
-        <Text style={s.transactionDate}>{formatDate(t.date)}</Text>
-      </View>
     </View>
   );
 }
@@ -903,7 +1250,9 @@ const s = StyleSheet.create({
   safe: {
     flex: 1,
     backgroundColor: "#f8fafc",
-    ...(Platform.OS === "web" ? { overflow: "hidden", maxWidth: "100%" } : {}),
+    ...(Platform.OS === "web"
+      ? ({ overflow: "hidden", maxWidth: "100%" } as any)
+      : {}),
   },
   scroll: { paddingBottom: 32 },
 
@@ -922,13 +1271,17 @@ const s = StyleSheet.create({
     marginTop: 2,
     textTransform: "capitalize",
   },
-  logoutBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
+
+  monthBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#ede9fe",
     borderRadius: 20,
-    backgroundColor: "#fee2e2",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
   },
-  logoutText: { color: "#dc2626", fontSize: 13, fontWeight: "600" },
+  monthBtnText: { fontSize: 12, fontWeight: "700", color: "#6366f1" },
 
   balanceCard: {
     margin: 20,
@@ -996,31 +1349,6 @@ const s = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-
-  transactionItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 8,
-  },
-  transactionIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 12,
-  },
-  transactionEmoji: { fontSize: 18 },
-  transactionInfo: { flex: 1 },
-  transactionTitle: { fontSize: 14, fontWeight: "600", color: "#111827" },
-  transactionCategory: { fontSize: 12, color: "#9ca3af", marginTop: 2 },
-  transactionRight: { alignItems: "flex-end" },
-  transactionAmount: { fontSize: 14, fontWeight: "700" },
-  transactionDate: { fontSize: 11, color: "#9ca3af", marginTop: 2 },
-  empty: { paddingVertical: 20, alignItems: "center" },
   emptyText: { color: "#9ca3af", fontSize: 14, fontStyle: "italic" },
 
   carouselContainer: { alignItems: "center", marginTop: 4 },
@@ -1101,17 +1429,6 @@ const s = StyleSheet.create({
     marginBottom: 4,
   },
   accountType: { fontSize: 11, color: "#9ca3af", textTransform: "capitalize" },
-  emptyAccounts: {
-    padding: 20,
-    backgroundColor: "#f8fafc",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-    borderStyle: "dashed",
-    width: 200,
-    alignItems: "center",
-  },
-  emptyAccountsText: { color: "#6b7280", fontSize: 13, fontWeight: "600" },
 
   menuOverlay: {
     flex: 1,
@@ -1163,4 +1480,99 @@ const s = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: Platform.OS === "ios" ? 20 : 0,
   },
+
+  monthPickerOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "flex-end",
+  },
+  monthPickerContent: {
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    padding: 20,
+    margin: 12,
+  },
+  monthPickerTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#111827",
+    marginBottom: 12,
+  },
+  monthPickerItem: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 13,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+  },
+  monthPickerItemActive: { backgroundColor: "#ede9fe" },
+  monthPickerItemText: { fontSize: 14, color: "#374151" },
+  monthPickerItemTextActive: { fontWeight: "700", color: "#6366f1" },
+  budgetCard: {
+    backgroundColor: "#6366f1",
+    borderRadius: 16,
+    padding: 16,
+    elevation: 2,
+  },
+  budgetHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  budgetText: { fontSize: 14, fontWeight: "600", color: "#e0e7ff" },
+  budgetBarBg: {
+    height: 8,
+    backgroundColor: "#4f46e5",
+    borderRadius: 4,
+    overflow: "hidden",
+    marginBottom: 8,
+  },
+  budgetBarFill: { height: 8, borderRadius: 4 },
+  budgetValues: { fontSize: 12, color: "#c7d2fe", marginBottom: 16 },
+  budgetTopCats: {
+    borderTopWidth: 1,
+    borderTopColor: "#818cf8",
+    paddingTop: 12,
+  },
+  budgetTopTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#c7d2fe",
+    marginBottom: 8,
+  },
+  budgetTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  budgetCatName: {
+    fontSize: 13,
+    color: "#fff",
+    fontWeight: "500",
+    maxWidth: 120,
+  },
+  budgetCatValue: { fontSize: 13, color: "#fff", fontWeight: "600" },
+  balanceCardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+  },
+  balanceToggle: {
+    flexDirection: "row",
+    backgroundColor: "rgba(255,255,255,0.2)",
+    borderRadius: 8,
+    padding: 2,
+    marginTop: 4,
+  },
+  balanceToggleBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  balanceToggleBtnActive: { backgroundColor: "#fff" },
+  balanceToggleText: { fontSize: 11, fontWeight: "700", color: "#e0e7ff" },
+  balanceToggleTextActive: { color: "#6366f1" },
 });
