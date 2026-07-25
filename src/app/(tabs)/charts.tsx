@@ -6,6 +6,7 @@ import {
   ScrollView,
   StyleSheet,
   Dimensions,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, {
@@ -83,25 +84,42 @@ export default function ChartsScreen() {
   const router = useRouter();
   const { profile } = useAuth();
 
-  // Vamos buscar as outras fontes de despesa para o gráfico ficar igual ao Dashboard
   const { expenses: fixedList } = useFixedExpenses();
   const { installments } = useInstallments();
 
-  const [chartType, setChartType] = useState<"pie" | "bar">("pie");
+  // Adicionada a nova aba 'annual'
+  const [chartType, setChartType] = useState<"pie" | "bar" | "annual">("pie");
   const [selected, setSelected] = useState<number | null>(null);
 
   const currency = profile?.currency ?? "BRL";
 
-  // Prepara os 6 meses para o gráfico de barras
-  const months = useMemo(() => getLast6Months(), []);
-  const dateFrom = months[0].from;
-  const dateTo = months[months.length - 1].to;
+  // 1. LÓGICA DE DATAS INTELIGENTE
+  // Precisamos de dados desde Jan 1 (para o panorama anual)
+  // OU desde há 6 meses atrás (se estivermos no início do ano), até Dez 31.
+  const fetchRange = useMemo(() => {
+    const today = new Date();
+    const year = today.getFullYear();
 
-  // 👇 Loop Silencioso: Descarrega os 6 meses para preencher as barras
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(today.getMonth() - 5);
+    sixMonthsAgo.setDate(1);
+
+    const firstDayOfYear = new Date(year, 0, 1);
+
+    const fetchFrom =
+      sixMonthsAgo < firstDayOfYear ? sixMonthsAgo : firstDayOfYear;
+
+    return {
+      from: fetchFrom.toISOString().split("T")[0],
+      to: new Date(year, 11, 31).toISOString().split("T")[0],
+    };
+  }, []);
+
+  // 👇 Loop Silencioso de Paginação: Descarrega o histórico completo necessário
   const { transactions, hasMore, isLoading, isLoadingMore, fetchMore } =
     useTransactions({
-      date_from: dateFrom,
-      date_to: dateTo,
+      date_from: fetchRange.from,
+      date_to: fetchRange.to,
     });
 
   useEffect(() => {
@@ -110,15 +128,23 @@ export default function ChartsScreen() {
     }
   }, [hasMore, isLoading, isLoadingMore, fetchMore]);
 
-  // ── Dados: pizza de categorias (Limitado ao mês atual!) ──
+  // ── DADOS 1: Pizza de categorias (Mês atual com Contas e Cartões) ──
   const pieData = useMemo(() => {
-    const currentMonthFrom = months[months.length - 1].from;
-    const currentMonthTo = months[months.length - 1].to;
+    const today = new Date();
+    const currentMonthFrom = new Date(today.getFullYear(), today.getMonth(), 1)
+      .toISOString()
+      .split("T")[0];
+    const currentMonthTo = new Date(
+      today.getFullYear(),
+      today.getMonth() + 1,
+      0,
+    )
+      .toISOString()
+      .split("T")[0];
 
     const map: Record<string, { label: string; value: number; color: string }> =
       {};
 
-    // 1. Soma Transações Simples do Mês Atual
     transactions
       .filter(
         (t) =>
@@ -134,7 +160,6 @@ export default function ChartsScreen() {
         map[key].value += amt;
       });
 
-    // 2. Soma Faturas de Cartão do Mês Atual
     installments.forEach((i) => {
       if (
         i.paid_installments < i.total_installments &&
@@ -148,7 +173,6 @@ export default function ChartsScreen() {
       }
     });
 
-    // 3. Soma Contas Fixas do Mês Atual
     fixedList.forEach((f) => {
       if (!f.is_paid) {
         const amt = Number(f.amount) || 0;
@@ -168,11 +192,12 @@ export default function ChartsScreen() {
       pct: total > 0 ? (d.value / total) * 100 : 0,
       deg: total > 0 ? (d.value / total) * 360 : 0,
     }));
-  }, [transactions, fixedList, installments, months]);
+  }, [transactions, fixedList, installments]);
 
   const pieTotal = pieData.reduce((s, d) => s + d.value, 0);
 
-  // ── Dados: barras por mês ──
+  // ── DADOS 2: Gráfico de Barras (Últimos 6 meses) ──
+  const months = useMemo(() => getLast6Months(), []);
   const barData = useMemo(() => {
     return months.map((m) => {
       const inMonth = transactions.filter(
@@ -191,6 +216,52 @@ export default function ChartsScreen() {
   }, [transactions, months]);
 
   const barMax = Math.max(...barData.flatMap((d) => [d.income, d.expense]), 1);
+
+  // ── DADOS 3: Panorama Anual (Janeiro a Dezembro) ──
+  const annualData = useMemo(() => {
+    const year = new Date().getFullYear();
+    return Array.from({ length: 12 }).map((_, m) => {
+      const mFrom = new Date(year, m, 1).toISOString().split("T")[0];
+      const mTo = new Date(year, m + 1, 0).toISOString().split("T")[0];
+      const label = new Date(year, m, 1).toLocaleString("pt-BR", {
+        month: "long",
+      });
+      const shortLabel = new Date(year, m, 1)
+        .toLocaleString("pt-BR", { month: "short" })
+        .replace(".", "");
+
+      let income = 0;
+      let expense = 0;
+
+      // Baseado puramente no histórico de transações,
+      // tal como as barras, para manter os gráficos fidedignos à realidade.
+      transactions.forEach((t) => {
+        if (t.date >= mFrom && t.date <= mTo) {
+          const amt = Number(t.amount) || 0;
+          if (t.type === "income") income += amt;
+          else expense += amt;
+        }
+      });
+
+      return {
+        monthIndex: m,
+        label: label.charAt(0).toUpperCase() + label.slice(1),
+        shortLabel: shortLabel.charAt(0).toUpperCase() + shortLabel.slice(1),
+        income,
+        expense,
+        diff: income - expense,
+      };
+    });
+  }, [transactions]);
+
+  const annualMax = Math.max(
+    ...annualData.flatMap((d) => [d.income, d.expense]),
+    1,
+  );
+
+  // ==========================================
+  // RENDERIZADORES DOS GRÁFICOS
+  // ==========================================
 
   const PIE_R = 110;
   const HOLE_R = 65;
@@ -373,12 +444,138 @@ export default function ChartsScreen() {
               <Text
                 style={[
                   s.monthCardBalance,
-                  {
-                    color: d.income - d.expense >= 0 ? "#22c55e" : "#ef4444",
-                  },
+                  { color: d.income - d.expense >= 0 ? "#22c55e" : "#ef4444" },
                 ]}
               >
                 {formatCurrency(d.income - d.expense, currency)}
+              </Text>
+            </View>
+          ))}
+        </View>
+      </View>
+    );
+  }
+
+  // 👇 Novo Renderizador do Panorama Anual 👇
+  function renderAnnual() {
+    const PADDING = 20;
+    const availW = CHART_W - PADDING * 2;
+    const availH = 200 - PADDING * 2;
+
+    // Calcula as posições X e Y do gráfico de linhas
+    const getX = (index: number) => PADDING + index * (availW / 11);
+    const getY = (val: number) => PADDING + availH - (val / annualMax) * availH;
+
+    // Gera o "caminho" das linhas para ligar os pontos
+    const incomePath = annualData
+      .map((d, i) => `${i === 0 ? "M" : "L"}${getX(i)},${getY(d.income)}`)
+      .join(" ");
+    const expensePath = annualData
+      .map((d, i) => `${i === 0 ? "M" : "L"}${getX(i)},${getY(d.expense)}`)
+      .join(" ");
+
+    return (
+      <View>
+        <Text style={s.annualChartTitle}>Panorama Anual</Text>
+
+        {/* Gráfico de Linhas */}
+        <Svg width={CHART_W} height={200}>
+          {[0, 0.5, 1].map((pct, i) => {
+            const y = PADDING + availH * (1 - pct);
+            return (
+              <G key={`grid-${i}`}>
+                <Line
+                  x1={PADDING}
+                  y1={y}
+                  x2={CHART_W - PADDING}
+                  y2={y}
+                  stroke="#e5e7eb"
+                  strokeWidth={1}
+                />
+                <SvgText x={PADDING} y={y - 5} fontSize="9" fill="#9ca3af">
+                  {formatCurrency(annualMax * pct, currency, true)}
+                </SvgText>
+              </G>
+            );
+          })}
+
+          <Path
+            d={incomePath}
+            stroke="#22c55e"
+            strokeWidth="2.5"
+            fill="none"
+            opacity={0.7}
+          />
+          <Path
+            d={expensePath}
+            stroke="#ef4444"
+            strokeWidth="2.5"
+            fill="none"
+            opacity={0.7}
+          />
+
+          {annualData.map((d, i) => (
+            <G key={`points-${i}`}>
+              {/* Pontos de Receita */}
+              <Circle cx={getX(i)} cy={getY(d.income)} r="4" fill="#22c55e" />
+              {/* Pontos de Despesa */}
+              <Circle cx={getX(i)} cy={getY(d.expense)} r="4" fill="#ef4444" />
+              {/* Rótulo dos Meses */}
+              <SvgText
+                x={getX(i)}
+                y={200 - 4}
+                textAnchor="middle"
+                fontSize="9"
+                fill="#6b7280"
+                rotation={-45}
+                origin={`${getX(i)}, ${200 - 4}`}
+              >
+                {d.shortLabel}
+              </SvgText>
+            </G>
+          ))}
+        </Svg>
+
+        <View style={s.barLegend}>
+          <View style={s.barLegendItem}>
+            <View style={[s.barLegendDot, { backgroundColor: "#22c55e" }]} />
+            <Text style={s.barLegendText}>Entradas</Text>
+          </View>
+          <View style={s.barLegendItem}>
+            <View style={[s.barLegendDot, { backgroundColor: "#ef4444" }]} />
+            <Text style={s.barLegendText}>Gastos</Text>
+          </View>
+        </View>
+
+        {/* Tabela de Dados Anuais */}
+        <View style={s.tableContainer}>
+          <View style={s.tableHeaderRow}>
+            <Text style={[s.th, { flex: 1.5 }]}>Mês</Text>
+            <Text style={s.th}>Gastos</Text>
+            <Text style={s.th}>Entradas</Text>
+            <Text style={[s.th, { textAlign: "right" }]}>Diferença</Text>
+          </View>
+          {annualData.map((d, i) => (
+            <View
+              key={d.monthIndex}
+              style={[s.tableRow, i % 2 !== 0 && s.tableRowAlt]}
+            >
+              <Text style={[s.td, { flex: 1.5, fontWeight: "600" }]}>
+                {d.label}
+              </Text>
+              <Text style={s.td}>{formatCurrency(d.expense, currency)}</Text>
+              <Text style={s.td}>{formatCurrency(d.income, currency)}</Text>
+              <Text
+                style={[
+                  s.td,
+                  {
+                    textAlign: "right",
+                    fontWeight: "bold",
+                    color: d.diff >= 0 ? "#22c55e" : "#ef4444",
+                  },
+                ]}
+              >
+                {formatCurrency(d.diff, currency)}
               </Text>
             </View>
           ))}
@@ -397,6 +594,7 @@ export default function ChartsScreen() {
         <View style={{ width: 38 }} />
       </View>
 
+      {/* 3 Botões de Navegação */}
       <View style={s.toggle}>
         <TouchableOpacity
           style={[s.toggleBtn, chartType === "pie" && s.toggleActive]}
@@ -416,6 +614,7 @@ export default function ChartsScreen() {
             Pizza
           </Text>
         </TouchableOpacity>
+
         <TouchableOpacity
           style={[s.toggleBtn, chartType === "bar" && s.toggleActive]}
           onPress={() => {
@@ -434,23 +633,52 @@ export default function ChartsScreen() {
             Barras
           </Text>
         </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[s.toggleBtn, chartType === "annual" && s.toggleActive]}
+          onPress={() => {
+            setChartType("annual");
+            setSelected(null);
+          }}
+        >
+          <Ionicons
+            name="calendar-outline"
+            size={16}
+            color={chartType === "annual" ? "#fff" : "#6b7280"}
+          />
+          <Text
+            style={[s.toggleText, chartType === "annual" && s.toggleTextActive]}
+          >
+            Anual
+          </Text>
+        </TouchableOpacity>
       </View>
 
       <ScrollView
         contentContainerStyle={s.scroll}
         showsVerticalScrollIndicator={false}
       >
+        {isLoadingMore && (
+          <ActivityIndicator color="#6366f1" style={{ marginBottom: 10 }} />
+        )}
+
         <Text style={s.subtitle}>
           {chartType === "pie"
-            ? "Toque em uma fatia para ver detalhes"
-            : "Receitas vs Despesas — últimos 6 meses"}
+            ? "Toque em uma fatia para ver detalhes do mês"
+            : chartType === "bar"
+              ? "Receitas vs Despesas — últimos 6 meses"
+              : "Panorama geral de Entradas e Saídas do ano"}
         </Text>
 
         <View style={s.chartBox}>
-          {chartType === "pie" ? renderPie() : renderBar()}
+          {chartType === "pie"
+            ? renderPie()
+            : chartType === "bar"
+              ? renderBar()
+              : renderAnnual()}
         </View>
 
-        {pieData.length === 0 && (
+        {pieData.length === 0 && chartType === "pie" && (
           <View style={s.empty}>
             <Ionicons name="bar-chart-outline" size={48} color="#d1d5db" />
             <Text style={s.emptyText}>Nenhum dado disponível</Text>
@@ -462,11 +690,6 @@ export default function ChartsScreen() {
       </ScrollView>
     </SafeAreaView>
   );
-}
-
-function fmtShort(value: number): string {
-  if (value >= 1000) return `${(value / 1000).toFixed(1)}k`;
-  return value.toFixed(0);
 }
 
 const s = StyleSheet.create({
@@ -508,7 +731,7 @@ const s = StyleSheet.create({
     borderRadius: 10,
   },
   toggleActive: { backgroundColor: "#6366f1" },
-  toggleText: { fontSize: 14, fontWeight: "600", color: "#6b7280" },
+  toggleText: { fontSize: 13, fontWeight: "600", color: "#6b7280" },
   toggleTextActive: { color: "#fff" },
 
   scroll: { paddingBottom: 40, paddingHorizontal: 24 },
@@ -549,6 +772,7 @@ const s = StyleSheet.create({
     gap: 20,
     justifyContent: "center",
     marginBottom: 12,
+    marginTop: 12,
   },
   barLegendItem: { flexDirection: "row", alignItems: "center", gap: 6 },
   barLegendDot: { width: 10, height: 10, borderRadius: 5 },
@@ -575,4 +799,38 @@ const s = StyleSheet.create({
   empty: { alignItems: "center", paddingVertical: 40, gap: 8 },
   emptyText: { fontSize: 16, fontWeight: "600", color: "#374151" },
   emptySubtext: { fontSize: 13, color: "#9ca3af" },
+
+  // Estilos da Tabela Anual
+  annualChartTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#111827",
+    marginBottom: 16,
+    textAlign: "center",
+  },
+  tableContainer: {
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    borderRadius: 8,
+    overflow: "hidden",
+  },
+  tableHeaderRow: {
+    flexDirection: "row",
+    backgroundColor: "#f3f4f6",
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e5e7eb",
+  },
+  th: { flex: 1, fontSize: 11, fontWeight: "700", color: "#374151" },
+  tableRow: {
+    flexDirection: "row",
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f3f4f6",
+  },
+  tableRowAlt: { backgroundColor: "#fafafa" },
+  td: { flex: 1, fontSize: 11, color: "#4b5563" },
 });
