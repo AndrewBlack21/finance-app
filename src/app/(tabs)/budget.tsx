@@ -9,6 +9,7 @@ import {
   TextInput,
   Alert,
   Dimensions,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Circle, Text as SvgText } from "react-native-svg";
@@ -17,6 +18,7 @@ import { useTransactions } from "@/hooks/useTransactions";
 import { useCategories } from "@/hooks/useCategories";
 import { useBudgetGoals } from "@/hooks/useBudgetGoals";
 import { useAuth } from "@/hooks/useAuth";
+import { useRouter } from "expo-router";
 
 const { width: SW } = Dimensions.get("window");
 
@@ -87,6 +89,7 @@ function getMonthRange(offset = 0) {
 }
 
 export default function BudgetScreen() {
+  const router = useRouter();
   const { profile } = useAuth();
   const { categories } = useCategories();
   const { goals, totalBudget, upsert, remove } = useBudgetGoals();
@@ -96,8 +99,6 @@ export default function BudgetScreen() {
   const [monthOffset, setMonthOffset] = useState(0);
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [showCatPicker, setShowCatPicker] = useState(false);
-
-  // Novo estado para controlar a tela escura de detalhes
   const [showDetails, setShowDetails] = useState(false);
 
   const [editModal, setEditModal] = useState<{
@@ -118,7 +119,14 @@ export default function BudgetScreen() {
       minimumFractionDigits: 2,
     }).format(v);
 
-  const { transactions, setFilters } = useTransactions({
+  const {
+    transactions,
+    setFilters,
+    hasMore,
+    isLoading,
+    isLoadingMore,
+    fetchMore,
+  } = useTransactions({
     date_from: from,
     date_to: to,
   });
@@ -127,13 +135,19 @@ export default function BudgetScreen() {
     if (setFilters) setFilters({ date_from: from, date_to: to });
   }, [from, to, setFilters]);
 
+  useEffect(() => {
+    if (hasMore && !isLoading && !isLoadingMore && fetchMore) {
+      fetchMore();
+    }
+  }, [hasMore, isLoading, isLoadingMore, fetchMore]);
+
   const spentByCategory = useMemo(() => {
     const map: Record<string, number> = {};
     transactions
       .filter((t) => t.type === "expense")
       .forEach((t) => {
         const key = t.category_id ?? "__none__";
-        map[key] = (map[key] ?? 0) + Number(t.amount);
+        map[key] = (map[key] ?? 0) + (Number(t.amount) || 0);
       });
     return map;
   }, [transactions]);
@@ -188,7 +202,6 @@ export default function BudgetScreen() {
     (c) => !goals.some((g) => g.category_id === c.id),
   );
 
-  // 👇 Dica Inteligente Atualizada
   const insight = useMemo(() => {
     if (catRows.length === 0)
       return "Nenhum gasto registado neste mês. Que tal começar a definir as suas metas?";
@@ -204,7 +217,6 @@ export default function BudgetScreen() {
     return `💡 ${biggestExpense.name} concentra o maior gasto: ${biggestPct.toFixed(0)}% da meta. Tudo dentro do planejado.`;
   }, [catRows, totalBudget, totalPct]);
 
-  // 👇 Projeção do Mês (Matemática de média diária)
   const projection = useMemo(() => {
     const today = new Date();
     const [yearStr, monthStr] = from.split("-");
@@ -216,25 +228,22 @@ export default function BudgetScreen() {
     let daysLeft = 0;
 
     if (today.getFullYear() === year && today.getMonth() + 1 === month) {
-      // Estamos no mês selecionado
       daysPassed = today.getDate();
       daysLeft = daysInMonth - daysPassed;
     } else if (
       today.getFullYear() > year ||
       (today.getFullYear() === year && today.getMonth() + 1 > month)
     ) {
-      // Mês passado
       daysPassed = daysInMonth;
       daysLeft = 0;
     } else {
-      // Mês futuro
       daysPassed = 0;
       daysLeft = daysInMonth;
     }
 
     const dailyAvg = daysPassed > 0 ? totalSpent / daysPassed : 0;
     const projTotal = daysPassed > 0 ? totalSpent + dailyAvg * daysLeft : 0;
-    const projStatusColor = projTotal > totalBudget ? "#ef4444" : "#22c55e"; // Vermelho se estourar, verde se ok
+    const projStatusColor = projTotal > totalBudget ? "#ef4444" : "#22c55e";
 
     return { dailyAvg, daysLeft, projTotal, projStatusColor };
   }, [from, totalSpent, totalBudget]);
@@ -269,6 +278,24 @@ export default function BudgetScreen() {
     }
   };
 
+  // 👇 Exclusão direta pela lista
+  const deleteGoalInline = async (goalId: string) => {
+    const confirmAction = async () => {
+      const { error } = await remove(goalId);
+      if (error) Alert.alert("Erro", "Não foi possível remover a meta.");
+    };
+
+    if (Platform.OS === "web") {
+      if (window.confirm("Deseja remover esta meta?")) await confirmAction();
+    } else {
+      Alert.alert("Remover Meta", "Tem certeza que deseja apagar esta meta?", [
+        { text: "Cancelar", style: "cancel" },
+        { text: "Remover", style: "destructive", onPress: confirmAction },
+      ]);
+    }
+  };
+
+  // Mantemos a função para o botão "Remover" dentro da modal de edição (caso necessário)
   const handleDeleteGoal = async () => {
     if (editModal?.id) {
       const { error } = await remove(editModal.id);
@@ -283,9 +310,14 @@ export default function BudgetScreen() {
   return (
     <SafeAreaView style={s.safe}>
       <View style={s.header}>
-        <View>
-          <Text style={s.headerSub}>Análise</Text>
-          <Text style={s.headerTitle}>Metas</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+          <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
+            <Ionicons name="arrow-back" size={22} color="#111827" />
+          </TouchableOpacity>
+          <View>
+            <Text style={s.headerSub}>Análise</Text>
+            <Text style={s.headerTitle}>Metas</Text>
+          </View>
         </View>
         <TouchableOpacity
           style={s.monthBtn}
@@ -347,7 +379,6 @@ export default function BudgetScreen() {
             </View>
           </View>
 
-          {/* Botão Ver Detalhes */}
           <View style={{ alignItems: "center", marginTop: 16 }}>
             <TouchableOpacity
               style={s.detailsBtn}
@@ -400,27 +431,44 @@ export default function BudgetScreen() {
                   </View>
                 )}
               </View>
-              <TouchableOpacity
-                style={s.editBtn}
-                onPress={() =>
-                  openEdit(
-                    row.id,
-                    row.name,
-                    row.color,
-                    row.limit ?? undefined,
-                    row.goalId,
-                  )
-                }
+
+              {/* 👇 Grupo de botões atualizado (Lixeira e Editar) 👇 */}
+              <View
+                style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
               >
-                <Ionicons
-                  name={row.limit ? "pencil" : "add"}
-                  size={14}
-                  color="#6366f1"
-                />
-                <Text style={s.editBtnText}>
-                  {row.limit ? "Editar" : "Definir"}
-                </Text>
-              </TouchableOpacity>
+                {row.goalId && (
+                  <TouchableOpacity
+                    style={[
+                      s.editBtn,
+                      { backgroundColor: "#fee2e2", paddingHorizontal: 10 },
+                    ]}
+                    onPress={() => deleteGoalInline(row.goalId!)}
+                  >
+                    <Ionicons name="trash" size={14} color="#dc2626" />
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  style={s.editBtn}
+                  onPress={() =>
+                    openEdit(
+                      row.id,
+                      row.name,
+                      row.color,
+                      row.limit ?? undefined,
+                      row.goalId,
+                    )
+                  }
+                >
+                  <Ionicons
+                    name={row.limit ? "pencil" : "add"}
+                    size={14}
+                    color="#6366f1"
+                  />
+                  <Text style={s.editBtnText}>
+                    {row.limit ? "Editar" : "Definir"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
           );
         })}
@@ -434,13 +482,10 @@ export default function BudgetScreen() {
         </TouchableOpacity>
       </ScrollView>
 
-      {/* ============================================== */}
-      {/* MODAL NOVO: TELA ESCURA DE DETALHES            */}
-      {/* ============================================== */}
+      {/* MODAL NOVO: TELA ESCURA DE DETALHES */}
       <Modal visible={showDetails} transparent animationType="slide">
         <View style={s.detailsDarkOverlay}>
           <View style={s.detailsDarkSheet}>
-            {/* Cabeçalho do Modal Escuro */}
             <View style={s.detailsHeader}>
               <View>
                 <Text style={s.detailsMonthLabel}>{fullLabel}</Text>
@@ -458,7 +503,6 @@ export default function BudgetScreen() {
               showsVerticalScrollIndicator={false}
               contentContainerStyle={{ paddingBottom: 40 }}
             >
-              {/* Box Gasto Até Agora */}
               <View style={s.detailsBox}>
                 <View style={s.detailsRowBetween}>
                   <View>
@@ -478,7 +522,6 @@ export default function BudgetScreen() {
                 </View>
               </View>
 
-              {/* Box Projeção */}
               <Text style={s.detailsSectionTitle}>PROJEÇÃO DO MÊS</Text>
               <View style={s.detailsBox}>
                 <View
@@ -520,7 +563,6 @@ export default function BudgetScreen() {
                 </View>
               </View>
 
-              {/* Lista Por Categoria */}
               <Text style={s.detailsSectionTitle}>POR CATEGORIA</Text>
               <View style={s.detailsBox}>
                 {catRows.map((cat, index) => (
@@ -562,9 +604,6 @@ export default function BudgetScreen() {
         </View>
       </Modal>
 
-      {/* ============================================== */}
-      {/* MODAL: Seletor de mês */}
-      {/* ============================================== */}
       <Modal visible={showMonthPicker} transparent animationType="fade">
         <TouchableOpacity
           style={s.overlay}
@@ -600,9 +639,6 @@ export default function BudgetScreen() {
         </TouchableOpacity>
       </Modal>
 
-      {/* ============================================== */}
-      {/* MODAL UNIFICADO: Escolher Categoria OU Editar Meta */}
-      {/* ============================================== */}
       <Modal
         visible={showCatPicker || !!editModal}
         transparent
@@ -697,7 +733,6 @@ export default function BudgetScreen() {
         </TouchableOpacity>
       </Modal>
 
-      {/* MODAL: DEFINIR META GLOBAL DO MÊS */}
       <Modal visible={showGlobalModal} transparent animationType="slide">
         <TouchableOpacity
           style={s.overlay}
@@ -747,10 +782,18 @@ const s = StyleSheet.create({
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-end",
+    alignItems: "center",
     paddingHorizontal: 20,
     paddingTop: 8,
     paddingBottom: 16,
+  },
+  backBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "#f3f4f6",
+    justifyContent: "center",
+    alignItems: "center",
   },
   headerSub: { fontSize: 13, color: "#9ca3af" },
   headerTitle: { fontSize: 26, fontWeight: "800", color: "#111827" },
@@ -766,7 +809,6 @@ const s = StyleSheet.create({
   monthBtnText: { fontSize: 13, fontWeight: "700", color: "#6366f1" },
   scroll: { paddingHorizontal: 20, paddingBottom: 40, gap: 14 },
 
-  // Estilos do Cartão Escuro Principal
   darkCard: { backgroundColor: "#1e1b4b", borderRadius: 24, padding: 20 },
   darkCardTop: {
     flexDirection: "row",
@@ -932,17 +974,14 @@ const s = StyleSheet.create({
     alignItems: "center",
   },
   saveBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
-
-  // ===================================
-  // ESTILOS DA TELA ESCURA DE DETALHES
-  // ===================================
+  // Card (Detalhameto de meta)
   detailsDarkOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.6)",
     justifyContent: "flex-end",
   },
   detailsDarkSheet: {
-    backgroundColor: "#6366f1",
+    backgroundColor: "#312e81",
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 24,
