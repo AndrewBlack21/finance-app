@@ -67,7 +67,6 @@ export default function TransactionsScreen() {
     const { error } = await create(data);
     if (error) Alert.alert("Erro", error);
     else {
-      // 👇 Ajusta o Saldo garantindo Matemática Pura (Number)
       const acc = accounts.find((a) => a.id === data.account_id);
       if (acc) {
         const amount = Number(data.amount) || 0;
@@ -92,13 +91,11 @@ export default function TransactionsScreen() {
     if (error) Alert.alert("Erro", error);
     else {
       if (oldAcc && newAcc) {
-        // 👇 Remove o valor antigo usando Matemática Pura
         const oldAmount = Number(editing.amount) || 0;
         const revertModifier =
           editing.type === "expense" ? oldAmount : -oldAmount;
         const oldBalance = Number(oldAcc.balance) + revertModifier;
 
-        // 👇 Aplica o novo valor usando Matemática Pura
         const newAmount = Number(data.amount) || 0;
         const applyModifier = data.type === "expense" ? -newAmount : newAmount;
 
@@ -121,7 +118,6 @@ export default function TransactionsScreen() {
 
   const handleDelete = async (id: string) => {
     const confirmAction = async () => {
-      // 👇 Devolve o saldo antes de apagar usando Matemática Pura
       const tx = transactions.find((t) => t.id === id);
       if (tx && tx.account_id) {
         const acc = accounts.find((a) => a.id === tx.account_id);
@@ -193,6 +189,27 @@ export default function TransactionsScreen() {
     setCurrentMonthView(newDate);
   };
 
+  // PASSO EDUCATIVO: Ordenação inteligente de transações!
+  // O sistema compara a data primeiro. Se for no mesmo dia, compara a hora exata (created_at).
+  const sortedTransactions = [...transactions].sort((a: any, b: any) => {
+    const dateA = new Date(a.date).getTime();
+    const dateB = new Date(b.date).getTime();
+
+    // 1º Regra: Dia mais recente fica no topo
+    if (dateA !== dateB) {
+      return dateB - dateA;
+    }
+
+    // 2º Regra: Se é no mesmo dia, a hora/minuto mais recente fica no topo
+    if (a.created_at && b.created_at) {
+      return (
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+    }
+
+    return 0;
+  });
+
   return (
     <SafeAreaView style={s.safe}>
       <View style={s.header}>
@@ -255,7 +272,7 @@ export default function TransactionsScreen() {
         <ActivityIndicator color="#6366f1" style={{ marginTop: 32 }} />
       ) : (
         <FlatList
-          data={transactions}
+          data={sortedTransactions} // ← Aplicada a nova lista ordenada aqui
           keyExtractor={(t) => t.id}
           contentContainerStyle={s.list}
           onEndReached={fetchMore}

@@ -753,6 +753,21 @@ export default function DashboardScreen() {
             </View>
 
             <View style={s.menuBody}>
+              {/* Menu de investimento */}
+              <TouchableOpacity
+                style={s.menuItem}
+                onPress={() => {
+                  setIsMenuVisible(false);
+                  router.push("/(tabs)/investments" as any);
+                }}
+              >
+                <View
+                  style={[s.menuIconWrapper, { backgroundColor: "#fef3c7" }]}
+                >
+                  <Ionicons name="trending-up" size={20} color="#d97706" />
+                </View>
+                <Text style={s.menuItemText}>Meus Investimentos</Text>
+              </TouchableOpacity>
               <TouchableOpacity
                 style={s.menuItem}
                 onPress={() => {

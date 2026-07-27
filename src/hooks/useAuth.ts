@@ -4,8 +4,6 @@ import { useAuthStore } from "@/store/authStore";
 import type { AuthCredentials, RegisterCredentials } from "@/types";
 import { useRouter } from "expo-router";
 
-// 👇 CORREÇÃO: Variável global. Garante que a sessão seja buscada apenas UMA VEZ
-// para o aplicativo inteiro, impedindo que uma tela cancele o login da outra.[cite: 16]
 let isGlobalAuthInitialized = false;
 
 export function useAuth() {
@@ -25,14 +23,12 @@ export function useAuth() {
           store.setSession(session);
           store.setUser(session.user);
 
-          // Busca os dados do perfil (Nome, Moeda, etc.)
           const { data } = await supabase
             .from("profiles")
             .select("*")
             .eq("id", session.user.id)
             .single();
 
-          // 👇 CORREÇÃO: O store global deve ser atualizado mesmo que a tela saia de foco[cite: 16]
           if (data) store.setProfile(data);
         } else {
           store.clear();
@@ -40,7 +36,7 @@ export function useAuth() {
       } catch (error) {
         console.log("Erro ao carregar sessão:", error);
       } finally {
-        store.setHydrated(true);
+        store.setHydrated(true); // Memória terminou de carregar!
       }
     };
 
@@ -57,11 +53,12 @@ export function useAuth() {
           .select("*")
           .eq("id", session.user.id)
           .single();
-          
+
         if (data) store.setProfile(data);
       } else {
         store.clear();
-        router.replace("/(auth)/login");
+        // 👇 CORREÇÃO: Removemos o router.replace("/(auth)/login") daqui!
+        // Quem decide a mudança de tela agora é o _layout.tsx, COM CALMA.
       }
     });
 
@@ -69,11 +66,7 @@ export function useAuth() {
     setTimeout(() => {
       store.setHydrated(true);
     }, 3000);
-
-    // 👇 CORREÇÃO: Removemos o return de cleanup. O escutador deve viver para sempre![cite: 16]
   }, []);
-
-  // --- Funções de Autenticação Padrão ---
 
   const register = async (credentials: RegisterCredentials) => {
     store.setLoading(true);

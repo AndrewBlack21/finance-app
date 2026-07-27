@@ -121,8 +121,15 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="budget"
         options={{
-          href: null, // <-- ISTO ESCONDE A TELA DO RODAPÉ
+          href: null,
           title: "Metas de Gastos",
+        }}
+      />
+      <Tabs.Screen
+        name="investments"
+        options={{
+          href: null,
+          headerShown: false,
         }}
       />
     </Tabs>

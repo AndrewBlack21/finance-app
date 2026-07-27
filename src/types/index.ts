@@ -2,7 +2,7 @@
 // ENUMS — espelham os tipos criados no Supabase
 // ============================================================
 export type AccountType = "checking" | "savings" | "credit" | "investment";
-export type TransactionType = "income" | "expense" | "transfer";
+export type TransactionType = "income" | "expense" | "transfer" | "investment";
 export type CategoryType = "income" | "expense";
 
 // ============================================================

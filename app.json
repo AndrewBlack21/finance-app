@@ -20,7 +20,12 @@
     "web": {
       "bundler": "metro",
       "output": "single",
-      "favicon": "./assets/favicon.png",
+      "favicon": "./assets/icon.png",
+      "splash": {
+        "image": "./assets/icon.jpg",
+        "resizeMode": "contain",
+        "backgroundColor": "#6366f1"
+      },
       "pwa": {
         "enabled": true,
         "name": "Finance App",

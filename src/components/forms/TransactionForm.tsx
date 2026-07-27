@@ -7,6 +7,7 @@ import {
   Switch,
   Modal,
   TextInput,
+  Alert,
 } from "react-native";
 import { useState } from "react";
 import { useRouter } from "expo-router";
@@ -32,11 +33,13 @@ const schema = z.object({
       const clean = v.replace(/[R$\s.]/g, "").replace(",", ".");
       return !isNaN(Number(clean)) && Number(clean) > 0;
     }, "Valor inválido"),
-  type: z.enum(["income", "expense", "transfer"]),
+  type: z.enum(["income", "expense", "transfer", "investment"]),
   account_id: z.string().min(1, "Selecione uma conta"),
   category_id: z.string().optional(),
+  investment_type: z.string().optional(),
+  investment_account_id: z.string().optional(),
   date: z.string().min(1, "Data obrigatória"),
-  due_day: z.string().optional(), // dia vencimento — só para fixas
+  due_day: z.string().optional(),
   notes: z.string().optional(),
   currency: z.string().min(1, "Moeda obrigatória"),
   is_fixed: z.boolean().default(false),
@@ -44,7 +47,7 @@ const schema = z.object({
 type FormData = z.infer<typeof schema>;
 
 // ============================================================
-// PROPS
+// PROPS E CONSTANTES
 // ============================================================
 interface TransactionFormProps {
   onSubmit: (data: CreateTransaction) => Promise<void>;
@@ -53,16 +56,21 @@ interface TransactionFormProps {
   initialValues?: Partial<Transaction>;
 }
 
-// ============================================================
-// TIPOS DE TRANSAÇÃO — label + cor
-// ============================================================
-const TYPES: { value: TransactionType; label: string; color: string }[] = [
+const TYPES = [
   { value: "income", label: "Receita", color: "#16a34a" },
   { value: "expense", label: "Despesa", color: "#dc2626" },
+  { value: "investment", label: "Investimento", color: "#8b5cf6" },
   { value: "transfer", label: "Transferência", color: "#2563eb" },
 ];
 
-// Moedas disponíveis
+const INVESTMENT_OPTIONS = [
+  "CDB",
+  "CDI",
+  "SELIC",
+  "Tesouro",
+  "Poupança",
+  "Outros",
+];
 const CURRENCIES = ["BRL", "USD", "EUR", "GBP", "JPY", "ARS"];
 
 export function TransactionForm({
@@ -75,12 +83,19 @@ export function TransactionForm({
   const router = useRouter();
   const { income, expense } = useCategories();
   const { create: createFixed } = useFixedExpenses();
-  // 3. Crie os estados para controlar o Modal de Nova Conta
+
   const [accountModalVisible, setAccountModalVisible] = useState(false);
   const [newBankName, setNewBankName] = useState("");
   const [newBankColor, setNewBankColor] = useState("#830ad1");
 
+  // PASSO EDUCATIVO: Este estado define se estamos a criar uma conta corrente ou de investimento
+  const [newAccountType, setNewAccountType] = useState<
+    "checking" | "investment"
+  >("checking");
+
   const today = new Date().toISOString().split("T")[0];
+
+  const investmentAccounts = accounts.filter((a) => a.type === "investment");
 
   const {
     control,
@@ -90,13 +105,15 @@ export function TransactionForm({
   } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
-      type: (initialValues?.type ?? "expense") as TransactionType,
+      type: (initialValues?.type ?? "expense") as any,
       date: initialValues?.date ?? today,
       currency: initialValues?.currency ?? "BRL",
       title: initialValues?.title ?? "",
       amount: initialValues?.amount?.toString() ?? "",
       account_id: initialValues?.account_id ?? "",
       category_id: initialValues?.category_id ?? "",
+      investment_type: "",
+      investment_account_id: "",
       notes: initialValues?.notes ?? "",
       is_fixed: false,
       due_day: "",
@@ -111,7 +128,6 @@ export function TransactionForm({
     const cleanAmount = values.amount.replace(/[R$\s.]/g, "").replace(",", ".");
     const amount = Number(cleanAmount);
 
-    // Se for conta fixa → cria em fixedExpenses em vez de transaction
     if (values.is_fixed && values.type === "expense") {
       await createFixed({
         title: values.title,
@@ -128,11 +144,49 @@ export function TransactionForm({
       return;
     }
 
-    // Transação normal
+    if (values.type === "investment") {
+      if (!values.investment_account_id) {
+        Alert.alert(
+          "Atenção",
+          "Por favor, selecione uma conta de investimento de destino.",
+        );
+        return;
+      }
+
+      const invTag = values.investment_type
+        ? `[${values.investment_type}] `
+        : "";
+
+      await onSubmit({
+        title: values.title,
+        amount,
+        type: "expense",
+        account_id: values.account_id,
+        category_id: null,
+        date: values.date,
+        notes: `[SAÍDA] ${invTag}${values.notes ?? ""}`.trim(),
+        currency: values.currency,
+        recurring: false,
+      });
+
+      await onSubmit({
+        title: values.title,
+        amount,
+        type: "income",
+        account_id: values.investment_account_id,
+        category_id: null,
+        date: values.date,
+        notes: `[ENTRADA] ${invTag}${values.notes ?? ""}`.trim(),
+        currency: values.currency,
+        recurring: false,
+      });
+      return;
+    }
+
     await onSubmit({
       title: values.title,
       amount,
-      type: values.type,
+      type: values.type as TransactionType,
       account_id: values.account_id,
       category_id: values.category_id ?? null,
       date: values.date,
@@ -153,28 +207,40 @@ export function TransactionForm({
         name="type"
         control={control}
         render={({ field: { onChange, value } }) => (
-          <View style={s.typeRow}>
-            {TYPES.map((t) => (
-              <TouchableOpacity
-                key={t.value}
-                style={[
-                  s.typeBtn,
-                  value === t.value && { backgroundColor: t.color },
-                ]}
-                onPress={() => onChange(t.value)}
-              >
-                <Text
-                  style={[s.typeBtnText, value === t.value && s.typeBtnActive]}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={{ marginBottom: 4 }}
+          >
+            <View style={s.typeRow}>
+              {TYPES.map((t) => (
+                <TouchableOpacity
+                  key={t.value}
+                  style={[
+                    s.typeBtn,
+                    value === t.value && {
+                      backgroundColor: t.color,
+                      borderColor: t.color,
+                    },
+                  ]}
+                  onPress={() => onChange(t.value)}
                 >
-                  {t.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+                  <Text
+                    style={[
+                      s.typeBtnText,
+                      value === t.value && s.typeBtnActive,
+                    ]}
+                  >
+                    {t.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </ScrollView>
         )}
       />
 
-      {/* TOGGLE FIXA / EVENTUAL — só para despesas */}
+      {/* TOGGLE FIXA */}
       {selectedType === "expense" && (
         <Controller
           name="is_fixed"
@@ -196,7 +262,7 @@ export function TransactionForm({
         />
       )}
 
-      {/* DIA DE VENCIMENTO — só aparece se for fixa */}
+      {/* DIA DE VENCIMENTO */}
       {isFixed && selectedType === "expense" && (
         <Controller
           name="due_day"
@@ -220,7 +286,11 @@ export function TransactionForm({
         render={({ field: { onChange, value } }) => (
           <Input
             label="Título"
-            placeholder="Ex: Almoço, Salário..."
+            placeholder={
+              selectedType === "investment"
+                ? "Ex: Aporte Mensal"
+                : "Ex: Almoço, Salário..."
+            }
             onChangeText={onChange}
             value={value}
             error={errors.title?.message}
@@ -280,30 +350,39 @@ export function TransactionForm({
         </View>
       </View>
 
-      {/* CONTA */}
-      <Text style={s.label}>Conta</Text>
+      {/* CONTA (ORIGEM) */}
+      <Text style={s.label}>
+        {selectedType === "investment"
+          ? "De qual conta saiu o dinheiro?"
+          : "Conta"}
+      </Text>
       <Controller
         name="account_id"
         control={control}
         render={({ field: { onChange, value } }) => (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={{ marginBottom: 12 }}
+          >
             <View style={s.optionRow}>
-              {/* NOVO BOTÃO: + Nova Conta */}
               <TouchableOpacity
                 style={[
                   s.optionBtn,
                   { backgroundColor: "#eef2ff", borderColor: "#c7d2fe" },
                 ]}
-                onPress={() => setAccountModalVisible(true)}
+                onPress={() => {
+                  setNewAccountType("checking"); // Prepara para criar conta corrente
+                  setAccountModalVisible(true);
+                }}
               >
                 <Text style={{ color: "#4f46e5", fontWeight: "bold" }}>
                   + Nova
                 </Text>
               </TouchableOpacity>
 
-              {/* Lista de contas existentes */}
               {accounts
-                .filter((a) => a.type !== "credit") // Filtra para esconder cartões
+                .filter((a) => a.type !== "credit")
                 .map((a) => (
                   <TouchableOpacity
                     key={a.id}
@@ -331,8 +410,99 @@ export function TransactionForm({
         )}
       />
 
-      {/* CATEGORIA */}
-      {selectedType !== "transfer" && (
+      {/* INVESTIMENTOS */}
+      {selectedType === "investment" ? (
+        <>
+          {/* TIPO DE INVESTIMENTO */}
+          <View style={{ marginBottom: 16 }}>
+            <Text style={s.label}>Onde está investindo?</Text>
+            <Controller
+              name="investment_type"
+              control={control}
+              render={({ field: { onChange, value } }) => (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <View style={s.optionRow}>
+                    {INVESTMENT_OPTIONS.map((inv) => (
+                      <TouchableOpacity
+                        key={inv}
+                        style={[
+                          s.optionBtn,
+                          value === inv && {
+                            backgroundColor: "#8b5cf6",
+                            borderColor: "#8b5cf6",
+                          },
+                        ]}
+                        onPress={() => onChange(inv)}
+                      >
+                        <Text
+                          style={[
+                            s.optionText,
+                            value === inv && s.optionTextActive,
+                          ]}
+                        >
+                          {inv}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </ScrollView>
+              )}
+            />
+          </View>
+
+          {/* CONTA DE DESTINO */}
+          <View style={{ marginBottom: 16 }}>
+            <Text style={s.label}>Para qual conta de investimento?</Text>
+            <Controller
+              name="investment_account_id"
+              control={control}
+              render={({ field: { onChange, value } }) => (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <View style={s.optionRow}>
+                    <TouchableOpacity
+                      style={[
+                        s.optionBtn,
+                        { backgroundColor: "#f5f3ff", borderColor: "#ddd6fe" },
+                      ]}
+                      onPress={() => {
+                        setNewAccountType("investment"); // Prepara para criar conta de investimento
+                        setAccountModalVisible(true);
+                      }}
+                    >
+                      <Text style={{ color: "#8b5cf6", fontWeight: "bold" }}>
+                        + Nova Conta
+                      </Text>
+                    </TouchableOpacity>
+
+                    {investmentAccounts.map((inv) => (
+                      <TouchableOpacity
+                        key={inv.id}
+                        style={[
+                          s.optionBtn,
+                          value === inv.id && {
+                            backgroundColor: inv.color || "#8b5cf6",
+                            borderColor: inv.color || "#8b5cf6",
+                          },
+                        ]}
+                        onPress={() => onChange(inv.id)}
+                      >
+                        <Text
+                          style={[
+                            s.optionText,
+                            value === inv.id && s.optionTextActive,
+                          ]}
+                        >
+                          {inv.name}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </ScrollView>
+              )}
+            />
+          </View>
+        </>
+      ) : selectedType !== "transfer" ? (
         <>
           <View
             style={{
@@ -362,7 +532,10 @@ export function TransactionForm({
                       key={c.id}
                       style={[
                         s.optionBtn,
-                        value === c.id && { backgroundColor: c.color },
+                        value === c.id && {
+                          backgroundColor: c.color,
+                          borderColor: c.color,
+                        },
                       ]}
                       onPress={() => onChange(c.id)}
                     >
@@ -381,7 +554,7 @@ export function TransactionForm({
             )}
           />
         </>
-      )}
+      ) : null}
 
       {/* DATA */}
       <Controller
@@ -428,7 +601,7 @@ export function TransactionForm({
         </TouchableOpacity>
       </View>
 
-      {/* MODAL RÁPIDO DE NOVA CONTA */}
+      {/* MODAL DE NOVA CONTA */}
       <Modal
         visible={accountModalVisible}
         animationType="fade"
@@ -448,9 +621,10 @@ export function TransactionForm({
             <Text
               style={{ fontSize: 18, fontWeight: "bold", marginBottom: 16 }}
             >
-              Nova Conta
+              {newAccountType === "investment"
+                ? "Nova Conta de Investimento"
+                : "Nova Conta"}
             </Text>
-
             <TextInput
               style={{
                 borderWidth: 1,
@@ -459,11 +633,14 @@ export function TransactionForm({
                 borderRadius: 8,
                 marginBottom: 16,
               }}
-              placeholder="Nome do Banco (Ex: Nubank)"
+              placeholder={
+                newAccountType === "investment"
+                  ? "Nome (Ex: Corretora Rico)"
+                  : "Nome (Ex: Nubank)"
+              }
               value={newBankName}
               onChangeText={setNewBankName}
             />
-
             <Text style={{ marginBottom: 8, fontWeight: "600" }}>Cor:</Text>
             <View
               style={{
@@ -496,7 +673,6 @@ export function TransactionForm({
                 />
               ))}
             </View>
-
             <View style={{ flexDirection: "row", gap: 10 }}>
               <TouchableOpacity
                 style={{
@@ -512,7 +688,6 @@ export function TransactionForm({
                   Cancelar
                 </Text>
               </TouchableOpacity>
-
               <TouchableOpacity
                 style={{
                   flex: 1,
@@ -526,10 +701,10 @@ export function TransactionForm({
                   await createAccount({
                     name: newBankName,
                     color: newBankColor,
-                    type: "checking",
+                    type: newAccountType, // <-- Aqui usamos a variável de estado dinamicamente!
                     balance: 0,
                     currency: "BRL",
-                    due_day: null, // <-- Correção do TypeScript garantida aqui!
+                    due_day: null,
                   });
                   setNewBankName("");
                   setAccountModalVisible(false);
@@ -566,21 +741,19 @@ const s = StyleSheet.create({
   toggleLabel: { fontSize: 14, fontWeight: "600", color: "#111827" },
   toggleSub: { fontSize: 12, color: "#6b7280", marginTop: 2 },
 
-  // Tipo
-  typeRow: { flexDirection: "row", marginBottom: 4 },
+  typeRow: { flexDirection: "row", paddingVertical: 2 },
   typeBtn: {
-    flex: 1,
+    paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: "#e5e7eb",
     alignItems: "center",
-    marginHorizontal: 4,
+    marginRight: 8,
   },
   typeBtnText: { fontSize: 13, fontWeight: "600", color: "#6b7280" },
   typeBtnActive: { color: "#fff" },
 
-  // Moeda
   currencyRow: { flexDirection: "row" },
   currencyBtn: {
     paddingHorizontal: 10,
@@ -594,8 +767,7 @@ const s = StyleSheet.create({
   currencyText: { fontSize: 12, fontWeight: "600", color: "#6b7280" },
   currencyTextActive: { color: "#fff" },
 
-  // Opções (conta/categoria)
-  optionRow: { flexDirection: "row", marginBottom: 4 },
+  optionRow: { flexDirection: "row", paddingVertical: 2 },
   optionBtn: {
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -604,10 +776,9 @@ const s = StyleSheet.create({
     borderColor: "#e5e7eb",
     marginRight: 8,
   },
-  optionText: { fontSize: 13, color: "#6b7280", fontWeight: "500" },
+  optionText: { fontSize: 13, color: "#6b7280", fontWeight: "600" },
   optionTextActive: { color: "#fff" },
 
-  // Ações
   actions: { flexDirection: "row", marginTop: 24, marginBottom: 40 },
   cancelBtn: {
     flex: 1,
