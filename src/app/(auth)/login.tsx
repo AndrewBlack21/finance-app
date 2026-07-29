@@ -1,113 +1,134 @@
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import React, { useState } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  Image,
+  TouchableOpacity,
+  ScrollView,
+  Alert,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Link } from "expo-router";
-import { useForm, Controller } from "react-hook-form";
-import { z } from "zod";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useAuth } from "@/hooks/useAuth";
-import { Button, Input, FormError } from "@/components/ui";
-
-const schema = z.object({
-  email: z.string().email("E-mail inválido"),
-  password: z.string().min(6, "Mínimo 6 caracteres"),
-});
-type LoginForm = z.infer<typeof schema>;
+import { Link, useRouter } from "expo-router";
+import { Input, Button } from "@/components/ui";
+import { useAppTheme } from "@/hooks/useTheme";
+import { supabase } from "@/lib/supabase"; // 👈 Importa o seu cliente do Supabase (ajuste o caminho se necessário)
 
 export default function LoginScreen() {
-  const { login, isLoading } = useAuth();
-  const {
-    control,
-    handleSubmit,
-    setError,
-    formState: { errors },
-  } = useForm<LoginForm>({
-    resolver: zodResolver(schema),
-  });
+  const router = useRouter();
+  const { colors, isDark } = useAppTheme();
 
-  const onSubmit = async (values: LoginForm) => {
-    const { error } = await login(values);
-    if (error) setError("root", { message: error });
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false); // 👈 Estado para controlar o carregamento
+
+  const handleLogin = async () => {
+    if (!email || !password) {
+      Alert.alert("Atenção", "Preencha o e-mail e a senha.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      // Autenticação real com o Supabase
+      const { error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password: password,
+      });
+
+      if (error) {
+        Alert.alert("Erro ao entrar", "E-mail ou senha incorretos.");
+        setLoading(false);
+        return;
+      }
+
+      // Se der certo, redireciona para a tela principal das abas
+      router.replace("/(tabs)");
+    } catch (err) {
+      Alert.alert("Erro", "Ocorreu um erro inesperado.");
+      setLoading(false);
+    }
   };
 
   return (
-    <SafeAreaView style={s.container}>
-      <Text style={s.title}>Entrar</Text>
-      <Text style={s.subtitle}>Acesse sua conta para continuar</Text>
+    <SafeAreaView style={[s.safeArea, { backgroundColor: colors.bg }]}>
+      <ScrollView
+        contentContainerStyle={s.scrollContainer}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={s.logoContainer}>
+          <Image
+            source={require("../../../assets/icon.png")}
+            style={s.logo}
+            resizeMode="contain"
+          />
+        </View>
 
-      <View style={s.form}>
-        <Controller
-          name="email"
-          control={control}
-          render={({ field: { onChange, value } }) => (
-            <Input
-              label="E-mail"
-              placeholder="voce@email.com"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              onChangeText={onChange}
-              value={value}
-              error={errors.email?.message}
-            />
-          )}
-        />
-        <Controller
-          name="password"
-          control={control}
-          render={({ field: { onChange, value } }) => (
-            <Input
-              label="Senha"
-              placeholder="••••••••"
-              secureTextEntry
-              onChangeText={onChange}
-              value={value}
-              error={errors.password?.message}
-            />
-          )}
-        />
+        <View style={s.header}>
+          <Text style={[s.title, { color: colors.text }]}>Entrar</Text>
+          <Text style={[s.subtitle, { color: colors.subText }]}>
+            Acesse sua conta para continuar
+          </Text>
+        </View>
 
-        {errors.root && <FormError message={errors.root.message!} />}
+        <View style={s.form}>
+          <Input
+            label="E-mail"
+            placeholder="voce@email.com"
+            value={email}
+            onChangeText={setEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+          />
+          <Input
+            label="Senha"
+            placeholder="••••••••"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+          />
 
-        <Link href="/(auth)/forgot-password" asChild>
-          <TouchableOpacity>
-            <Text style={s.forgotLink}>Esqueci minha senha</Text>
+          <TouchableOpacity style={s.forgotPassword}>
+            <Text style={{ color: colors.primary, fontSize: 13 }}>
+              Esqueci minha senha
+            </Text>
           </TouchableOpacity>
-        </Link>
 
-        <Button
-          label="Entrar"
-          loading={isLoading}
-          onPress={handleSubmit(onSubmit)}
-        />
-      </View>
+          {/* O botão agora respeita o estado de carregamento */}
+          <Button label="Entrar" loading={loading} onPress={handleLogin} />
 
-      <View style={s.footer}>
-        <Text style={s.footerText}>Não tem conta? </Text>
-        <Link href="/(auth)/register">
-          <Text style={s.link}>Criar conta</Text>
-        </Link>
-      </View>
+          <View style={s.footer}>
+            <Text style={{ color: colors.subText, fontSize: 14 }}>
+              Não tem conta?{" "}
+            </Text>
+            <Link href="/(auth)/register">
+              <Text
+                style={{
+                  color: colors.primary,
+                  fontSize: 14,
+                  fontWeight: "600",
+                }}
+              >
+                Criar conta
+              </Text>
+            </Link>
+          </View>
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#ffffff",
-    justifyContent: "center",
-    paddingHorizontal: 24,
-    paddingVertical: 40,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: "bold",
-    color: "#111827",
-    marginBottom: 4,
-  },
-  subtitle: { fontSize: 14, color: "#6b7280", marginBottom: 32 },
+  safeArea: { flex: 1 },
+  scrollContainer: { padding: 24, flexGrow: 1, justifyContent: "center" },
+  logoContainer: { alignItems: "center", marginBottom: 32 },
+  logo: { width: 280, height: 180 },
+  header: { marginBottom: 32 },
+  title: { fontSize: 32, fontWeight: "800", marginBottom: 8 },
+  subtitle: { fontSize: 16 },
   form: { gap: 16 },
-  forgotLink: { color: "#6366f1", fontSize: 13, textAlign: "right" },
-  footer: { flexDirection: "row", justifyContent: "center", marginTop: 32 },
-  footerText: { color: "#6b7280" },
-  link: { color: "#6366f1", fontWeight: "600" },
+  forgotPassword: { alignSelf: "flex-end", marginTop: -8, marginBottom: 8 },
+  footer: { flexDirection: "row", justifyContent: "center", marginTop: 24 },
 });

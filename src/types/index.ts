@@ -155,6 +155,7 @@ export interface CategorySummary {
 export interface AuthCredentials {
   email: string;
   password: string;
+  lgpd_accepted: boolean;
 }
 
 export interface RegisterCredentials extends AuthCredentials {

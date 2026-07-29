@@ -3,6 +3,7 @@
 # dependencies
 node_modules/
 .env
+lib
 
 # Expo
 .expo/
@@ -46,3 +47,4 @@ expo-start.*.log
 /ios
 /android
 .vercel
+.supabase.ts
