@@ -5,6 +5,7 @@ import {
   FlatList,
   TouchableOpacity,
   Modal,
+  ScrollView,
   StyleSheet,
   ActivityIndicator,
   Alert,
@@ -18,6 +19,7 @@ import { useAccounts } from "@/hooks/useAccounts";
 import { TransactionForm } from "@/components/forms/TransactionForm";
 import { formatCurrency, formatDate } from "@/utils";
 import { useAuth } from "@/hooks/useAuth";
+import { useAppTheme } from "@/hooks/useTheme"; // 👈 Importação do motor de temas
 import type {
   Transaction,
   CreateTransaction,
@@ -27,6 +29,7 @@ import type {
 export default function TransactionsScreen() {
   const { profile } = useAuth();
   const { accounts, update: updateAccount } = useAccounts();
+  const { colors, isDark } = useAppTheme(); // 👈 Cores dinâmicas
 
   const {
     transactions,
@@ -168,13 +171,22 @@ export default function TransactionsScreen() {
       days.push(
         <TouchableOpacity
           key={i}
-          style={[s.calendarDay, isSelected && s.calendarDaySelected]}
+          style={[
+            s.calendarDay,
+            isSelected && { backgroundColor: colors.primary },
+          ]}
           onPress={() => {
             setDateFilter(dateString);
             setCalendarVisible(false);
           }}
         >
-          <Text style={[s.calendarDayText, isSelected && { color: "#fff" }]}>
+          <Text
+            style={[
+              s.calendarDayText,
+              { color: colors.text },
+              isSelected && { color: "#fff" },
+            ]}
+          >
             {i}
           </Text>
         </TouchableOpacity>,
@@ -189,31 +201,22 @@ export default function TransactionsScreen() {
     setCurrentMonthView(newDate);
   };
 
-  // PASSO EDUCATIVO: Ordenação inteligente de transações!
-  // O sistema compara a data primeiro. Se for no mesmo dia, compara a hora exata (created_at).
   const sortedTransactions = [...transactions].sort((a: any, b: any) => {
     const dateA = new Date(a.date).getTime();
     const dateB = new Date(b.date).getTime();
-
-    // 1º Regra: Dia mais recente fica no topo
-    if (dateA !== dateB) {
-      return dateB - dateA;
-    }
-
-    // 2º Regra: Se é no mesmo dia, a hora/minuto mais recente fica no topo
+    if (dateA !== dateB) return dateB - dateA;
     if (a.created_at && b.created_at) {
       return (
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       );
     }
-
     return 0;
   });
 
   return (
-    <SafeAreaView style={s.safe}>
+    <SafeAreaView style={[s.safe, { backgroundColor: colors.bg }]}>
       <View style={s.header}>
-        <Text style={s.title}>Transações</Text>
+        <Text style={[s.title, { color: colors.text }]}>Transações</Text>
         <TouchableOpacity
           style={s.addBtn}
           onPress={() => {
@@ -227,14 +230,38 @@ export default function TransactionsScreen() {
       </View>
 
       <View style={s.summaryRow}>
-        <View style={[s.summaryCard, { borderLeftColor: "#16a34a" }]}>
-          <Text style={s.summaryLabel}>Receitas</Text>
+        <View
+          style={[
+            s.summaryCard,
+            {
+              backgroundColor: colors.card,
+              borderColor: colors.border,
+              borderLeftColor: "#16a34a",
+              borderWidth: 1,
+            },
+          ]}
+        >
+          <Text style={[s.summaryLabel, { color: colors.subText }]}>
+            Receitas
+          </Text>
           <Text style={[s.summaryValue, { color: "#16a34a" }]}>
             {formatCurrency(summary.income, profile?.currency)}
           </Text>
         </View>
-        <View style={[s.summaryCard, { borderLeftColor: "#dc2626" }]}>
-          <Text style={s.summaryLabel}>Despesas</Text>
+        <View
+          style={[
+            s.summaryCard,
+            {
+              backgroundColor: colors.card,
+              borderColor: colors.border,
+              borderLeftColor: "#dc2626",
+              borderWidth: 1,
+            },
+          ]}
+        >
+          <Text style={[s.summaryLabel, { color: colors.subText }]}>
+            Despesas
+          </Text>
           <Text style={[s.summaryValue, { color: "#dc2626" }]}>
             {formatCurrency(summary.expense, profile?.currency)}
           </Text>
@@ -250,11 +277,14 @@ export default function TransactionsScreen() {
         }}
       >
         <TouchableOpacity
-          style={s.filterBtn}
+          style={[
+            s.filterBtn,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
           onPress={() => setCalendarVisible(true)}
         >
-          <Ionicons name="calendar-outline" size={18} color="#6366f1" />
-          <Text style={s.filterBtnText}>
+          <Ionicons name="calendar-outline" size={18} color={colors.primary} />
+          <Text style={[s.filterBtnText, { color: colors.text }]}>
             {dateFilter ? formatDate(dateFilter) : "Filtrar por data..."}
           </Text>
         </TouchableOpacity>
@@ -263,16 +293,16 @@ export default function TransactionsScreen() {
             style={s.clearBtn}
             onPress={() => setDateFilter("")}
           >
-            <Ionicons name="close-circle" size={20} color="#9ca3af" />
+            <Ionicons name="close-circle" size={20} color={colors.subText} />
           </TouchableOpacity>
         )}
       </View>
 
       {isLoading ? (
-        <ActivityIndicator color="#6366f1" style={{ marginTop: 32 }} />
+        <ActivityIndicator color={colors.primary} style={{ marginTop: 32 }} />
       ) : (
         <FlatList
-          data={sortedTransactions} // ← Aplicada a nova lista ordenada aqui
+          data={sortedTransactions}
           keyExtractor={(t) => t.id}
           contentContainerStyle={s.list}
           onEndReached={fetchMore}
@@ -280,11 +310,13 @@ export default function TransactionsScreen() {
           ListFooterComponent={
             isLoadingMore ? (
               <ActivityIndicator
-                color="#6366f1"
+                color={colors.primary}
                 style={{ marginVertical: 16 }}
               />
             ) : !hasMore ? (
-              <Text style={s.endText}>— Fim do histórico —</Text>
+              <Text style={[s.endText, { color: colors.subText }]}>
+                — Fim do histórico —
+              </Text>
             ) : null
           }
           bounces={false}
@@ -293,18 +325,22 @@ export default function TransactionsScreen() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              colors={["#6366f1"]}
+              colors={[colors.primary]}
+              tintColor={colors.primary}
             />
           }
           ListEmptyComponent={
             <View style={s.empty}>
-              <Text style={s.emptyText}>Nenhuma transação encontrada</Text>
+              <Text style={[s.emptyText, { color: colors.text }]}>
+                Nenhuma transação encontrada
+              </Text>
             </View>
           }
           renderItem={({ item }) => (
             <TransactionItem
               transaction={item}
               currency={profile?.currency ?? "BRL"}
+              colors={colors}
               onEdit={() => {
                 setEditing(item);
                 setModalVisible(true);
@@ -317,15 +353,15 @@ export default function TransactionsScreen() {
 
       <Modal visible={calendarVisible} transparent={true} animationType="fade">
         <View style={s.modalOverlay}>
-          <View style={s.calendarContainer}>
+          <View style={[s.calendarContainer, { backgroundColor: colors.card }]}>
             <View style={s.calendarHeader}>
               <TouchableOpacity
                 onPress={() => changeMonth(-1)}
                 style={{ padding: 10 }}
               >
-                <Ionicons name="chevron-back" size={20} color="#111827" />
+                <Ionicons name="chevron-back" size={20} color={colors.text} />
               </TouchableOpacity>
-              <Text style={s.calendarMonthName}>
+              <Text style={[s.calendarMonthName, { color: colors.text }]}>
                 {new Intl.DateTimeFormat("pt-BR", {
                   month: "long",
                   year: "numeric",
@@ -335,19 +371,26 @@ export default function TransactionsScreen() {
                 onPress={() => changeMonth(1)}
                 style={{ padding: 10 }}
               >
-                <Ionicons name="chevron-forward" size={20} color="#111827" />
+                <Ionicons
+                  name="chevron-forward"
+                  size={20}
+                  color={colors.text}
+                />
               </TouchableOpacity>
             </View>
             <View style={s.calendarWeekRow}>
               {["D", "S", "T", "Q", "Q", "S", "S"].map((d, i) => (
-                <Text key={i} style={s.calendarWeekDay}>
+                <Text
+                  key={i}
+                  style={[s.calendarWeekDay, { color: colors.subText }]}
+                >
                   {d}
                 </Text>
               ))}
             </View>
             <View style={s.calendarGrid}>{renderCalendarDays()}</View>
             <TouchableOpacity
-              style={s.closeCalendarBtn}
+              style={[s.closeCalendarBtn, { backgroundColor: colors.primary }]}
               onPress={() => setCalendarVisible(false)}
             >
               <Text style={{ color: "#fff", fontWeight: "bold" }}>Fechar</Text>
@@ -361,9 +404,17 @@ export default function TransactionsScreen() {
         animationType="slide"
         presentationStyle="pageSheet"
       >
-        <SafeAreaView style={s.modal}>
-          <View style={s.modalHeader}>
-            <Text style={s.modalTitle}>
+        <SafeAreaView style={[s.modal, { backgroundColor: colors.bg }]}>
+          <View
+            style={[
+              s.modalHeader,
+              {
+                backgroundColor: colors.card,
+                borderBottomColor: colors.border,
+              },
+            ]}
+          >
+            <Text style={[s.modalTitle, { color: colors.text }]}>
               {editing ? "Editar Transação" : "Nova Transação"}
             </Text>
             <TouchableOpacity
@@ -372,13 +423,21 @@ export default function TransactionsScreen() {
                 setEditing(null);
               }}
             >
-              <Text style={s.modalClose}>Fechar</Text>
+              <Text style={[s.modalClose, { color: colors.primary }]}>
+                Fechar
+              </Text>
             </TouchableOpacity>
           </View>
           <TransactionForm
-            isLoading={isLoading}
-            initialValues={editing ?? undefined}
-            onSubmit={editing ? handleUpdate : handleCreate}
+            isLoading={!!isLoading}
+            initialValues={editing ? editing : undefined}
+            onSubmit={async (data: CreateTransaction) => {
+              if (editing) {
+                await handleUpdate(data);
+              } else {
+                await handleCreate(data);
+              }
+            }}
             onCancel={() => {
               setModalVisible(false);
               setEditing(null);
@@ -390,20 +449,26 @@ export default function TransactionsScreen() {
   );
 }
 
-function TransactionItem({ transaction: t, currency, onEdit, onDelete }: any) {
+function TransactionItem({
+  transaction: t,
+  currency,
+  colors,
+  onEdit,
+  onDelete,
+}: any) {
   const isIncome = t.type === "income";
   const isInvoicePayment = t.title && t.title.startsWith("Fatura");
   const color = isIncome ? "#16a34a" : "#dc2626";
 
   return (
-    <View style={s.item}>
+    <View style={[s.item, { backgroundColor: colors.card }]}>
       <View
         style={[
           s.itemIcon,
           {
             backgroundColor: isInvoicePayment
               ? "#6366f118"
-              : (t.category?.color ?? "#6366f1") + "20",
+              : (t.category?.color ?? colors.primary) + "20",
           },
         ]}
       >
@@ -412,12 +477,12 @@ function TransactionItem({ transaction: t, currency, onEdit, onDelete }: any) {
             isInvoicePayment ? "card" : isIncome ? "arrow-up" : "arrow-down"
           }
           size={20}
-          color={isInvoicePayment ? "#6366f1" : color}
+          color={isInvoicePayment ? colors.primary : color}
         />
       </View>
       <View style={s.itemInfo}>
-        <Text style={s.itemTitle}>{t.title}</Text>
-        <Text style={s.itemCategory}>
+        <Text style={[s.itemTitle, { color: colors.text }]}>{t.title}</Text>
+        <Text style={[s.itemCategory, { color: colors.subText }]}>
           {isInvoicePayment
             ? `Pagamento de Fatura · ${formatDate(t.date)}`
             : `${t.category?.name ?? "Sem categoria"} · ${formatDate(t.date)}`}
@@ -427,7 +492,7 @@ function TransactionItem({ transaction: t, currency, onEdit, onDelete }: any) {
         <Text
           style={[
             s.itemAmount,
-            { color: isInvoicePayment ? "#111827" : color },
+            { color: isInvoicePayment ? colors.text : color },
           ]}
         >
           {isIncome ? "+" : "-"}
@@ -436,7 +501,11 @@ function TransactionItem({ transaction: t, currency, onEdit, onDelete }: any) {
         <View style={s.itemActions}>
           {!isInvoicePayment && (
             <TouchableOpacity onPress={onEdit} style={s.editBtn}>
-              <Ionicons name="create-outline" size={14} color="#6366f1" />
+              <Ionicons
+                name="create-outline"
+                size={14}
+                color={colors.primary}
+              />
             </TouchableOpacity>
           )}
           <TouchableOpacity onPress={onDelete} style={s.deleteBtn}>
@@ -449,11 +518,7 @@ function TransactionItem({ transaction: t, currency, onEdit, onDelete }: any) {
 }
 
 const s = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: "#f8fafc",
-    ...(Platform.OS === "web" ? { overflow: "hidden", maxWidth: "100%" } : {}),
-  },
+  safe: { flex: 1 },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -461,7 +526,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
   },
-  title: { fontSize: 22, fontWeight: "bold", color: "#111827" },
+  title: { fontSize: 22, fontWeight: "bold" },
   addBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -480,18 +545,16 @@ const s = StyleSheet.create({
   },
   summaryCard: {
     flex: 1,
-    backgroundColor: "#fff",
     borderRadius: 12,
     padding: 14,
     borderLeftWidth: 4,
   },
-  summaryLabel: { fontSize: 12, color: "#6b7280", marginBottom: 4 },
+  summaryLabel: { fontSize: 12, marginBottom: 4 },
   summaryValue: { fontSize: 16, fontWeight: "700" },
   list: { paddingHorizontal: 20, paddingBottom: 32 },
   item: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fff",
     borderRadius: 12,
     padding: 14,
     marginBottom: 8,
@@ -505,16 +568,16 @@ const s = StyleSheet.create({
     marginRight: 12,
   },
   itemInfo: { flex: 1 },
-  itemTitle: { fontSize: 14, fontWeight: "600", color: "#111827" },
-  itemCategory: { fontSize: 12, color: "#9ca3af", marginTop: 2 },
+  itemTitle: { fontSize: 14, fontWeight: "600" },
+  itemCategory: { fontSize: 12, marginTop: 2 },
   itemRight: { alignItems: "flex-end" },
   itemAmount: { fontSize: 14, fontWeight: "700" },
   itemActions: { flexDirection: "row", gap: 8, marginTop: 4 },
   editBtn: { padding: 4 },
   deleteBtn: { padding: 4 },
   empty: { alignItems: "center", paddingVertical: 60 },
-  emptyText: { fontSize: 16, fontWeight: "600", color: "#374151" },
-  modal: { flex: 1, backgroundColor: "#f8fafc" },
+  emptyText: { fontSize: 16, fontWeight: "600" },
+  modal: { flex: 1 },
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -522,22 +585,19 @@ const s = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#e5e7eb",
   },
-  modalTitle: { fontSize: 18, fontWeight: "bold", color: "#111827" },
-  modalClose: { color: "#6366f1", fontWeight: "600" },
+  modalTitle: { fontSize: 18, fontWeight: "bold" },
+  modalClose: { fontWeight: "600" },
   filterBtn: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fff",
     borderWidth: 1,
-    borderColor: "#e5e7eb",
     padding: 12,
     borderRadius: 8,
     gap: 8,
   },
-  filterBtnText: { color: "#374151", fontSize: 14 },
+  filterBtnText: { fontSize: 14 },
   clearBtn: { justifyContent: "center", padding: 8 },
   modalOverlay: {
     flex: 1,
@@ -547,7 +607,6 @@ const s = StyleSheet.create({
   },
   calendarContainer: {
     width: 320,
-    backgroundColor: "#fff",
     borderRadius: 16,
     padding: 20,
     elevation: 5,
@@ -561,7 +620,6 @@ const s = StyleSheet.create({
   calendarMonthName: {
     fontSize: 16,
     fontWeight: "bold",
-    color: "#111827",
     textTransform: "capitalize",
   },
   calendarWeekRow: {
@@ -572,7 +630,6 @@ const s = StyleSheet.create({
   calendarWeekDay: {
     width: 35,
     textAlign: "center",
-    color: "#6b7280",
     fontWeight: "bold",
     fontSize: 12,
   },
@@ -584,10 +641,8 @@ const s = StyleSheet.create({
     alignItems: "center",
     borderRadius: 19,
   },
-  calendarDaySelected: { backgroundColor: "#6366f1" },
-  calendarDayText: { color: "#374151", fontSize: 14 },
+  calendarDayText: { fontSize: 14 },
   closeCalendarBtn: {
-    backgroundColor: "#6366f1",
     padding: 12,
     borderRadius: 8,
     alignItems: "center",
@@ -595,7 +650,6 @@ const s = StyleSheet.create({
   },
   endText: {
     textAlign: "center",
-    color: "#9ca3af",
     fontSize: 12,
     paddingVertical: 16,
   },

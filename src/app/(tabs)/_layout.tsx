@@ -1,9 +1,9 @@
 import { Tabs } from "expo-router";
-import { View, StyleSheet } from "react-native";
+import { StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { ComponentProps } from "react";
+import { useAppTheme } from "@/hooks/useTheme";
 
-// Ícone simples em texto — substituir por expo-vector-icons depois
 type IconName = ComponentProps<typeof Ionicons>["name"];
 
 function TabIcon({
@@ -23,13 +23,25 @@ function TabIcon({
 }
 
 export default function TabsLayout() {
+  const { colors } = useAppTheme();
+
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: "#6366f1",
-        tabBarStyle: s.tabBar,
-        tabBarLabelStyle: s.tabLabel,
+        tabBarStyle: {
+          backgroundColor: colors.card as string,
+          borderTopColor: colors.border as string,
+          height: 60,
+          paddingBottom: 6,
+          paddingTop: 6,
+        },
+        tabBarActiveTintColor: colors.primary as string,
+        tabBarInactiveTintColor: colors.subText as string,
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: "600",
+        },
       }}
     >
       <Tabs.Screen
@@ -80,7 +92,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="credit"
         options={{
-          title: "Credito",
+          title: "Crédito",
           tabBarIcon: ({ color, focused }) => (
             <TabIcon
               active="card"
@@ -106,6 +118,7 @@ export default function TabsLayout() {
           ),
         }}
       />
+
       <Tabs.Screen
         name="categories"
         options={{ href: null, headerShown: false }}
@@ -125,8 +138,17 @@ export default function TabsLayout() {
           title: "Metas de Gastos",
         }}
       />
+
       <Tabs.Screen
         name="investments"
+        options={{
+          href: null,
+          headerShown: false,
+        }}
+      />
+
+      <Tabs.Screen
+        name="settings"
         options={{
           href: null,
           headerShown: false,
@@ -135,16 +157,3 @@ export default function TabsLayout() {
     </Tabs>
   );
 }
-
-const s = StyleSheet.create({
-  tabBar: { backgroundColor: "#fff", borderTopColor: "#e5e7eb", height: 60 },
-  tabLabel: { fontSize: 11, fontWeight: "600", marginBottom: 4 },
-  icon: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: "transparent",
-    marginTop: 2,
-  },
-  iconActive: { backgroundColor: "#6366f1" },
-});

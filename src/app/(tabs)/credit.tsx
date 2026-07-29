@@ -23,6 +23,7 @@ import {
   accountService,
   installmentService,
 } from "@/services";
+import { useAppTheme } from "@/hooks/useTheme"; // 👈 Motor de temas global
 
 interface InvoiceGroup {
   account: Account;
@@ -32,6 +33,8 @@ interface InvoiceGroup {
 }
 
 export default function CreditScreen() {
+  const { colors, isDark } = useAppTheme(); // 👈 Cores dinâmicas ativas
+
   const {
     installments,
     payFullInvoice,
@@ -70,7 +73,6 @@ export default function CreditScreen() {
       category_id: null,
     } as any);
 
-    // 👇 LÓGICA NOVA: Desconta o valor da fatura do banco de onde o dinheiro saiu
     const acc = accounts.find((a) => a.id === sourceAccountId);
     if (acc) {
       await updateAccount(acc.id, {
@@ -185,12 +187,22 @@ export default function CreditScreen() {
   };
 
   return (
-    <SafeAreaView style={s.safe}>
-      {/* 👇 BLOQUEIO DE ZOOM */}
-
-      <View style={s.header}>
-        <Text style={s.title}>Meus Cartões</Text>
-        <TouchableOpacity style={s.addBtn} onPress={handleOpenCreate}>
+    <SafeAreaView style={[s.safe, { backgroundColor: colors.bg }]}>
+      <View
+        style={[
+          s.header,
+          {
+            backgroundColor: colors.card,
+            borderBottomColor: colors.border,
+            borderBottomWidth: 1,
+          },
+        ]}
+      >
+        <Text style={[s.title, { color: colors.text }]}>Meus Cartões</Text>
+        <TouchableOpacity
+          style={[s.addBtn, { backgroundColor: colors.primary }]}
+          onPress={handleOpenCreate}
+        >
           <Ionicons name="add" size={24} color="#fff" />
         </TouchableOpacity>
       </View>
@@ -201,18 +213,25 @@ export default function CreditScreen() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            colors={["#6366f1"]}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
           />
         }
       >
-        <Text style={s.sectionTitle}>Faturas Pendentes</Text>
+        <Text style={[s.sectionTitle, { color: colors.subText }]}>
+          Faturas Pendentes
+        </Text>
         {pendingCards.length === 0 ? (
-          <Text style={s.emptyText}>Nenhuma fatura pendente.</Text>
+          <Text style={[s.emptyText, { color: colors.subText }]}>
+            Nenhuma fatura pendente.
+          </Text>
         ) : (
           pendingCards.map((group) => (
             <InvoiceCard
               key={group.account.id}
               group={group}
+              colors={colors}
+              isDark={isDark}
               onPayInvoice={() => {
                 setPayingGroup(group);
                 setPayModalVisible(true);
@@ -226,12 +245,16 @@ export default function CreditScreen() {
 
         {paidCards.length > 0 && (
           <>
-            <View style={s.divider} />
-            <Text style={s.sectionTitle}>Faturas Pagas (Este Mês)</Text>
+            <View style={[s.divider, { backgroundColor: colors.border }]} />
+            <Text style={[s.sectionTitle, { color: colors.subText }]}>
+              Faturas Pagas (Este Mês)
+            </Text>
             {paidCards.map((group) => (
               <InvoiceCard
                 key={group.account.id}
                 group={group}
+                colors={colors}
+                isDark={isDark}
                 onPayInvoice={() => {
                   setPayingGroup(group);
                   setPayModalVisible(true);
@@ -249,6 +272,7 @@ export default function CreditScreen() {
         visible={modalVisible}
         initialData={editingItem}
         accounts={creditAccountsOnly}
+        colors={colors}
         onClose={() => setModalVisible(false)}
         onSave={async (payload: any) => {
           if (editingItem) {
@@ -262,12 +286,16 @@ export default function CreditScreen() {
 
       <Modal visible={payModalVisible} transparent animationType="fade">
         <View style={s.modalOverlay}>
-          <View style={s.modalContent}>
-            <Text style={s.modalTitle}>Pagar Fatura</Text>
+          <View style={[s.modalContent, { backgroundColor: colors.card }]}>
+            <Text style={[s.modalTitle, { color: colors.text }]}>
+              Pagar Fatura
+            </Text>
 
-            <Text style={{ fontSize: 14, color: "#374151", marginBottom: 16 }}>
+            <Text
+              style={{ fontSize: 14, color: colors.subText, marginBottom: 16 }}
+            >
               Você está prestes a pagar a fatura do{" "}
-              <Text style={{ fontWeight: "bold" }}>
+              <Text style={{ fontWeight: "bold", color: colors.text }}>
                 {payingGroup?.account?.name}
               </Text>{" "}
               no valor total de{" "}
@@ -277,7 +305,9 @@ export default function CreditScreen() {
               .
             </Text>
 
-            <Text style={s.label}>De qual conta o dinheiro vai sair?</Text>
+            <Text style={[s.label, { color: colors.subText }]}>
+              De qual conta o dinheiro vai sair?
+            </Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -290,14 +320,24 @@ export default function CreditScreen() {
                     key={acc.id}
                     style={[
                       s.accBtn,
-                      sourceAccountId === acc.id && s.accBtnActive,
-                      { borderColor: acc.color },
+                      {
+                        backgroundColor: colors.inputBg,
+                        borderColor: colors.border,
+                      },
+                      sourceAccountId === acc.id && [
+                        s.accBtnActive,
+                        {
+                          backgroundColor: colors.primary,
+                          borderColor: colors.primary,
+                        },
+                      ],
                     ]}
                     onPress={() => setSourceAccountId(acc.id)}
                   >
                     <Text
                       style={[
                         s.accBtnText,
+                        { color: colors.text },
                         sourceAccountId === acc.id && { color: "#fff" },
                       ]}
                     >
@@ -309,13 +349,13 @@ export default function CreditScreen() {
 
             <View style={{ flexDirection: "row", gap: 10 }}>
               <TouchableOpacity
-                style={[s.btn, { backgroundColor: "#e5e7eb" }]}
+                style={[s.btn, { backgroundColor: colors.border }]}
                 onPress={() => {
                   setPayModalVisible(false);
                   setSourceAccountId("");
                 }}
               >
-                <Text style={{ color: "#374151", fontWeight: "bold" }}>
+                <Text style={{ color: colors.text, fontWeight: "bold" }}>
                   Cancelar
                 </Text>
               </TouchableOpacity>
@@ -348,6 +388,8 @@ function InvoiceCard({
   onPayInvoice,
   onEdit,
   onDelete,
+  colors,
+  isDark,
   isPaidMode = false,
 }: any) {
   const [expanded, setExpanded] = useState(false);
@@ -386,7 +428,8 @@ function InvoiceCard({
       style={[
         s.cardWrapper,
         {
-          borderLeftColor: account.color || "#6366f1",
+          backgroundColor: colors.card,
+          borderLeftColor: account.color || colors.primary,
           opacity: isPaidMode ? 0.6 : 1,
         },
       ]}
@@ -400,42 +443,57 @@ function InvoiceCard({
         }}
       >
         <View style={{ flex: 1 }}>
-          <Text style={s.cardTitle}>
+          <Text style={[s.cardTitle, { color: colors.text }]}>
             {account.name} {isPaidMode && "✅"}
           </Text>
-          <Text style={s.cardSubtitle}>
+          <Text style={[s.cardSubtitle, { color: colors.subText }]}>
             Vence dia {dueDay} de {formattedMonth}
           </Text>
         </View>
         <View style={{ alignItems: "flex-end", marginRight: 12 }}>
-          <Text style={s.invoiceTotal}>
+          <Text style={[s.invoiceTotal, { color: colors.primary }]}>
             {formatCurrency(headerTotal, account.currency)}
           </Text>
         </View>
         <Ionicons
           name={expanded ? "chevron-up" : "chevron-down"}
           size={20}
-          color="#6b7280"
+          color={colors.subText}
         />
       </TouchableOpacity>
 
       {expanded && (
-        <View style={s.expandedArea}>
+        <View
+          style={[
+            s.expandedArea,
+            { backgroundColor: colors.inputBg, borderTopColor: colors.border },
+          ]}
+        >
           <TouchableOpacity
             style={[
               s.nextInvoiceBox,
+              { backgroundColor: isDark ? "#312e81" : "#e0e7ff" },
               showNextMonth && {
-                backgroundColor: "#c7d2fe",
-                borderColor: "#4f46e5",
+                backgroundColor: isDark ? "#3730a3" : "#c7d2fe",
+                borderColor: colors.primary,
                 borderWidth: 1,
               },
             ]}
             activeOpacity={0.7}
             onPress={() => setShowNextMonth(!showNextMonth)}
           >
-            <Ionicons name="calendar-outline" size={16} color="#4f46e5" />
+            <Ionicons
+              name="calendar-outline"
+              size={16}
+              color={colors.primary}
+            />
             <View style={{ flex: 1 }}>
-              <Text style={s.nextInvoiceText}>
+              <Text
+                style={[
+                  s.nextInvoiceText,
+                  { color: isDark ? "#e0e7ff" : "#3730a3" },
+                ]}
+              >
                 Previsão para o próximo mês:{" "}
                 <Text style={{ fontWeight: "bold" }}>
                   {formatCurrency(nextInvoiceTotal, account.currency)}
@@ -444,7 +502,7 @@ function InvoiceCard({
               <Text
                 style={{
                   fontSize: 11,
-                  color: "#4f46e5",
+                  color: colors.primary,
                   marginTop: 2,
                   fontWeight: "600",
                 }}
@@ -460,7 +518,7 @@ function InvoiceCard({
             style={{
               fontSize: 14,
               fontWeight: "bold",
-              color: "#374151",
+              color: colors.text,
               marginBottom: 12,
             }}
           >
@@ -476,12 +534,12 @@ function InvoiceCard({
             </TouchableOpacity>
           )}
 
-          <View style={s.miniDivider} />
+          <View style={[s.miniDivider, { backgroundColor: colors.border }]} />
 
           {displayList.length === 0 && (
             <Text
               style={{
-                color: "#9ca3af",
+                color: colors.subText,
                 fontStyle: "italic",
                 textAlign: "center",
                 marginBottom: 10,
@@ -506,18 +564,20 @@ function InvoiceCard({
             return (
               <View key={item.id} style={s.itemRow}>
                 <View style={{ flex: 1 }}>
-                  <Text style={s.itemTitle}>{item.title}</Text>
-                  <Text style={s.itemSub}>
+                  <Text style={[s.itemTitle, { color: colors.text }]}>
+                    {item.title}
+                  </Text>
+                  <Text style={[s.itemSub, { color: colors.subText }]}>
                     Parcela {displayParcel} de {item.total_installments}
                   </Text>
                 </View>
-                <Text style={s.itemValue}>
+                <Text style={[s.itemValue, { color: colors.text }]}>
                   {formatCurrency(item.installment_amount, account.currency)}
                 </Text>
 
                 <View style={s.itemActions}>
                   <TouchableOpacity onPress={() => onEdit(item)}>
-                    <Ionicons name="pencil" size={18} color="#6b7280" />
+                    <Ionicons name="pencil" size={18} color={colors.subText} />
                   </TouchableOpacity>
                   <TouchableOpacity
                     onPress={() => onDelete(item.id)}
@@ -540,6 +600,7 @@ function InstallmentFormModal({
   onClose,
   initialData,
   accounts,
+  colors,
   onSave,
 }: any) {
   const [mode, setMode] = useState<"A" | "B">("A");
@@ -612,8 +673,8 @@ function InstallmentFormModal({
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <View style={s.modalOverlay}>
-          <View style={s.modalContent}>
-            <Text style={s.modalTitle}>
+          <View style={[s.modalContent, { backgroundColor: colors.card }]}>
+            <Text style={[s.modalTitle, { color: colors.text }]}>
               {initialData ? "Editar Compra" : "Nova Compra Parcelada"}
             </Text>
 
@@ -625,7 +686,9 @@ function InstallmentFormModal({
               </Text>
             </View>
 
-            <Text style={s.label}>Cartão de Crédito</Text>
+            <Text style={[s.label, { color: colors.subText }]}>
+              Cartão de Crédito
+            </Text>
             {accounts.length === 0 ? (
               <Text
                 style={{
@@ -647,14 +710,24 @@ function InstallmentFormModal({
                     key={acc.id}
                     style={[
                       s.accBtn,
-                      accountId === acc.id && s.accBtnActive,
-                      { borderColor: acc.color },
+                      {
+                        backgroundColor: colors.inputBg,
+                        borderColor: colors.border,
+                      },
+                      accountId === acc.id && [
+                        s.accBtnActive,
+                        {
+                          backgroundColor: colors.primary,
+                          borderColor: colors.primary,
+                        },
+                      ],
                     ]}
                     onPress={() => setAccountId(acc.id)}
                   >
                     <Text
                       style={[
                         s.accBtnText,
+                        { color: colors.text },
                         accountId === acc.id && { color: "#fff" },
                       ]}
                     >
@@ -665,28 +738,62 @@ function InstallmentFormModal({
               </ScrollView>
             )}
 
-            <Text style={s.label}>Nome da Compra</Text>
+            <Text style={[s.label, { color: colors.subText }]}>
+              Nome da Compra
+            </Text>
             <TextInput
-              style={s.input}
+              style={[
+                s.input,
+                {
+                  backgroundColor: colors.inputBg,
+                  color: colors.text,
+                  borderColor: colors.border,
+                },
+              ]}
               value={title}
               onChangeText={setTitle}
               placeholder="Ex: Geladeira"
+              placeholderTextColor={colors.subText}
             />
 
-            <View style={s.modeToggle}>
+            <View style={[s.modeToggle, { backgroundColor: colors.inputBg }]}>
               <TouchableOpacity
-                style={[s.modeBtn, mode === "A" && s.modeBtnActive]}
+                style={[
+                  s.modeBtn,
+                  mode === "A" && [
+                    s.modeBtnActive,
+                    { backgroundColor: colors.primary },
+                  ],
+                ]}
                 onPress={() => setMode("A")}
               >
-                <Text style={[s.modeText, mode === "A" && { color: "#fff" }]}>
+                <Text
+                  style={[
+                    s.modeText,
+                    { color: colors.subText },
+                    mode === "A" && { color: "#fff" },
+                  ]}
+                >
                   Valor Total
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[s.modeBtn, mode === "B" && s.modeBtnActive]}
+                style={[
+                  s.modeBtn,
+                  mode === "B" && [
+                    s.modeBtnActive,
+                    { backgroundColor: colors.primary },
+                  ],
+                ]}
                 onPress={() => setMode("B")}
               >
-                <Text style={[s.modeText, mode === "B" && { color: "#fff" }]}>
+                <Text
+                  style={[
+                    s.modeText,
+                    { color: colors.subText },
+                    mode === "B" && { color: "#fff" },
+                  ]}
+                >
                   Por Parcela
                 </Text>
               </TouchableOpacity>
@@ -694,25 +801,41 @@ function InstallmentFormModal({
 
             <View style={{ flexDirection: "row", gap: 10 }}>
               <View style={{ flex: 1 }}>
-                <Text style={s.label}>
+                <Text style={[s.label, { color: colors.subText }]}>
                   {mode === "A" ? "Valor Total (R$)" : "Valor da Parcela (R$)"}
                 </Text>
                 <TextInput
-                  style={s.input}
+                  style={[
+                    s.input,
+                    {
+                      backgroundColor: colors.inputBg,
+                      color: colors.text,
+                      borderColor: colors.border,
+                    },
+                  ]}
                   value={val1}
                   onChangeText={setVal1}
                   keyboardType="decimal-pad"
+                  placeholderTextColor={colors.subText}
                 />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={s.label}>
+                <Text style={[s.label, { color: colors.subText }]}>
                   {mode === "A" ? "Qtd de Parcelas" : "Parcelas Restantes"}
                 </Text>
                 <TextInput
-                  style={s.input}
+                  style={[
+                    s.input,
+                    {
+                      backgroundColor: colors.inputBg,
+                      color: colors.text,
+                      borderColor: colors.border,
+                    },
+                  ]}
                   value={val2}
                   onChangeText={setVal2}
                   keyboardType="decimal-pad"
+                  placeholderTextColor={colors.subText}
                 />
               </View>
             </View>
@@ -732,9 +855,9 @@ function InstallmentFormModal({
                   height: 22,
                   borderRadius: 6,
                   borderWidth: 2,
-                  borderColor: "#6366f1",
+                  borderColor: colors.primary,
                   marginRight: 10,
-                  backgroundColor: isNextMonth ? "#6366f1" : "transparent",
+                  backgroundColor: isNextMonth ? colors.primary : "transparent",
                   alignItems: "center",
                   justifyContent: "center",
                 }}
@@ -747,22 +870,22 @@ function InstallmentFormModal({
                   </Text>
                 )}
               </View>
-              <Text style={{ color: "#374151", fontSize: 13, flex: 1 }}>
+              <Text style={{ color: colors.text, fontSize: 13, flex: 1 }}>
                 Fatura já fechou? (Lançar apenas no próximo mês)
               </Text>
             </TouchableOpacity>
 
             <View style={{ flexDirection: "row", gap: 10, marginTop: 24 }}>
               <TouchableOpacity
-                style={[s.btn, { backgroundColor: "#e5e7eb" }]}
+                style={[s.btn, { backgroundColor: colors.border }]}
                 onPress={onClose}
               >
-                <Text style={{ color: "#374151", fontWeight: "bold" }}>
+                <Text style={{ color: colors.text, fontWeight: "bold" }}>
                   Cancelar
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[s.btn, { backgroundColor: "#4f46e5" }]}
+                style={[s.btn, { backgroundColor: colors.primary }]}
                 onPress={handleSave}
                 disabled={accounts.length === 0}
               >
@@ -779,10 +902,8 @@ function InstallmentFormModal({
 }
 
 const s = StyleSheet.create({
-  // 👇 ESTILO BLINDADO PARA EVITAR SCROLL NO NAVEGADOR
   safe: {
     flex: 1,
-    backgroundColor: "#f8fafc",
     ...(Platform.OS === "web" ? { overflow: "hidden", maxWidth: "100%" } : {}),
   },
   header: {
@@ -792,21 +913,19 @@ const s = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
-  title: { fontSize: 24, fontWeight: "bold", color: "#111827" },
-  addBtn: { backgroundColor: "#6366f1", padding: 8, borderRadius: 12 },
+  title: { fontSize: 24, fontWeight: "bold" },
+  addBtn: { padding: 8, borderRadius: 12 },
   list: { paddingHorizontal: 16, paddingBottom: 40 },
   sectionTitle: {
     fontSize: 16,
     fontWeight: "bold",
-    color: "#4b5563",
     marginBottom: 12,
     marginTop: 10,
   },
-  emptyText: { color: "#9ca3af", fontStyle: "italic", marginBottom: 20 },
-  divider: { height: 2, backgroundColor: "#e5e7eb", marginVertical: 16 },
+  emptyText: { fontStyle: "italic", marginBottom: 20 },
+  divider: { height: 2, marginVertical: 16 },
 
   cardWrapper: {
-    backgroundColor: "#fff",
     borderRadius: 12,
     marginBottom: 16,
     borderLeftWidth: 6,
@@ -814,18 +933,15 @@ const s = StyleSheet.create({
     overflow: "hidden",
   },
   cardHeader: { flexDirection: "row", alignItems: "center", padding: 16 },
-  cardTitle: { fontSize: 16, fontWeight: "700", color: "#1f2937" },
-  cardSubtitle: { fontSize: 13, color: "#6b7280", marginTop: 2 },
-  invoiceTotal: { fontSize: 16, fontWeight: "800", color: "#6366f1" },
+  cardTitle: { fontSize: 16, fontWeight: "700" },
+  cardSubtitle: { fontSize: 13, marginTop: 2 },
+  invoiceTotal: { fontSize: 16, fontWeight: "800" },
 
   expandedArea: {
-    backgroundColor: "#f9fafb",
     padding: 16,
     borderTopWidth: 1,
-    borderTopColor: "#f3f4f6",
   },
   nextInvoiceBox: {
-    backgroundColor: "#e0e7ff",
     padding: 10,
     borderRadius: 8,
     flexDirection: "row",
@@ -833,7 +949,7 @@ const s = StyleSheet.create({
     marginBottom: 12,
     gap: 6,
   },
-  nextInvoiceText: { color: "#3730a3", fontSize: 13 },
+  nextInvoiceText: { fontSize: 13 },
   payInvoiceBtn: {
     backgroundColor: "#10b981",
     flexDirection: "row",
@@ -844,15 +960,14 @@ const s = StyleSheet.create({
     gap: 8,
   },
   payInvoiceText: { color: "#fff", fontWeight: "700", fontSize: 14 },
-  miniDivider: { height: 1, backgroundColor: "#e5e7eb", marginVertical: 16 },
+  miniDivider: { height: 1, marginVertical: 16 },
 
   itemRow: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
-  itemTitle: { fontSize: 14, fontWeight: "600", color: "#374151" },
-  itemSub: { fontSize: 12, color: "#9ca3af" },
+  itemTitle: { fontSize: 14, fontWeight: "600" },
+  itemSub: { fontSize: 12 },
   itemValue: {
     fontSize: 14,
     fontWeight: "700",
-    color: "#111827",
     marginRight: 16,
   },
   itemActions: { flexDirection: "row", alignItems: "center" },
@@ -863,7 +978,6 @@ const s = StyleSheet.create({
     justifyContent: "flex-end",
   },
   modalContent: {
-    backgroundColor: "#fff",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 24,
@@ -872,15 +986,14 @@ const s = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: "bold",
-    color: "#374151",
     marginBottom: 6,
   },
   input: {
-    backgroundColor: "#f3f4f6",
     padding: 12,
     borderRadius: 8,
     marginBottom: 16,
-    fontSize: 16, // 👇 PREVINE ZOOM NO INPUT NO iOS
+    fontSize: 16,
+    borderWidth: 1,
   },
   btn: { flex: 1, padding: 14, alignItems: "center", borderRadius: 8 },
   accBtn: {
@@ -890,18 +1003,17 @@ const s = StyleSheet.create({
     borderWidth: 1,
     marginRight: 8,
   },
-  accBtnActive: { backgroundColor: "#6366f1" },
-  accBtnText: { color: "#4b5563", fontWeight: "600" },
+  accBtnActive: {},
+  accBtnText: { fontWeight: "600" },
   modeToggle: {
     flexDirection: "row",
-    backgroundColor: "#f3f4f6",
     borderRadius: 8,
     padding: 4,
     marginBottom: 16,
   },
   modeBtn: { flex: 1, padding: 10, alignItems: "center", borderRadius: 6 },
-  modeBtnActive: { backgroundColor: "#4f46e5" },
-  modeText: { fontWeight: "bold", color: "#6b7280" },
+  modeBtnActive: {},
+  modeText: { fontWeight: "bold" },
 
   alertContainer: {
     flexDirection: "row",

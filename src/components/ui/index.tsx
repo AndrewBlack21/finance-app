@@ -8,6 +8,9 @@ import {
 } from "react-native";
 import type { TouchableOpacityProps, TextInputProps } from "react-native";
 
+// 👇 Importação das cores automáticas
+import { useAppTheme } from "@/hooks/useTheme";
+
 // ============================================================
 // BUTTON
 // ============================================================
@@ -24,6 +27,8 @@ export function Button({
   disabled,
   ...props
 }: ButtonProps) {
+  const { colors } = useAppTheme(); // 👈 Trazemos as cores para o botão
+
   return (
     <TouchableOpacity
       style={[s.btnBase, s[variant], (disabled || loading) && s.disabled]}
@@ -31,9 +36,20 @@ export function Button({
       {...props}
     >
       {loading ? (
-        <ActivityIndicator color={variant === "primary" ? "#fff" : "#6366f1"} />
+        <ActivityIndicator
+          color={variant === "primary" ? "#fff" : colors.primary}
+        />
       ) : (
-        <Text style={[s.btnLabel, s[`${variant}Label`]]}>{label}</Text>
+        <Text
+          style={[
+            s.btnLabel,
+            variant === "primary" && s.primaryLabel,
+            variant === "outline" && { color: colors.primary },
+            variant === "ghost" && { color: colors.text }, // Ajusta o texto fantasma ao tema
+          ]}
+        >
+          {label}
+        </Text>
       )}
     </TouchableOpacity>
   );
@@ -47,13 +63,26 @@ interface InputProps extends TextInputProps {
   error?: string;
 }
 
-export function Input({ label, error, ...props }: InputProps) {
+export function Input({ label, error, style, ...props }: InputProps) {
+  const { colors } = useAppTheme(); // 👈 Trazemos as cores para a caixa de texto
+
   return (
     <View style={s.inputWrapper}>
-      {label && <Text style={s.label}>{label}</Text>}
+      {label && (
+        <Text style={[s.label, { color: colors.subText }]}>{label}</Text>
+      )}
       <TextInput
-        style={[s.input, error && s.inputError]}
-        placeholderTextColor="#9ca3af"
+        style={[
+          s.input,
+          {
+            backgroundColor: colors.inputBg, // Muda o fundo sozinho
+            color: colors.text, // Muda a letra sozinha
+            borderColor: colors.border, // Muda a linha à volta sozinha
+          },
+          style,
+          error && s.inputError,
+        ]}
+        placeholderTextColor={colors.subText} // Cor do texto de exemplo
         {...props}
       />
       {error && <FormError message={error} />}
@@ -91,21 +120,16 @@ const s = StyleSheet.create({
   // Button labels
   btnLabel: { fontSize: 16, fontWeight: "600" },
   primaryLabel: { color: "#fff" },
-  outlineLabel: { color: "#6366f1" },
-  ghostLabel: { color: "#4b5563" },
 
   // Input
   inputWrapper: { gap: 6 },
-  label: { fontSize: 14, fontWeight: "500", color: "#374151" },
+  label: { fontSize: 14, fontWeight: "500" },
   input: {
     borderWidth: 1,
-    borderColor: "#d1d5db",
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
     fontSize: 16,
-    color: "#111827",
-    backgroundColor: "#fff",
   },
   inputError: { borderColor: "#f87171" },
 

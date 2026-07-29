@@ -14,7 +14,7 @@ export function useAuth() {
     if (isGlobalAuthInitialized) return;
     isGlobalAuthInitialized = true;
 
-    // ETAPA 1: Busca ativa e imediata da sessão ao abrir a aplicação
+    // Busca ativa e imediata da sessão ao abrir a aplicação
     const fetchInitialSession = async () => {
       try {
         const { data: session } = await authService.getSession();
@@ -36,13 +36,13 @@ export function useAuth() {
       } catch (error) {
         console.log("Erro ao carregar sessão:", error);
       } finally {
-        store.setHydrated(true); // Memória terminou de carregar!
+        store.setHydrated(true);
       }
     };
 
     fetchInitialSession();
 
-    // ETAPA 2: Escutador global contínuo (fica ativo no fundo do app)
+    // Escutador global contínuo
     authService.onAuthChange(async (session) => {
       store.setSession(session);
       store.setUser(session?.user ?? null);
@@ -57,12 +57,10 @@ export function useAuth() {
         if (data) store.setProfile(data);
       } else {
         store.clear();
-        // 👇 CORREÇÃO: Removemos o router.replace("/(auth)/login") daqui!
-        // Quem decide a mudança de tela agora é o _layout.tsx, COM CALMA.
       }
     });
 
-    // ETAPA 3: Tempo limite de segurança caso a base de dados demore
+    // Tempo limite de segurança
     setTimeout(() => {
       store.setHydrated(true);
     }, 3000);
@@ -98,6 +96,39 @@ export function useAuth() {
     return { error };
   };
 
+  // 👇 NOVA FUNÇÃO: Atualizar o Nome
+  const updateName = async (newName: string) => {
+    if (!store.user) return { error: { message: "Utilizador não logado" } };
+
+    store.setLoading(true);
+    // Atualiza no banco de dados
+    const { error } = await supabase
+      .from("profiles")
+      .update({ name: newName })
+      .eq("id", store.user.id);
+
+    // Se deu certo, atualiza visualmente no telemóvel
+    if (!error && store.profile) {
+      store.setProfile({ ...store.profile, name: newName });
+    }
+
+    store.setLoading(false);
+    return { error };
+  };
+
+  // 👇 NOVA FUNÇÃO: Atualizar a Senha
+  const updatePassword = async (newPassword: string) => {
+    store.setLoading(true);
+
+    // Atualiza de forma segura na autenticação do Supabase
+    const { error } = await supabase.auth.updateUser({
+      password: newPassword,
+    });
+
+    store.setLoading(false);
+    return { error };
+  };
+
   return {
     user: store.user,
     profile: store.profile,
@@ -109,5 +140,7 @@ export function useAuth() {
     login,
     logout,
     forgotPassword,
+    updateName, // Exportamos a nova função
+    updatePassword, // Exportamos a nova função
   };
 }

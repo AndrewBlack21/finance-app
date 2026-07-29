@@ -20,11 +20,11 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useFixedExpenses } from "@/hooks/useFixedExpenses";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useCategories } from "@/hooks/useCategories";
-// 👇 Importamos o transactionService para mexer no saldo
 import { fixedExpenseService, transactionService } from "@/services";
 import { Input, Button } from "@/components/ui";
 import { formatCurrency } from "@/utils";
 import { useAuth } from "@/hooks/useAuth";
+import { useAppTheme } from "@/hooks/useTheme"; // 👈 Motor de temas global
 import type { FixedExpense } from "@/types";
 
 const schema = z.object({
@@ -53,6 +53,8 @@ const SUGGESTIONS = [
 
 export default function FixedExpensesScreen() {
   const { profile } = useAuth();
+  const { colors, isDark } = useAppTheme(); // 👈 Cores dinâmicas ativas
+
   const {
     expenses,
     isLoading,
@@ -67,7 +69,6 @@ export default function FixedExpensesScreen() {
     refetch,
   } = useFixedExpenses();
 
-  // 👇 Pegamos também o refetchAccounts para atualizar o saldo na tela na hora
   const {
     accounts,
     create: createAccount,
@@ -86,8 +87,8 @@ export default function FixedExpensesScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    if (refetchAccounts) await refetchAccounts(); // Atualiza saldo
-    if (refetch) await refetch(); // Atualiza lista
+    if (refetchAccounts) await refetchAccounts();
+    if (refetch) await refetch();
     setRefreshing(false);
   };
 
@@ -126,7 +127,6 @@ export default function FixedExpensesScreen() {
     };
 
     if (editing) {
-      // Se mudou de banco, transfere o histórico e ajusta os saldos
       if (
         editing.account_id &&
         payload.account_id &&
@@ -146,14 +146,12 @@ export default function FixedExpensesScreen() {
             account_id: payload.account_id,
           });
 
-          // Devolve para o banco antigo
           const oldAcc = accounts.find((a) => a.id === editing.account_id);
           if (oldAcc)
             await updateAccount(oldAcc.id, {
               balance: Number(oldAcc.balance) + Number(tx.amount),
             });
 
-          // Desconta do banco novo
           const newAcc = accounts.find((a) => a.id === payload.account_id);
           if (newAcc)
             await updateAccount(newAcc.id, {
@@ -194,7 +192,6 @@ export default function FixedExpensesScreen() {
           const txRes = await transactionService.list({
             account_id: expense.account_id,
           });
-          // 👇 Procura por ambas as variações de nome para devolver o saldo corretamente e limpar as duplicadas
           const txsToDelete = (txRes.data || []).filter(
             (t: any) =>
               (t.title === `${expense.title} (Conta Fixa)` ||
@@ -243,15 +240,12 @@ export default function FixedExpensesScreen() {
     }
 
     const payAction = async () => {
-      // 👇 O próprio sistema original já gera a transação.
-      // Retiramos a nossa criação manual aqui para evitar a duplicação na lista!
       const { error } = await markAsPaid(expense);
       if (error) {
         Alert.alert("Erro", error);
         return;
       }
 
-      // Desconta do saldo real da conta
       const acc = accounts.find((a) => a.id === expense.account_id);
       if (acc)
         await updateAccount(acc.id, {
@@ -273,7 +267,6 @@ export default function FixedExpensesScreen() {
 
   const handleDelete = (item: FixedExpense) => {
     const deleteAction = async () => {
-      // Se estava pago, devolvemos o dinheiro primeiro
       if (item.is_paid && item.account_id) {
         const txRes = await transactionService.list({
           account_id: item.account_id,
@@ -314,6 +307,7 @@ export default function FixedExpensesScreen() {
       ]);
     }
   };
+
   const handleEdit = (item: FixedExpense) => {
     setEditing(item);
     setModalVisible(true);
@@ -330,35 +324,54 @@ export default function FixedExpensesScreen() {
   );
 
   return (
-    <SafeAreaView style={s.safe}>
+    <SafeAreaView style={[s.safe, { backgroundColor: colors.bg }]}>
       <View style={s.header}>
-        <Text style={s.title}>Contas Fixas</Text>
+        <Text style={[s.title, { color: colors.text }]}>Contas Fixas</Text>
         <TouchableOpacity
-          style={s.addBtn}
+          style={[s.addBtn, { backgroundColor: colors.primary }]}
           onPress={() => setModalVisible(true)}
         >
           <Text style={s.addBtnText}>+ Nova</Text>
         </TouchableOpacity>
       </View>
 
-      <View style={s.summaryCard}>
+      <View
+        style={[
+          s.summaryCard,
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.border,
+            borderWidth: 1,
+          },
+        ]}
+      >
         <View style={s.summaryRow}>
           <View style={s.summaryItem}>
-            <Text style={s.summaryLabel}>Total mês</Text>
-            <Text style={s.summaryValue}>
+            <Text style={[s.summaryLabel, { color: colors.subText }]}>
+              Total mês
+            </Text>
+            <Text style={[s.summaryValue, { color: colors.text }]}>
               {formatCurrency(totalMonth, profile?.currency)}
             </Text>
           </View>
-          <View style={s.summaryDivider} />
+          <View
+            style={[s.summaryDivider, { backgroundColor: colors.border }]}
+          />
           <View style={s.summaryItem}>
-            <Text style={s.summaryLabel}>Pago</Text>
+            <Text style={[s.summaryLabel, { color: colors.subText }]}>
+              Pago
+            </Text>
             <Text style={[s.summaryValue, { color: "#16a34a" }]}>
               {formatCurrency(totalPaid, profile?.currency)}
             </Text>
           </View>
-          <View style={s.summaryDivider} />
+          <View
+            style={[s.summaryDivider, { backgroundColor: colors.border }]}
+          />
           <View style={s.summaryItem}>
-            <Text style={s.summaryLabel}>Pendente</Text>
+            <Text style={[s.summaryLabel, { color: colors.subText }]}>
+              Pendente
+            </Text>
             <Text style={[s.summaryValue, { color: "#dc2626" }]}>
               {formatCurrency(totalPending, profile?.currency)}
             </Text>
@@ -373,7 +386,7 @@ export default function FixedExpensesScreen() {
       </View>
 
       {isLoading ? (
-        <ActivityIndicator color="#6366f1" style={{ marginTop: 32 }} />
+        <ActivityIndicator color={colors.primary} style={{ marginTop: 32 }} />
       ) : (
         <FlatList
           data={sorted}
@@ -383,15 +396,18 @@ export default function FixedExpensesScreen() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              colors={["#6366f1"]}
+              colors={[colors.primary]}
+              tintColor={colors.primary}
             />
           }
           bounces={false}
           overScrollMode="never"
           ListEmptyComponent={
             <View style={s.empty}>
-              <Text style={s.emptyText}>Nenhuma conta fixa cadastrada</Text>
-              <Text style={s.emptySubtext}>
+              <Text style={[s.emptyText, { color: colors.text }]}>
+                Nenhuma conta fixa cadastrada
+              </Text>
+              <Text style={[s.emptySubtext, { color: colors.subText }]}>
                 Toque em "+ Nova" para adicionar
               </Text>
             </View>
@@ -399,6 +415,8 @@ export default function FixedExpensesScreen() {
           renderItem={({ item }) => (
             <FixedExpenseCard
               item={item}
+              colors={colors}
+              isDark={isDark}
               onPay={() => handlePay(item)}
               onEdit={() => handleEdit(item)}
               onDelete={() => handleDelete(item)}
@@ -412,18 +430,28 @@ export default function FixedExpensesScreen() {
         animationType="slide"
         presentationStyle="pageSheet"
       >
-        <SafeAreaView style={s.modal}>
-          <View style={s.modalHeader}>
-            <Text style={s.modalTitle}>
+        <SafeAreaView style={[s.modal, { backgroundColor: colors.bg }]}>
+          <View
+            style={[
+              s.modalHeader,
+              {
+                backgroundColor: colors.card,
+                borderBottomColor: colors.border,
+              },
+            ]}
+          >
+            <Text style={[s.modalTitle, { color: colors.text }]}>
               {editing ? "Editar Conta Fixa" : "Nova Conta Fixa"}
             </Text>
             <TouchableOpacity onPress={handleClose}>
-              <Text style={s.modalClose}>Fechar</Text>
+              <Text style={[s.modalClose, { color: colors.primary }]}>
+                Fechar
+              </Text>
             </TouchableOpacity>
           </View>
 
           <ScrollView contentContainerStyle={s.form}>
-            <Text style={s.label}>Sugestões</Text>
+            <Text style={[s.label, { color: colors.subText }]}>Sugestões</Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -433,10 +461,15 @@ export default function FixedExpensesScreen() {
                 {SUGGESTIONS.map((sug) => (
                   <TouchableOpacity
                     key={sug}
-                    style={s.suggestionBtn}
+                    style={[
+                      s.suggestionBtn,
+                      { backgroundColor: isDark ? "#312e81" : "#ede9fe" },
+                    ]}
                     onPress={() => setValue("title", sug)}
                   >
-                    <Text style={s.suggestionText}>{sug}</Text>
+                    <Text style={[s.suggestionText, { color: colors.primary }]}>
+                      {sug}
+                    </Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -491,7 +524,7 @@ export default function FixedExpensesScreen() {
               </View>
             </View>
 
-            <Text style={s.label}>Moeda</Text>
+            <Text style={[s.label, { color: colors.subText }]}>Moeda</Text>
             <Controller
               name="currency"
               control={control}
@@ -500,11 +533,28 @@ export default function FixedExpensesScreen() {
                   {CURRENCIES.map((c) => (
                     <TouchableOpacity
                       key={c}
-                      style={[s.optionBtn, value === c && s.optionBtnActive]}
+                      style={[
+                        s.optionBtn,
+                        {
+                          backgroundColor: colors.card,
+                          borderColor: colors.border,
+                        },
+                        value === c && [
+                          s.optionBtnActive,
+                          {
+                            backgroundColor: colors.primary,
+                            borderColor: colors.primary,
+                          },
+                        ],
+                      ]}
                       onPress={() => onChange(c)}
                     >
                       <Text
-                        style={[s.optionText, value === c && { color: "#fff" }]}
+                        style={[
+                          s.optionText,
+                          { color: colors.subText },
+                          value === c && { color: "#fff" },
+                        ]}
                       >
                         {c}
                       </Text>
@@ -516,7 +566,9 @@ export default function FixedExpensesScreen() {
 
             {accounts.length >= 0 && (
               <>
-                <Text style={s.label}>Debitar da conta (opcional)</Text>
+                <Text style={[s.label, { color: colors.subText }]}>
+                  Debitar da conta (opcional)
+                </Text>
                 <Controller
                   name="account_id"
                   control={control}
@@ -530,26 +582,33 @@ export default function FixedExpensesScreen() {
                           style={[
                             s.optionBtn,
                             {
-                              backgroundColor: "#eef2ff",
-                              borderColor: "#c7d2fe",
+                              backgroundColor: isDark ? "#1e1b4b" : "#eef2ff",
+                              borderColor: colors.border,
                             },
                           ]}
                           onPress={() => setAccountModalVisible(true)}
                         >
                           <Text
-                            style={{ color: "#4f46e5", fontWeight: "bold" }}
+                            style={{
+                              color: colors.primary,
+                              fontWeight: "bold",
+                            }}
                           >
                             + Nova
                           </Text>
                         </TouchableOpacity>
 
                         {accounts
-                          .filter((a) => a.type !== "credit") // 👇 Filtra para esconder cartões de crédito
+                          .filter((a) => a.type !== "credit")
                           .map((a) => (
                             <TouchableOpacity
                               key={a.id}
                               style={[
                                 s.optionBtn,
+                                {
+                                  backgroundColor: colors.card,
+                                  borderColor: colors.border,
+                                },
                                 value === a.id && {
                                   backgroundColor: a.color,
                                   borderColor: a.color,
@@ -560,6 +619,7 @@ export default function FixedExpensesScreen() {
                               <Text
                                 style={[
                                   s.optionText,
+                                  { color: colors.subText },
                                   value === a.id && { color: "#fff" },
                                 ]}
                               >
@@ -584,7 +644,7 @@ export default function FixedExpensesScreen() {
                         >
                           <View
                             style={{
-                              backgroundColor: "#fff",
+                              backgroundColor: colors.card,
                               padding: 20,
                               borderRadius: 16,
                             }}
@@ -594,6 +654,7 @@ export default function FixedExpensesScreen() {
                                 fontSize: 18,
                                 fontWeight: "bold",
                                 marginBottom: 16,
+                                color: colors.text,
                               }}
                             >
                               Nova Conta
@@ -602,19 +663,26 @@ export default function FixedExpensesScreen() {
                             <TextInput
                               style={{
                                 borderWidth: 1,
-                                borderColor: "#d1d5db",
+                                borderColor: colors.border,
+                                backgroundColor: colors.inputBg,
+                                color: colors.text,
                                 padding: 12,
                                 borderRadius: 8,
                                 marginBottom: 16,
                                 fontSize: 16,
                               }}
                               placeholder="Nome do Banco (Ex: Nubank)"
+                              placeholderTextColor={colors.subText}
                               value={newBankName}
                               onChangeText={setNewBankName}
                             />
 
                             <Text
-                              style={{ marginBottom: 8, fontWeight: "600" }}
+                              style={{
+                                marginBottom: 8,
+                                fontWeight: "600",
+                                color: colors.subText,
+                              }}
                             >
                               Cor:
                             </Text>
@@ -645,6 +713,7 @@ export default function FixedExpensesScreen() {
                                     borderRadius: 20,
                                     backgroundColor: color,
                                     borderWidth: newBankColor === color ? 3 : 0,
+                                    borderColor: colors.text,
                                   }}
                                 />
                               ))}
@@ -655,7 +724,7 @@ export default function FixedExpensesScreen() {
                                 style={{
                                   flex: 1,
                                   padding: 12,
-                                  backgroundColor: "#f3f4f6",
+                                  backgroundColor: colors.border,
                                   borderRadius: 8,
                                   alignItems: "center",
                                 }}
@@ -664,7 +733,7 @@ export default function FixedExpensesScreen() {
                                 <Text
                                   style={{
                                     fontWeight: "bold",
-                                    color: "#4b5563",
+                                    color: colors.text,
                                   }}
                                 >
                                   Cancelar
@@ -711,7 +780,9 @@ export default function FixedExpensesScreen() {
 
             {expenseCategories.length > 0 && (
               <>
-                <Text style={s.label}>Categoria (opcional)</Text>
+                <Text style={[s.label, { color: colors.subText }]}>
+                  Categoria (opcional)
+                </Text>
                 <Controller
                   name="category_id"
                   control={control}
@@ -726,6 +797,10 @@ export default function FixedExpensesScreen() {
                             key={c.id}
                             style={[
                               s.optionBtn,
+                              {
+                                backgroundColor: colors.card,
+                                borderColor: colors.border,
+                              },
                               value === c.id && {
                                 backgroundColor: c.color,
                                 borderColor: c.color,
@@ -736,6 +811,7 @@ export default function FixedExpensesScreen() {
                             <Text
                               style={[
                                 s.optionText,
+                                { color: colors.subText },
                                 value === c.id && { color: "#fff" },
                               ]}
                             >
@@ -764,11 +840,15 @@ export default function FixedExpensesScreen() {
 
 function FixedExpenseCard({
   item,
+  colors,
+  isDark,
   onPay,
   onEdit,
   onDelete,
 }: {
   item: FixedExpense;
+  colors: any;
+  isDark: boolean;
   onPay: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -778,7 +858,13 @@ function FixedExpenseCard({
   const isDueSoon = !item.is_paid && daysUntilDue >= 0 && daysUntilDue <= 3;
 
   return (
-    <View style={[cs.card, item.is_paid && cs.cardPaid]}>
+    <View
+      style={[
+        cs.card,
+        { backgroundColor: colors.card },
+        item.is_paid && cs.cardPaid,
+      ]}
+    >
       <View style={cs.cardLeft}>
         <View
           style={[
@@ -789,13 +875,13 @@ function FixedExpenseCard({
                 ? { backgroundColor: "#dc2626" }
                 : isDueSoon
                   ? { backgroundColor: "#f59e0b" }
-                  : { backgroundColor: "#6366f1" },
+                  : { backgroundColor: colors.primary },
           ]}
         />
       </View>
       <View style={cs.cardInfo}>
-        <Text style={cs.cardTitle}>{item.title}</Text>
-        <Text style={cs.cardSub}>
+        <Text style={[cs.cardTitle, { color: colors.text }]}>{item.title}</Text>
+        <Text style={[cs.cardSub, { color: colors.subText }]}>
           {item.is_paid
             ? `✓ Pago em ${item.paid_at}`
             : isOverdue
@@ -805,24 +891,32 @@ function FixedExpenseCard({
                 : `Vence dia ${item.due_day}`}
         </Text>
         {item.account && (
-          <Text style={cs.cardAccount}>{item.account.name}</Text>
+          <Text style={[cs.cardAccount, { color: colors.subText }]}>
+            {item.account.name}
+          </Text>
         )}
       </View>
       <View style={cs.cardRight}>
-        <Text style={cs.cardAmount}>
+        <Text style={[cs.cardAmount, { color: colors.text }]}>
           {formatCurrency(item.amount, item.currency)}
         </Text>
         <View style={cs.cardActions}>
           <TouchableOpacity onPress={onPay}>
-            <Text style={[cs.payText, item.is_paid && { color: "#9ca3af" }]}>
+            <Text
+              style={[
+                cs.payText,
+                { color: colors.primary },
+                item.is_paid && { color: colors.subText },
+              ]}
+            >
               {item.is_paid ? "Desfazer" : "Pagar"}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={onEdit}>
-            <Text style={cs.editText}>Editar</Text>
+            <Text style={[cs.editText, { color: "#f59e0b" }]}>Editar</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={onDelete}>
-            <Text style={cs.deleteText}>Remover</Text>
+            <Text style={[cs.deleteText, { color: "#ef4444" }]}>Remover</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -833,7 +927,6 @@ function FixedExpenseCard({
 const s = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: "#f8fafc",
     ...(Platform.OS === "web" ? { overflow: "hidden", maxWidth: "100%" } : {}),
   },
   header: {
@@ -843,9 +936,8 @@ const s = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
   },
-  title: { fontSize: 22, fontWeight: "bold", color: "#111827" },
+  title: { fontSize: 22, fontWeight: "bold" },
   addBtn: {
-    backgroundColor: "#6366f1",
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
@@ -854,18 +946,16 @@ const s = StyleSheet.create({
   summaryCard: {
     marginHorizontal: 20,
     marginBottom: 16,
-    backgroundColor: "#fff",
     borderRadius: 16,
     padding: 20,
   },
   summaryRow: { flexDirection: "row", alignItems: "center" },
   summaryItem: { flex: 1, alignItems: "center" },
-  summaryLabel: { fontSize: 12, color: "#6b7280", marginBottom: 4 },
-  summaryValue: { fontSize: 15, fontWeight: "700", color: "#111827" },
+  summaryLabel: { fontSize: 12, marginBottom: 4 },
+  summaryValue: { fontSize: 15, fontWeight: "700" },
   summaryDivider: {
     width: 1,
     height: 32,
-    backgroundColor: "#e5e7eb",
     marginHorizontal: 8,
   },
   pendingAlert: {
@@ -877,9 +967,9 @@ const s = StyleSheet.create({
   },
   list: { paddingHorizontal: 20, paddingBottom: 32 },
   empty: { alignItems: "center", paddingVertical: 60 },
-  emptyText: { fontSize: 16, fontWeight: "600", color: "#374151" },
-  emptySubtext: { fontSize: 13, color: "#9ca3af", marginTop: 6 },
-  modal: { flex: 1, backgroundColor: "#f8fafc" },
+  emptyText: { fontSize: 16, fontWeight: "600" },
+  emptySubtext: { fontSize: 13, marginTop: 6 },
+  modal: { flex: 1 },
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -887,37 +977,33 @@ const s = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#e5e7eb",
   },
-  modalTitle: { fontSize: 18, fontWeight: "bold", color: "#111827" },
-  modalClose: { color: "#6366f1", fontWeight: "600" },
+  modalTitle: { fontSize: 18, fontWeight: "bold" },
+  modalClose: { fontWeight: "600" },
   form: { padding: 20, gap: 16 },
-  label: { fontSize: 13, fontWeight: "600", color: "#374151", marginBottom: 2 },
+  label: { fontSize: 13, fontWeight: "600", marginBottom: 2 },
   optionRow: { flexDirection: "row", gap: 8 },
   optionBtn: {
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: "#e5e7eb",
   },
-  optionBtnActive: { backgroundColor: "#6366f1", borderColor: "#6366f1" },
-  optionText: { fontSize: 13, color: "#6b7280", fontWeight: "500" },
+  optionBtnActive: {},
+  optionText: { fontSize: 13, fontWeight: "500" },
   suggestionBtn: {
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 16,
-    backgroundColor: "#ede9fe",
     marginRight: 8,
   },
-  suggestionText: { fontSize: 12, color: "#6366f1", fontWeight: "600" },
+  suggestionText: { fontSize: 12, fontWeight: "600" },
 });
 
 const cs = StyleSheet.create({
   card: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fff",
     borderRadius: 14,
     padding: 16,
     marginBottom: 10,
@@ -926,13 +1012,13 @@ const cs = StyleSheet.create({
   cardLeft: { marginRight: 12 },
   dot: { width: 12, height: 12, borderRadius: 6 },
   cardInfo: { flex: 1 },
-  cardTitle: { fontSize: 15, fontWeight: "700", color: "#111827" },
-  cardSub: { fontSize: 12, color: "#6b7280", marginTop: 3 },
-  cardAccount: { fontSize: 11, color: "#9ca3af", marginTop: 2 },
+  cardTitle: { fontSize: 15, fontWeight: "700" },
+  cardSub: { fontSize: 12, marginTop: 3 },
+  cardAccount: { fontSize: 11, marginTop: 2 },
   cardRight: { alignItems: "flex-end" },
-  cardAmount: { fontSize: 15, fontWeight: "700", color: "#111827" },
+  cardAmount: { fontSize: 15, fontWeight: "700" },
   cardActions: { flexDirection: "row", gap: 10, marginTop: 6 },
-  payText: { fontSize: 12, color: "#6366f1", fontWeight: "700" },
-  editText: { fontSize: 12, color: "#f59e0b", fontWeight: "700" },
-  deleteText: { fontSize: 12, color: "#ef4444" },
+  payText: { fontSize: 12, fontWeight: "700" },
+  editText: { fontSize: 12, fontWeight: "700" },
+  deleteText: { fontSize: 12 },
 });

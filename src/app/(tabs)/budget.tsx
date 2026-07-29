@@ -19,6 +19,7 @@ import { useCategories } from "@/hooks/useCategories";
 import { useBudgetGoals } from "@/hooks/useBudgetGoals";
 import { useAuth } from "@/hooks/useAuth";
 import { useRouter } from "expo-router";
+import { useAppTheme } from "@/hooks/useTheme"; // 👈 Motor de temas global
 
 const { width: SW } = Dimensions.get("window");
 
@@ -93,6 +94,7 @@ export default function BudgetScreen() {
   const { profile } = useAuth();
   const { categories } = useCategories();
   const { goals, totalBudget, upsert, remove } = useBudgetGoals();
+  const { colors, isDark } = useAppTheme(); // 👈 Cores dinâmicas ativas
 
   const [showGlobalModal, setShowGlobalModal] = useState(false);
   const [globalInput, setGlobalInput] = useState("");
@@ -278,7 +280,6 @@ export default function BudgetScreen() {
     }
   };
 
-  // 👇 Exclusão direta pela lista
   const deleteGoalInline = async (goalId: string) => {
     const confirmAction = async () => {
       const { error } = await remove(goalId);
@@ -295,7 +296,6 @@ export default function BudgetScreen() {
     }
   };
 
-  // Mantemos a função para o botão "Remover" dentro da modal de edição (caso necessário)
   const handleDeleteGoal = async () => {
     if (editModal?.id) {
       const { error } = await remove(editModal.id);
@@ -308,23 +308,42 @@ export default function BudgetScreen() {
   };
 
   return (
-    <SafeAreaView style={s.safe}>
-      <View style={s.header}>
+    <SafeAreaView style={[s.safe, { backgroundColor: colors.bg }]}>
+      <View
+        style={[
+          s.header,
+          {
+            backgroundColor: colors.card,
+            borderBottomColor: colors.border,
+            borderBottomWidth: 1,
+          },
+        ]}
+      >
         <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-          <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
-            <Ionicons name="arrow-back" size={22} color="#111827" />
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={[s.backBtn, { backgroundColor: colors.inputBg }]}
+          >
+            <Ionicons name="arrow-back" size={22} color={colors.text} />
           </TouchableOpacity>
           <View>
-            <Text style={s.headerSub}>Análise</Text>
-            <Text style={s.headerTitle}>Metas</Text>
+            <Text style={[s.headerSub, { color: colors.subText }]}>
+              Análise
+            </Text>
+            <Text style={[s.headerTitle, { color: colors.text }]}>Metas</Text>
           </View>
         </View>
         <TouchableOpacity
-          style={s.monthBtn}
+          style={[
+            s.monthBtn,
+            { backgroundColor: isDark ? "#312e81" : "#ede9fe" },
+          ]}
           onPress={() => setShowMonthPicker(true)}
         >
-          <Text style={s.monthBtnText}>{mLabel}</Text>
-          <Ionicons name="chevron-down" size={12} color="#6366f1" />
+          <Text style={[s.monthBtnText, { color: colors.primary }]}>
+            {mLabel}
+          </Text>
+          <Ionicons name="chevron-down" size={12} color={colors.primary} />
         </TouchableOpacity>
       </View>
 
@@ -390,35 +409,63 @@ export default function BudgetScreen() {
         </View>
 
         {insight && (
-          <View style={s.insightCard}>
-            <Text style={s.insightText}>{insight}</Text>
+          <View
+            style={[
+              s.insightCard,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+                borderLeftColor: colors.primary,
+                borderWidth: 1,
+              },
+            ]}
+          >
+            <Text style={[s.insightText, { color: colors.text }]}>
+              {insight}
+            </Text>
           </View>
         )}
 
-        <Text style={s.sectionTitle}>Por categoria</Text>
+        <Text style={[s.sectionTitle, { color: colors.text }]}>
+          Por categoria
+        </Text>
         {catRows.length === 0 && (
           <View style={s.empty}>
-            <Ionicons name="flag-outline" size={40} color="#d1d5db" />
-            <Text style={s.emptyText}>Nenhum gasto registrado este mês</Text>
+            <Ionicons name="flag-outline" size={40} color={colors.subText} />
+            <Text style={[s.emptyText, { color: colors.subText }]}>
+              Nenhum gasto registrado este mês
+            </Text>
           </View>
         )}
 
         {catRows.map((row) => {
           const pct = row.limit ? (row.spent / row.limit) * 100 : 0;
           return (
-            <View key={row.id} style={s.catRow}>
+            <View
+              key={row.id}
+              style={[
+                s.catRow,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.border,
+                  borderWidth: 1,
+                },
+              ]}
+            >
               <Ring pct={row.limit ? pct : 0} color={row.color} size={52} />
               <View style={s.catInfo}>
                 <View style={s.catNameRow}>
                   <View style={[s.catDot, { backgroundColor: row.color }]} />
-                  <Text style={s.catName}>{row.name}</Text>
+                  <Text style={[s.catName, { color: colors.text }]}>
+                    {row.name}
+                  </Text>
                 </View>
-                <Text style={s.catValues}>
+                <Text style={[s.catValues, { color: colors.subText }]}>
                   {fmt(row.spent, currency)}{" "}
                   {row.limit ? ` / ${fmt(row.limit, currency)}` : ""}
                 </Text>
                 {row.limit && (
-                  <View style={s.catBar}>
+                  <View style={[s.catBar, { backgroundColor: colors.border }]}>
                     <View
                       style={[
                         s.catBarFill,
@@ -432,7 +479,6 @@ export default function BudgetScreen() {
                 )}
               </View>
 
-              {/* 👇 Grupo de botões atualizado (Lixeira e Editar) 👇 */}
               <View
                 style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
               >
@@ -440,7 +486,10 @@ export default function BudgetScreen() {
                   <TouchableOpacity
                     style={[
                       s.editBtn,
-                      { backgroundColor: "#fee2e2", paddingHorizontal: 10 },
+                      {
+                        backgroundColor: isDark ? "#450a0a" : "#fee2e2",
+                        paddingHorizontal: 10,
+                      },
                     ]}
                     onPress={() => deleteGoalInline(row.goalId!)}
                   >
@@ -448,7 +497,10 @@ export default function BudgetScreen() {
                   </TouchableOpacity>
                 )}
                 <TouchableOpacity
-                  style={s.editBtn}
+                  style={[
+                    s.editBtn,
+                    { backgroundColor: isDark ? "#312e81" : "#ede9fe" },
+                  ]}
                   onPress={() =>
                     openEdit(
                       row.id,
@@ -462,9 +514,9 @@ export default function BudgetScreen() {
                   <Ionicons
                     name={row.limit ? "pencil" : "add"}
                     size={14}
-                    color="#6366f1"
+                    color={colors.primary}
                   />
-                  <Text style={s.editBtnText}>
+                  <Text style={[s.editBtnText, { color: colors.primary }]}>
                     {row.limit ? "Editar" : "Definir"}
                   </Text>
                 </TouchableOpacity>
@@ -474,15 +526,24 @@ export default function BudgetScreen() {
         })}
 
         <TouchableOpacity
-          style={s.addGoalBtn}
+          style={[
+            s.addGoalBtn,
+            { borderColor: colors.primary, backgroundColor: colors.card },
+          ]}
           onPress={() => setShowCatPicker(true)}
         >
-          <Ionicons name="add-circle-outline" size={16} color="#6366f1" />
-          <Text style={s.addGoalText}>Definir meta em outra categoria</Text>
+          <Ionicons
+            name="add-circle-outline"
+            size={16}
+            color={colors.primary}
+          />
+          <Text style={[s.addGoalText, { color: colors.primary }]}>
+            Definir meta em outra categoria
+          </Text>
         </TouchableOpacity>
       </ScrollView>
 
-      {/* MODAL NOVO: TELA ESCURA DE DETALHES */}
+      {/* MODAL: DETALHES DO ORÇAMENTO */}
       <Modal visible={showDetails} transparent animationType="slide">
         <View style={s.detailsDarkOverlay}>
           <View style={s.detailsDarkSheet}>
@@ -604,33 +665,56 @@ export default function BudgetScreen() {
         </View>
       </Modal>
 
+      {/* MODAL: SELETOR DE MÊS */}
       <Modal visible={showMonthPicker} transparent animationType="fade">
         <TouchableOpacity
           style={s.overlay}
           activeOpacity={1}
           onPress={() => setShowMonthPicker(false)}
         >
-          <TouchableOpacity activeOpacity={1} style={s.pickerBox}>
-            <Text style={s.pickerTitle}>Selecionar mês</Text>
+          <TouchableOpacity
+            activeOpacity={1}
+            style={[s.pickerBox, { backgroundColor: colors.card }]}
+          >
+            <Text style={[s.pickerTitle, { color: colors.text }]}>
+              Selecionar mês
+            </Text>
             {Array.from({ length: 12 }, (_, i) => i - 11).map((offset) => {
               const { label, fullLabel: fl } = getMonthRange(offset);
               const active = offset === monthOffset;
               return (
                 <TouchableOpacity
                   key={offset}
-                  style={[s.pickerItem, active && s.pickerItemActive]}
+                  style={[
+                    s.pickerItem,
+                    active && [
+                      s.pickerItemActive,
+                      { backgroundColor: isDark ? "#312e81" : "#ede9fe" },
+                    ],
+                  ]}
                   onPress={() => {
                     setMonthOffset(offset);
                     setShowMonthPicker(false);
                   }}
                 >
                   <Text
-                    style={[s.pickerItemText, active && s.pickerItemTextActive]}
+                    style={[
+                      s.pickerItemText,
+                      { color: colors.text },
+                      active && [
+                        s.pickerItemTextActive,
+                        { color: colors.primary },
+                      ],
+                    ]}
                   >
                     {fl.charAt(0).toUpperCase() + fl.slice(1)}
                   </Text>
                   {active && (
-                    <Ionicons name="checkmark" size={16} color="#6366f1" />
+                    <Ionicons
+                      name="checkmark"
+                      size={16}
+                      color={colors.primary}
+                    />
                   )}
                 </TouchableOpacity>
               );
@@ -639,6 +723,7 @@ export default function BudgetScreen() {
         </TouchableOpacity>
       </Modal>
 
+      {/* MODAL: SELETOR DE CATEGORIA OU EDIÇÃO DE META */}
       <Modal
         visible={showCatPicker || !!editModal}
         transparent
@@ -653,13 +738,18 @@ export default function BudgetScreen() {
           }}
         >
           {showCatPicker && !editModal && (
-            <TouchableOpacity activeOpacity={1} style={s.pickerBox}>
-              <Text style={s.pickerTitle}>Escolher Categoria</Text>
+            <TouchableOpacity
+              activeOpacity={1}
+              style={[s.pickerBox, { backgroundColor: colors.card }]}
+            >
+              <Text style={[s.pickerTitle, { color: colors.text }]}>
+                Escolher Categoria
+              </Text>
               <ScrollView style={{ maxHeight: 300 }}>
                 {availableCats.length === 0 ? (
                   <Text
                     style={{
-                      color: "#9ca3af",
+                      color: colors.subText,
                       textAlign: "center",
                       padding: 20,
                     }}
@@ -686,7 +776,11 @@ export default function BudgetScreen() {
                         <View
                           style={[s.catDot, { backgroundColor: c.color }]}
                         />
-                        <Text style={s.pickerItemText}>{c.name}</Text>
+                        <Text
+                          style={[s.pickerItemText, { color: colors.text }]}
+                        >
+                          {c.name}
+                        </Text>
                       </View>
                     </TouchableOpacity>
                   ))
@@ -696,24 +790,49 @@ export default function BudgetScreen() {
           )}
 
           {!!editModal && (
-            <TouchableOpacity activeOpacity={1} style={s.editBox}>
-              <Text style={s.editTitle}>Meta para {editModal.label}</Text>
-              <Text style={s.editSub}>Defina o limite mensal de gastos</Text>
-              <View style={s.editInputRow}>
-                <Text style={s.editCurrency}>{currency}</Text>
+            <TouchableOpacity
+              activeOpacity={1}
+              style={[s.editBox, { backgroundColor: colors.card }]}
+            >
+              <Text style={[s.editTitle, { color: colors.text }]}>
+                Meta para {editModal.label}
+              </Text>
+              <Text style={[s.editSub, { color: colors.subText }]}>
+                Defina o limite mensal de gastos
+              </Text>
+              <View
+                style={[
+                  s.editInputRow,
+                  {
+                    backgroundColor: colors.inputBg,
+                    borderColor: colors.border,
+                    borderWidth: 1,
+                  },
+                ]}
+              >
+                <Text style={[s.editCurrency, { color: colors.subText }]}>
+                  {currency}
+                </Text>
                 <TextInput
-                  style={s.editInput}
+                  style={[s.editInput, { color: colors.text }]}
                   value={limitInput}
                   onChangeText={setLimitInput}
                   keyboardType="numeric"
                   placeholder="0,00"
+                  placeholderTextColor={colors.subText}
                   autoFocus
                 />
               </View>
               <View style={{ flexDirection: "row", gap: 10 }}>
                 {editModal.id && (
                   <TouchableOpacity
-                    style={[s.saveBtn, { backgroundColor: "#fee2e2", flex: 1 }]}
+                    style={[
+                      s.saveBtn,
+                      {
+                        backgroundColor: isDark ? "#450a0a" : "#fee2e2",
+                        flex: 1,
+                      },
+                    ]}
                     onPress={handleDeleteGoal}
                   >
                     <Text style={[s.saveBtnText, { color: "#dc2626" }]}>
@@ -722,7 +841,10 @@ export default function BudgetScreen() {
                   </TouchableOpacity>
                 )}
                 <TouchableOpacity
-                  style={[s.saveBtn, { flex: 2 }]}
+                  style={[
+                    s.saveBtn,
+                    { backgroundColor: colors.primary, flex: 2 },
+                  ]}
                   onPress={saveGoal}
                 >
                   <Text style={s.saveBtnText}>Salvar meta</Text>
@@ -733,32 +855,50 @@ export default function BudgetScreen() {
         </TouchableOpacity>
       </Modal>
 
+      {/* MODAL: ORÇAMENTO GLOBAL DO MÊS */}
       <Modal visible={showGlobalModal} transparent animationType="slide">
         <TouchableOpacity
           style={s.overlay}
           activeOpacity={1}
           onPress={() => setShowGlobalModal(false)}
         >
-          <TouchableOpacity activeOpacity={1} style={s.editBox}>
-            <Text style={s.editTitle}>Meta do Mês</Text>
-            <Text style={s.editSub}>
+          <TouchableOpacity
+            activeOpacity={1}
+            style={[s.editBox, { backgroundColor: colors.card }]}
+          >
+            <Text style={[s.editTitle, { color: colors.text }]}>
+              Meta do Mês
+            </Text>
+            <Text style={[s.editSub, { color: colors.subText }]}>
               Defina o valor máximo de gastos para este mês.
             </Text>
 
-            <View style={s.editInputRow}>
-              <Text style={s.editCurrency}>{currency}</Text>
+            <View
+              style={[
+                s.editInputRow,
+                {
+                  backgroundColor: colors.inputBg,
+                  borderColor: colors.border,
+                  borderWidth: 1,
+                },
+              ]}
+            >
+              <Text style={[s.editCurrency, { color: colors.subText }]}>
+                {currency}
+              </Text>
               <TextInput
-                style={s.editInput}
+                style={[s.editInput, { color: colors.text }]}
                 value={globalInput}
                 onChangeText={setGlobalInput}
                 keyboardType="numeric"
                 placeholder="0,00"
+                placeholderTextColor={colors.subText}
                 autoFocus
               />
             </View>
 
             <TouchableOpacity
-              style={s.saveBtn}
+              style={[s.saveBtn, { backgroundColor: colors.primary }]}
               onPress={async () => {
                 const val = parseFloat(globalInput.replace(",", "."));
                 if (isNaN(val) || val <= 0)
@@ -778,7 +918,10 @@ export default function BudgetScreen() {
 }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#f8fafc" },
+  safe: {
+    flex: 1,
+    ...(Platform.OS === "web" ? { overflow: "hidden", maxWidth: "100%" } : {}),
+  },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -791,22 +934,20 @@ const s = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: "#f3f4f6",
     justifyContent: "center",
     alignItems: "center",
   },
-  headerSub: { fontSize: 13, color: "#9ca3af" },
-  headerTitle: { fontSize: 26, fontWeight: "800", color: "#111827" },
+  headerSub: { fontSize: 13 },
+  headerTitle: { fontSize: 26, fontWeight: "800" },
   monthBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: "#ede9fe",
     borderRadius: 20,
     paddingHorizontal: 14,
     paddingVertical: 7,
   },
-  monthBtnText: { fontSize: 13, fontWeight: "700", color: "#6366f1" },
+  monthBtnText: { fontSize: 13, fontWeight: "700" },
   scroll: { paddingHorizontal: 20, paddingBottom: 40, gap: 14 },
 
   darkCard: { backgroundColor: "#1e1b4b", borderRadius: 24, padding: 20 },
@@ -852,23 +993,19 @@ const s = StyleSheet.create({
   detailsBtnText: { color: "#fff", fontSize: 12, fontWeight: "600" },
 
   insightCard: {
-    backgroundColor: "#fff",
     borderRadius: 14,
     padding: 16,
     borderLeftWidth: 3,
-    borderLeftColor: "#6366f1",
   },
-  insightText: { fontSize: 13, color: "#374151", lineHeight: 20 },
+  insightText: { fontSize: 13, lineHeight: 20 },
   sectionTitle: {
     fontSize: 15,
     fontWeight: "700",
-    color: "#111827",
     marginTop: 4,
   },
   catRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fff",
     borderRadius: 14,
     padding: 14,
     gap: 12,
@@ -881,9 +1018,9 @@ const s = StyleSheet.create({
     marginBottom: 4,
   },
   catDot: { width: 8, height: 8, borderRadius: 4 },
-  catName: { fontSize: 14, fontWeight: "700", color: "#111827" },
-  catValues: { fontSize: 12, color: "#6b7280", marginBottom: 4 },
-  catBar: { height: 4, backgroundColor: "#e5e7eb", borderRadius: 2 },
+  catName: { fontSize: 14, fontWeight: "700" },
+  catValues: { fontSize: 12, marginBottom: 4 },
+  catBar: { height: 4, borderRadius: 2 },
   catBarFill: { height: 4, borderRadius: 2 },
   editBtn: {
     flexDirection: "row",
@@ -892,9 +1029,8 @@ const s = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 12,
-    backgroundColor: "#ede9fe",
   },
-  editBtnText: { fontSize: 11, fontWeight: "700", color: "#6366f1" },
+  editBtnText: { fontSize: 11, fontWeight: "700" },
   addGoalBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -903,19 +1039,17 @@ const s = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 14,
     borderWidth: 1.5,
-    borderColor: "#6366f1",
     borderStyle: "dashed",
   },
-  addGoalText: { fontSize: 14, fontWeight: "600", color: "#6366f1" },
+  addGoalText: { fontSize: 14, fontWeight: "600" },
   empty: { alignItems: "center", paddingVertical: 32, gap: 8 },
-  emptyText: { fontSize: 14, color: "#9ca3af" },
+  emptyText: { fontSize: 14 },
   overlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.45)",
     justifyContent: "flex-end",
   },
   pickerBox: {
-    backgroundColor: "#fff",
     borderRadius: 20,
     padding: 20,
     margin: 12,
@@ -924,7 +1058,6 @@ const s = StyleSheet.create({
   pickerTitle: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#111827",
     marginBottom: 12,
   },
   pickerItem: {
@@ -935,11 +1068,10 @@ const s = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 10,
   },
-  pickerItemActive: { backgroundColor: "#ede9fe" },
-  pickerItemText: { fontSize: 14, color: "#374151" },
-  pickerItemTextActive: { fontWeight: "700", color: "#6366f1" },
+  pickerItemActive: {},
+  pickerItemText: { fontSize: 14 },
+  pickerItemTextActive: { fontWeight: "700" },
   editBox: {
-    backgroundColor: "#fff",
     borderRadius: 24,
     padding: 24,
     margin: 12,
@@ -947,14 +1079,12 @@ const s = StyleSheet.create({
   editTitle: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#111827",
     marginBottom: 4,
   },
-  editSub: { fontSize: 13, color: "#9ca3af", marginBottom: 20 },
+  editSub: { fontSize: 13, marginBottom: 20 },
   editInputRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#f3f4f6",
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -963,12 +1093,10 @@ const s = StyleSheet.create({
   editCurrency: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#6b7280",
     marginRight: 8,
   },
-  editInput: { flex: 1, fontSize: 20, fontWeight: "700", color: "#111827" },
+  editInput: { flex: 1, fontSize: 20, fontWeight: "700" },
   saveBtn: {
-    backgroundColor: "#6366f1",
     borderRadius: 14,
     paddingVertical: 15,
     alignItems: "center",

@@ -33,6 +33,9 @@ import { formatCurrency, formatDate } from "@/utils";
 import type { Installment, Transaction } from "@/types";
 import { Ionicons } from "@expo/vector-icons";
 
+// 👇 Importação do Hook Global de Temas
+import { useAppTheme } from "@/hooks/useTheme";
+
 const FALLBACK_COLORS = [
   "#6366f1",
   "#14b8a6",
@@ -47,11 +50,15 @@ export default function DashboardScreen() {
   const router = useRouter();
   const { width } = useWindowDimensions();
 
+  // 👇 Extração das cores dinâmicas para o dashboard
+  const { colors, isDark } = useAppTheme();
+
   const [balanceView, setBalanceView] = useState<"month" | "week">("month");
   const [refreshing, setRefreshing] = useState(false);
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [monthOffset, setMonthOffset] = useState(0);
   const [showMonthPicker, setShowMonthPicker] = useState(false);
+  const [showHelpModal, setShowHelpModal] = useState(false);
 
   const {
     totalBudget,
@@ -98,7 +105,6 @@ export default function DashboardScreen() {
   const { installments, refetch: refetchInstallments } = useInstallments();
   const { expenses: fixedExpenses, refetch: refetchFixed } = useFixedExpenses();
 
-  // 👇 PUXAMOS OS CONTROLOS DE PAGINAÇÃO DA API
   const {
     transactions,
     summary,
@@ -114,9 +120,6 @@ export default function DashboardScreen() {
     setFilters({ date_from: from, date_to: to });
   }, [from, to, setFilters]);
 
-  // 👇 O SEGREDO DE MESTRE: Burlar a Paginação no Dashboard!
-  // Como o Dashboard precisa de TODAS as transações para os gráficos e somas serem reais,
-  // fazemos um "loop silencioso" que carrega as páginas seguintes automaticamente.
   useEffect(() => {
     if (hasMore && !isLoading && !isLoadingMore && fetchMore) {
       fetchMore();
@@ -147,7 +150,6 @@ export default function DashboardScreen() {
   const currency = profile?.currency ?? "BRL";
   const expenses = transactions.filter((t) => t.type === "expense");
 
-  // SUPER CALCULADORA: Matemática Pura isolando as Contas Correntes
   const totals = useMemo(() => {
     let monthIncome = 0;
     let monthExpense = 0;
@@ -170,19 +172,16 @@ export default function DashboardScreen() {
     const startStr = startOfWeek.toISOString().split("T")[0];
     const endStr = endOfWeek.toISOString().split("T")[0];
 
-    // Soma as Transações (agora com o histórico completo descarregado)
     transactions.forEach((t) => {
       const amt = Number(t.amount) || 0;
       const isThisWeek = t.date >= startStr && t.date <= endStr;
 
       if (t.type === "income") {
-        // Receitas (Ignora apenas o que é injetado diretamente em cartões)
         if (!t.account_id || !creditAccIds.has(t.account_id)) {
           monthIncome += amt;
           if (isThisWeek) weekIncome += amt;
         }
       } else {
-        // Despesas (Exige que saia da conta corrente)
         if (t.account_id && checkingAccIds.has(t.account_id)) {
           monthExpense += amt;
           if (isThisWeek) weekExpense += amt;
@@ -284,36 +283,6 @@ export default function DashboardScreen() {
   const budgetPercentage =
     totalBudget > 0 ? (budgetSpent / totalBudget) * 100 : 0;
 
-  const creditPurchasesChart = useMemo(() => {
-    let total = 0;
-    const activeInstallments = installments.filter(
-      (i) =>
-        i.paid_installments < i.total_installments &&
-        (!i.start_date || i.start_date <= to),
-    );
-
-    const data = activeInstallments
-      .map((i, index) => {
-        const amt = Number(i.total_amount) || 0;
-        total += amt;
-        return {
-          label: shortenLabel(i.title),
-          value: amt,
-          color: FALLBACK_COLORS[index % FALLBACK_COLORS.length],
-        };
-      })
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 5);
-
-    const withPercentage = data.map((item) => ({
-      ...item,
-      percentage:
-        total > 0 ? Math.round((item.value / total) * 100) + "%" : "0%",
-    }));
-
-    return { data: withPercentage, total };
-  }, [installments, to]);
-
   const creditCardsStatus = useMemo(() => {
     const currentMonthIso = to.slice(0, 7);
     const today = new Date();
@@ -391,7 +360,7 @@ export default function DashboardScreen() {
   }, [accounts, installments, to]);
 
   return (
-    <SafeAreaView style={s.safe}>
+    <SafeAreaView style={[s.safe, { backgroundColor: colors.bg }]}>
       <ScrollView
         contentContainerStyle={s.scroll}
         showsVerticalScrollIndicator={false}
@@ -399,29 +368,34 @@ export default function DashboardScreen() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            colors={["#6366f1"]}
-            tintColor="#6366f1"
+            colors={[colors.primary]}
+            tintColor={colors.primary}
           />
         }
       >
         <View style={s.header}>
           <View>
-            <Text style={s.greeting}>Olá, {firstName} 👋</Text>
-            <Text style={s.monthLabel}>
+            <Text style={[s.greeting, { color: colors.text }]}>
+              Olá, {firstName} 👋
+            </Text>
+            <Text style={[s.monthLabel, { color: colors.subText }]}>
               {fullLabel.charAt(0).toUpperCase() + fullLabel.slice(1)}
             </Text>
           </View>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
             <TouchableOpacity
-              style={s.monthBtn}
+              style={[
+                s.monthBtn,
+                { backgroundColor: isDark ? "#312e81" : "#ede9fe" },
+              ]}
               onPress={() => setShowMonthPicker(true)}
             >
               <Text style={s.monthBtnText}>{dynMonthLabel}</Text>
-              <Ionicons name="chevron-down" size={12} color="#6366f1" />
+              <Ionicons name="chevron-down" size={12} color={colors.primary} />
             </TouchableOpacity>
 
             <TouchableOpacity onPress={() => setIsMenuVisible(true)}>
-              <Ionicons name="menu-outline" size={34} color="#111827" />
+              <Ionicons name="menu-outline" size={34} color={colors.text} />
             </TouchableOpacity>
           </View>
         </View>
@@ -509,7 +483,9 @@ export default function DashboardScreen() {
 
         <View style={s.section}>
           <View style={s.sectionHeader}>
-            <Text style={s.sectionTitle}>Minhas Contas</Text>
+            <Text style={[s.sectionTitle, { color: colors.text }]}>
+              Minhas Contas
+            </Text>
             <TouchableOpacity
               onPress={() =>
                 router.push({
@@ -517,12 +493,14 @@ export default function DashboardScreen() {
                   params: {
                     id: "all",
                     name: "Todas as Contas",
-                    color: "#6366f1",
+                    color: colors.primary,
                   },
                 })
               }
             >
-              <Text style={s.seeAll}>Ver todas</Text>
+              <Text style={[s.seeAll, { color: colors.primary }]}>
+                Ver todas
+              </Text>
             </TouchableOpacity>
           </View>
 
@@ -532,7 +510,12 @@ export default function DashboardScreen() {
                 key={account.id}
                 style={[
                   s.accountCard,
-                  { borderLeftColor: account.color || "#6366f1" },
+                  {
+                    borderLeftColor: account.color || colors.primary,
+                    backgroundColor: colors.card,
+                    borderColor: colors.border,
+                    borderWidth: 1,
+                  },
                 ]}
                 onPress={() =>
                   router.push({
@@ -547,22 +530,24 @@ export default function DashboardScreen() {
                   })
                 }
               >
-                <Text style={s.accountName}>{account.name}</Text>
+                <Text style={[s.accountName, { color: colors.text }]}>
+                  {account.name}
+                </Text>
                 {account.type === "checking" ? (
-                  <Text style={s.accountBalance}>
+                  <Text style={[s.accountBalance, { color: colors.text }]}>
                     {formatCurrency(account.balance, account.currency)}
                   </Text>
                 ) : (
                   <Text
                     style={[
                       s.accountBalance,
-                      { fontSize: 12, color: "#9ca3af" },
+                      { fontSize: 12, color: colors.subText },
                     ]}
                   >
                     Cartão de Crédito
                   </Text>
                 )}
-                <Text style={s.accountType}>
+                <Text style={[s.accountType, { color: colors.subText }]}>
                   {account.type === "checking" ? "Conta Corrente" : "Crédito"}
                 </Text>
               </TouchableOpacity>
@@ -575,20 +560,24 @@ export default function DashboardScreen() {
                 height: 90,
                 borderRadius: 16,
                 borderWidth: 2,
-                borderColor: "#d1d5db",
+                borderColor: colors.border,
                 borderStyle: "dashed",
                 justifyContent: "center",
                 alignItems: "center",
-                backgroundColor: "#f8fafc",
+                backgroundColor: colors.bg,
                 marginRight: 16,
                 marginLeft: accounts.length === 0 ? 0 : 8,
               }}
               onPress={() => router.push("/(tabs)/accounts?openModal=1")}
             >
-              <Ionicons name="add-circle-outline" size={28} color="#9ca3af" />
+              <Ionicons
+                name="add-circle-outline"
+                size={28}
+                color={colors.subText}
+              />
               <Text
                 style={{
-                  color: "#6b7280",
+                  color: colors.subText,
                   fontSize: 13,
                   fontWeight: "600",
                   marginTop: 8,
@@ -600,8 +589,11 @@ export default function DashboardScreen() {
             </TouchableOpacity>
           </ScrollView>
         </View>
+
         <ScrollView style={s.section}>
-          <Text style={s.sectionTitle}>Faturas de Crédito Ativas</Text>
+          <Text style={[s.sectionTitle, { color: colors.text }]}>
+            Faturas de Crédito Ativas
+          </Text>
           <View
             style={[
               s.chartCard,
@@ -611,12 +603,17 @@ export default function DashboardScreen() {
             <CreditCardCarousel data={creditCardsStatus} currency={currency} />
           </View>
         </ScrollView>
+
         {totalBudget > 0 && (
           <View style={s.section}>
             <View style={s.sectionHeader}>
-              <Text style={s.sectionTitle}>Progresso das Metas</Text>
+              <Text style={[s.sectionTitle, { color: colors.text }]}>
+                Progresso das Metas
+              </Text>
               <TouchableOpacity onPress={() => router.push("/(tabs)/budget")}>
-                <Text style={s.seeAll}>Ver Metas</Text>
+                <Text style={[s.seeAll, { color: colors.primary }]}>
+                  Ver Metas
+                </Text>
               </TouchableOpacity>
             </View>
 
@@ -690,11 +687,27 @@ export default function DashboardScreen() {
             </View>
           </View>
         )}
+
+        {/* 👇 GRÁFICO DE PIZZA CORRIGIDO COM CORES DINÂMICAS */}
         <View style={s.section}>
-          <Text style={s.sectionTitle}>Gastos por categoria</Text>
-          <View style={s.chartCard}>
+          <Text style={[s.sectionTitle, { color: colors.text }]}>
+            Gastos por categoria
+          </Text>
+          <View
+            style={[
+              s.chartCard,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+                borderWidth: 1,
+              },
+            ]}
+          >
             {isLoading ? (
-              <ActivityIndicator color="#6366f1" style={s.chartLoading} />
+              <ActivityIndicator
+                color={colors.primary}
+                style={s.chartLoading}
+              />
             ) : categoryData.length === 0 ? (
               <EmptyChart message="Nenhum gasto registrado este mês." />
             ) : (
@@ -708,10 +721,18 @@ export default function DashboardScreen() {
                     donut
                     radius={82}
                     innerRadius={52}
+                    // Cor de fundo do buraco central da rosquinha ajustada ao tema
+                    innerCircleColor={colors.card}
                     centerLabelComponent={() => (
                       <View style={s.pieCenter}>
-                        <Text style={s.pieCenterLabel}>Total</Text>
-                        <Text style={s.pieCenterValue}>
+                        <Text
+                          style={[s.pieCenterLabel, { color: colors.subText }]}
+                        >
+                          Total
+                        </Text>
+                        <Text
+                          style={[s.pieCenterValue, { color: colors.text }]}
+                        >
                           {formatCurrency(totalCategoryExpenses, currency)}
                         </Text>
                       </View>
@@ -744,102 +765,134 @@ export default function DashboardScreen() {
             activeOpacity={1}
             onPress={() => setIsMenuVisible(false)}
           />
-          <View style={s.menuContent}>
+          <View style={[s.menuContent, { backgroundColor: colors.card }]}>
             <View style={s.menuHeader}>
-              <Text style={s.menuTitle}>Menu</Text>
+              <Text style={[s.menuTitle, { color: colors.text }]}>Menu</Text>
               <TouchableOpacity onPress={() => setIsMenuVisible(false)}>
-                <Ionicons name="close" size={28} color="#111827" />
+                <Ionicons name="close" size={28} color={colors.text} />
               </TouchableOpacity>
             </View>
 
             <View style={s.menuBody}>
-              {/* Menu de investimento */}
               <TouchableOpacity
-                style={s.menuItem}
+                style={[s.menuItem, { borderBottomColor: colors.border }]}
                 onPress={() => {
                   setIsMenuVisible(false);
                   router.push("/(tabs)/investments" as any);
                 }}
               >
                 <View
-                  style={[s.menuIconWrapper, { backgroundColor: "#fef3c7" }]}
+                  style={[
+                    s.menuIconWrapper,
+                    { backgroundColor: isDark ? "#451a03" : "#fef3c7" },
+                  ]}
                 >
                   <Ionicons name="trending-up" size={20} color="#d97706" />
                 </View>
-                <Text style={s.menuItemText}>Meus Investimentos</Text>
+                <Text style={[s.menuItemText, { color: colors.text }]}>
+                  Meus Investimentos
+                </Text>
               </TouchableOpacity>
+
               <TouchableOpacity
-                style={s.menuItem}
+                style={[s.menuItem, { borderBottomColor: colors.border }]}
                 onPress={() => {
                   setIsMenuVisible(false);
                   router.push("/(tabs)/charts");
                 }}
               >
                 <View
-                  style={[s.menuIconWrapper, { backgroundColor: "#e0e7ff" }]}
+                  style={[
+                    s.menuIconWrapper,
+                    { backgroundColor: isDark ? "#1e1b4b" : "#e0e7ff" },
+                  ]}
                 >
                   <Ionicons name="pie-chart" size={20} color="#4f46e5" />
                 </View>
-                <Text style={s.menuItemText}>Análise Gráfica</Text>
+                <Text style={[s.menuItemText, { color: colors.text }]}>
+                  Análise Gráfica
+                </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={s.menuItem}
+                style={[s.menuItem, { borderBottomColor: colors.border }]}
                 onPress={() => {
                   setIsMenuVisible(false);
                   router.push("/(tabs)/budget");
                 }}
               >
                 <View
-                  style={[s.menuIconWrapper, { backgroundColor: "#dcfce7" }]}
+                  style={[
+                    s.menuIconWrapper,
+                    { backgroundColor: isDark ? "#052e16" : "#dcfce7" },
+                  ]}
                 >
                   <Ionicons name="flag-outline" size={20} color="#22c55e" />
                 </View>
-                <Text style={s.menuItemText}>Metas de Gastos</Text>
+                <Text style={[s.menuItemText, { color: colors.text }]}>
+                  Metas de Gastos
+                </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={s.menuItem}
+                style={[s.menuItem, { borderBottomColor: colors.border }]}
                 onPress={() => {
                   setIsMenuVisible(false);
                   alert("Em breve: Exportar para Excel");
                 }}
               >
                 <View
-                  style={[s.menuIconWrapper, { backgroundColor: "#e0f2fe" }]}
+                  style={[
+                    s.menuIconWrapper,
+                    { backgroundColor: isDark ? "#0c4a6e" : "#e0f2fe" },
+                  ]}
                 >
                   <Ionicons name="document-text" size={20} color="#0284c7" />
                 </View>
-                <Text style={s.menuItemText}>Exportar dados para planilha</Text>
+                <Text style={[s.menuItemText, { color: colors.text }]}>
+                  Exportar dados para planilha
+                </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={s.menuItem}
+                style={[s.menuItem, { borderBottomColor: colors.border }]}
                 onPress={() => {
                   setIsMenuVisible(false);
-                  alert("Em breve: Central de Ajuda");
+                  setShowHelpModal(true);
                 }}
               >
                 <View
-                  style={[s.menuIconWrapper, { backgroundColor: "#fef08a" }]}
+                  style={[
+                    s.menuIconWrapper,
+                    { backgroundColor: isDark ? "#713f12" : "#fef08a" },
+                  ]}
                 >
                   <Ionicons name="help-circle" size={22} color="#ca8a04" />
                 </View>
-                <Text style={s.menuItemText}>Ajuda e Tutorial</Text>
+                <Text style={[s.menuItemText, { color: colors.text }]}>
+                  Ajuda e Tutorial
+                </Text>
               </TouchableOpacity>
             </View>
 
-            <View style={s.menuFooter}>
+            <View style={[s.menuFooter, { borderTopColor: colors.border }]}>
               <TouchableOpacity
-                style={s.menuItem}
+                style={[s.menuItem, { borderBottomColor: colors.border }]}
                 onPress={() => {
                   setIsMenuVisible(false);
-                  alert("Em breve: Configurações");
+                  router.push("/(tabs)/settings");
                 }}
               >
-                <Ionicons name="settings-outline" size={24} color="#4b5563" />
+                <Ionicons
+                  name="settings-outline"
+                  size={24}
+                  color={colors.subText}
+                />
                 <Text
-                  style={[s.menuItemText, { color: "#4b5563", marginLeft: 16 }]}
+                  style={[
+                    s.menuItemText,
+                    { color: colors.subText, marginLeft: 16 },
+                  ]}
                 >
                   Configurações
                 </Text>
@@ -870,6 +923,84 @@ export default function DashboardScreen() {
       </Modal>
 
       {/* ============================================== */}
+      {/* MODAL: AJUDA E TUTORIAL (PWA)                  */}
+      {/* ============================================== */}
+      <Modal visible={showHelpModal} transparent animationType="fade">
+        <View style={s.helpOverlay}>
+          <View style={[s.helpContent, { backgroundColor: colors.card }]}>
+            <View style={s.helpHeader}>
+              <Text style={[s.helpTitle, { color: colors.text }]}>
+                Ajuda e Tutorial
+              </Text>
+              <TouchableOpacity onPress={() => setShowHelpModal(false)}>
+                <Ionicons name="close" size={24} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={s.helpSubtitle}>
+                Como instalar a aplicação no telemóvel (PWA)
+              </Text>
+
+              <View style={s.helpSection}>
+                <Ionicons name="logo-apple" size={20} color={colors.text} />
+                <Text style={[s.helpSectionTitle, { color: colors.text }]}>
+                  Para iOS (iPhone/iPad):
+                </Text>
+              </View>
+              <Text style={[s.helpText, { color: colors.subText }]}>
+                1. Abra a aplicação no navegador Safari.
+              </Text>
+              <Text style={[s.helpText, { color: colors.subText }]}>
+                2. Toque no ícone de Partilhar (um quadrado com uma seta
+                apontada para cima, na barra inferior da tela).
+              </Text>
+              <Text style={[s.helpText, { color: colors.subText }]}>
+                3. Deslize as opções para baixo e selecione "Adicionar ao Ecrã
+                Principal".
+              </Text>
+
+              <View style={s.helpSection}>
+                <Ionicons name="logo-android" size={20} color="#34d399" />
+                <Text style={[s.helpSectionTitle, { color: colors.text }]}>
+                  Para Android:
+                </Text>
+              </View>
+              <Text style={[s.helpText, { color: colors.subText }]}>
+                1. Abra a aplicação no navegador Google Chrome.
+              </Text>
+              <Text style={[s.helpText, { color: colors.subText }]}>
+                2. Toque no ícone de Menu (os três pontos verticais no canto
+                superior direito).
+              </Text>
+              <Text style={[s.helpText, { color: colors.subText }]}>
+                3. Selecione a opção "Adicionar ao Ecrã Principal" ou "Instalar
+                Aplicação".
+              </Text>
+
+              <View
+                style={[
+                  s.helpBox,
+                  { backgroundColor: isDark ? "#422006" : "#fef08a" },
+                ]}
+              >
+                <Ionicons name="bulb-outline" size={24} color="#ca8a04" />
+                <Text
+                  style={[
+                    s.helpBoxText,
+                    { color: isDark ? "#fde047" : "#854d0e" },
+                  ]}
+                >
+                  Instalar a aplicação permite-lhe aceder mais rapidamente à sua
+                  conta e usar a plataforma em ecrã inteiro, tal como uma
+                  aplicação nativa!
+                </Text>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ============================================== */}
       {/* MODAL: SELETOR DE MÊS                          */}
       {/* ============================================== */}
       <Modal visible={showMonthPicker} transparent animationType="fade">
@@ -878,15 +1009,24 @@ export default function DashboardScreen() {
           activeOpacity={1}
           onPress={() => setShowMonthPicker(false)}
         >
-          <View style={s.monthPickerContent}>
-            <Text style={s.monthPickerTitle}>Selecionar mês</Text>
+          <View
+            style={[s.monthPickerContent, { backgroundColor: colors.card }]}
+          >
+            <Text style={[s.monthPickerTitle, { color: colors.text }]}>
+              Selecionar mês
+            </Text>
             {Array.from({ length: 12 }, (_, i) => i - 11).map((offset) => {
               const { fullLabel: fl } = getMonthRange(offset);
               const active = offset === monthOffset;
               return (
                 <TouchableOpacity
                   key={offset}
-                  style={[s.monthPickerItem, active && s.monthPickerItemActive]}
+                  style={[
+                    s.monthPickerItem,
+                    active && {
+                      backgroundColor: isDark ? "#312e81" : "#ede9fe",
+                    },
+                  ]}
                   onPress={() => {
                     setMonthOffset(offset);
                     setShowMonthPicker(false);
@@ -895,13 +1035,18 @@ export default function DashboardScreen() {
                   <Text
                     style={[
                       s.monthPickerItemText,
-                      active && s.monthPickerItemTextActive,
+                      { color: colors.text },
+                      active && { fontWeight: "700", color: colors.primary },
                     ]}
                   >
                     {fl.charAt(0).toUpperCase() + fl.slice(1)}
                   </Text>
                   {active && (
-                    <Ionicons name="checkmark" size={16} color="#6366f1" />
+                    <Ionicons
+                      name="checkmark"
+                      size={16}
+                      color={colors.primary}
+                    />
                   )}
                 </TouchableOpacity>
               );
@@ -925,7 +1070,7 @@ export default function DashboardScreen() {
           <TouchableOpacity
             activeOpacity={1}
             style={{
-              backgroundColor: "#fff",
+              backgroundColor: colors.card,
               padding: 24,
               borderRadius: 20,
               width: "90%",
@@ -937,12 +1082,14 @@ export default function DashboardScreen() {
                 fontSize: 18,
                 fontWeight: "bold",
                 marginBottom: 8,
-                color: "#111827",
+                color: colors.text,
               }}
             >
               Meta do Mês
             </Text>
-            <Text style={{ fontSize: 13, color: "#6b7280", marginBottom: 20 }}>
+            <Text
+              style={{ fontSize: 13, color: colors.subText, marginBottom: 20 }}
+            >
               Defina o valor máximo que pretende gastar no débito este mês.
             </Text>
 
@@ -950,14 +1097,20 @@ export default function DashboardScreen() {
               style={{
                 flexDirection: "row",
                 alignItems: "center",
-                backgroundColor: "#f3f4f6",
+                backgroundColor: colors.inputBg,
                 padding: 14,
                 borderRadius: 12,
                 marginBottom: 20,
+                borderWidth: 1,
+                borderColor: colors.border,
               }}
             >
               <Text
-                style={{ fontWeight: "bold", color: "#6b7280", marginRight: 8 }}
+                style={{
+                  fontWeight: "bold",
+                  color: colors.subText,
+                  marginRight: 8,
+                }}
               >
                 {currency}
               </Text>
@@ -966,19 +1119,20 @@ export default function DashboardScreen() {
                   flex: 1,
                   fontSize: 20,
                   fontWeight: "bold",
-                  color: "#111827",
+                  color: colors.text,
                 }}
                 value={globalInput}
                 onChangeText={setGlobalInput}
                 keyboardType="numeric"
                 placeholder="0,00"
+                placeholderTextColor={colors.subText}
                 autoFocus
               />
             </View>
 
             <TouchableOpacity
               style={{
-                backgroundColor: "#6366f1",
+                backgroundColor: colors.primary,
                 padding: 16,
                 borderRadius: 12,
                 alignItems: "center",
@@ -1012,9 +1166,10 @@ function shortenLabel(label: string) {
 }
 
 function EmptyChart({ message }: { message: string }) {
+  const { colors } = useAppTheme();
   return (
     <View style={s.emptyChart}>
-      <Text style={s.emptyText}>{message}</Text>
+      <Text style={[s.emptyText, { color: colors.subText }]}>{message}</Text>
     </View>
   );
 }
@@ -1028,13 +1183,15 @@ function ChartLegendItem({
   color: string;
   value: string;
 }) {
+  const { colors } = useAppTheme();
   return (
     <View style={s.legendItem}>
       <View style={[s.legendDot, { backgroundColor: color }]} />
-      <Text style={s.legendLabel} numberOfLines={1}>
+      {/* 👇 Legendas atualizadas com cores dinâmicas para legibilidade perfeita */}
+      <Text style={[s.legendLabel, { color: colors.text }]} numberOfLines={1}>
         {label}
       </Text>
-      <Text style={s.legendValue}>{value}</Text>
+      <Text style={[s.legendValue, { color: colors.text }]}>{value}</Text>
     </View>
   );
 }
@@ -1050,6 +1207,8 @@ function CreditCardCarousel({
   const flatListRef = useRef<FlatList>(null);
   const router = useRouter();
   const CARD_WIDTH = 280;
+
+  const { colors, isDark } = useAppTheme();
 
   const handleScroll = (event: any) => {
     const scrollPosition = event.nativeEvent.contentOffset.x;
@@ -1098,19 +1257,19 @@ function CreditCardCarousel({
                 height: 190,
                 borderRadius: 16,
                 borderWidth: 2,
-                borderColor: "#d1d5db",
+                borderColor: colors.border,
                 borderStyle: "dashed",
                 justifyContent: "center",
                 alignItems: "center",
-                backgroundColor: "#f8fafc",
+                backgroundColor: colors.bg,
                 marginHorizontal: 8,
               }}
               onPress={() => router.push("/(tabs)/accounts?openModal=1")}
             >
-              <Ionicons name="card-outline" size={36} color="#9ca3af" />
+              <Ionicons name="card-outline" size={36} color={colors.subText} />
               <Text
                 style={{
-                  color: "#6b7280",
+                  color: colors.subText,
                   fontSize: 16,
                   fontWeight: "bold",
                   marginTop: 12,
@@ -1253,7 +1412,12 @@ function CreditCardCarousel({
         {Array.from({ length: data.length + 1 }).map((_, index) => (
           <View
             key={index}
-            style={[s.dot, activeIndex === index ? s.dotActive : s.dotInactive]}
+            style={[
+              s.dot,
+              activeIndex === index
+                ? [s.dotActive, { backgroundColor: colors.primary }]
+                : [s.dotInactive, { backgroundColor: colors.border }],
+            ]}
           />
         ))}
       </View>
@@ -1264,7 +1428,6 @@ function CreditCardCarousel({
 const s = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: "#f8fafc",
     ...(Platform.OS === "web"
       ? ({ overflow: "hidden", maxWidth: "100%" } as any)
       : {}),
@@ -1279,10 +1442,9 @@ const s = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 8,
   },
-  greeting: { fontSize: 22, fontWeight: "bold", color: "#111827" },
+  greeting: { fontSize: 22, fontWeight: "bold" },
   monthLabel: {
     fontSize: 13,
-    color: "#6b7280",
     marginTop: 2,
     textTransform: "capitalize",
   },
@@ -1291,7 +1453,6 @@ const s = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: "#ede9fe",
     borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 6,
@@ -1306,7 +1467,6 @@ const s = StyleSheet.create({
   },
   balanceLabel: { color: "#c7d2fe", fontSize: 13, marginBottom: 6 },
   balanceValue: {
-    color: "#fff",
     fontSize: 32,
     fontWeight: "bold",
     marginBottom: 20,
@@ -1332,13 +1492,11 @@ const s = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#111827",
     marginBottom: 12,
   },
-  seeAll: { fontSize: 13, color: "#6366f1", fontWeight: "600" },
+  seeAll: { fontSize: 13, fontWeight: "600" },
 
   chartCard: {
-    backgroundColor: "#fff",
     borderRadius: 12,
     padding: 16,
     marginBottom: 8,
@@ -1347,24 +1505,23 @@ const s = StyleSheet.create({
   chartLoading: { paddingVertical: 36 },
   pieWrap: { alignItems: "center", paddingVertical: 8 },
   pieCenter: { alignItems: "center", justifyContent: "center" },
-  pieCenterLabel: { fontSize: 11, color: "#9ca3af", fontWeight: "600" },
+  pieCenterLabel: { fontSize: 11, fontWeight: "600" },
   pieCenterValue: {
     fontSize: 12,
-    color: "#111827",
     fontWeight: "800",
     marginTop: 2,
   },
   legend: { gap: 10, marginTop: 8 },
   legendItem: { flexDirection: "row", alignItems: "center", gap: 8 },
   legendDot: { width: 10, height: 10, borderRadius: 5 },
-  legendLabel: { flex: 1, fontSize: 13, color: "#374151", fontWeight: "600" },
-  legendValue: { fontSize: 13, color: "#111827", fontWeight: "700" },
+  legendLabel: { flex: 1, fontSize: 13, fontWeight: "600" },
+  legendValue: { fontSize: 13, fontWeight: "700" },
   emptyChart: {
     minHeight: 120,
     alignItems: "center",
     justifyContent: "center",
   },
-  emptyText: { color: "#9ca3af", fontSize: 14, fontStyle: "italic" },
+  emptyText: { fontSize: 14, fontStyle: "italic" },
 
   carouselContainer: { alignItems: "center", marginTop: 4 },
   carouselRow: {
@@ -1420,10 +1577,9 @@ const s = StyleSheet.create({
   },
   pagination: { flexDirection: "row", marginTop: 20, gap: 8 },
   dot: { width: 8, height: 8, borderRadius: 4 },
-  dotActive: { backgroundColor: "#6366f1", width: 20 },
-  dotInactive: { backgroundColor: "#cbd5e1" },
+  dotActive: { width: 20 },
+  dotInactive: {},
   accountCard: {
-    backgroundColor: "#fff",
     borderRadius: 12,
     padding: 16,
     marginRight: 12,
@@ -1434,16 +1590,14 @@ const s = StyleSheet.create({
   accountName: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#374151",
     marginBottom: 6,
   },
   accountBalance: {
     fontSize: 16,
     fontWeight: "bold",
-    color: "#111827",
     marginBottom: 4,
   },
-  accountType: { fontSize: 11, color: "#9ca3af", textTransform: "capitalize" },
+  accountType: { fontSize: 11, textTransform: "capitalize" },
 
   menuOverlay: {
     flex: 1,
@@ -1456,7 +1610,6 @@ const s = StyleSheet.create({
     width: "75%",
     maxWidth: 320,
     height: "100%",
-    backgroundColor: "#fff",
     padding: 24,
     justifyContent: "space-between",
     shadowColor: "#000",
@@ -1471,14 +1624,13 @@ const s = StyleSheet.create({
     marginBottom: 40,
     marginTop: Platform.OS === "ios" ? 40 : 10,
   },
-  menuTitle: { fontSize: 24, fontWeight: "bold", color: "#111827" },
+  menuTitle: { fontSize: 24, fontWeight: "bold" },
   menuBody: { flex: 1 },
   menuItem: {
     flexDirection: "row",
     alignItems: "center",
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#f3f4f6",
   },
   menuIconWrapper: {
     width: 36,
@@ -1488,10 +1640,9 @@ const s = StyleSheet.create({
     alignItems: "center",
     marginRight: 12,
   },
-  menuItemText: { fontSize: 16, color: "#111827", fontWeight: "600", flex: 1 },
+  menuItemText: { fontSize: 16, fontWeight: "600", flex: 1 },
   menuFooter: {
     borderTopWidth: 1,
-    borderTopColor: "#e5e7eb",
     paddingTop: 16,
     paddingBottom: Platform.OS === "ios" ? 20 : 0,
   },
@@ -1502,7 +1653,6 @@ const s = StyleSheet.create({
     justifyContent: "flex-end",
   },
   monthPickerContent: {
-    backgroundColor: "#fff",
     borderRadius: 20,
     padding: 20,
     margin: 12,
@@ -1510,7 +1660,6 @@ const s = StyleSheet.create({
   monthPickerTitle: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#111827",
     marginBottom: 12,
   },
   monthPickerItem: {
@@ -1521,9 +1670,8 @@ const s = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 10,
   },
-  monthPickerItemActive: { backgroundColor: "#ede9fe" },
-  monthPickerItemText: { fontSize: 14, color: "#374151" },
-  monthPickerItemTextActive: { fontWeight: "700", color: "#6366f1" },
+  monthPickerItemText: { fontSize: 14 },
+
   budgetCard: {
     backgroundColor: "#6366f1",
     borderRadius: 16,
@@ -1590,4 +1738,60 @@ const s = StyleSheet.create({
   balanceToggleBtnActive: { backgroundColor: "#fff" },
   balanceToggleText: { fontSize: 11, fontWeight: "700", color: "#e0e7ff" },
   balanceToggleTextActive: { color: "#6366f1" },
+
+  helpOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  helpContent: {
+    borderRadius: 20,
+    padding: 24,
+    width: "100%",
+    maxWidth: 400,
+    maxHeight: "80%",
+  },
+  helpHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  helpTitle: { fontSize: 20, fontWeight: "bold" },
+  helpSubtitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#4f46e5",
+    marginBottom: 16,
+  },
+  helpSection: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  helpSectionTitle: { fontSize: 16, fontWeight: "bold" },
+  helpText: {
+    fontSize: 14,
+    marginBottom: 6,
+    lineHeight: 20,
+    paddingLeft: 4,
+  },
+  helpBox: {
+    flexDirection: "row",
+    padding: 12,
+    borderRadius: 12,
+    marginTop: 24,
+    gap: 12,
+    alignItems: "center",
+  },
+  helpBoxText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "600",
+    lineHeight: 18,
+  },
 });

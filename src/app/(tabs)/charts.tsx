@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Dimensions,
   ActivityIndicator,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, {
@@ -24,6 +25,7 @@ import { useFixedExpenses } from "@/hooks/useFixedExpenses";
 import { useInstallments } from "@/hooks/useInstallments";
 import { formatCurrency } from "@/utils";
 import { useAuth } from "@/hooks/useAuth";
+import { useAppTheme } from "@/hooks/useTheme"; // 👈 Motor de temas global
 
 const { width: SW } = Dimensions.get("window");
 const CHART_W = SW - 48;
@@ -83,19 +85,16 @@ function slicePath(
 export default function ChartsScreen() {
   const router = useRouter();
   const { profile } = useAuth();
+  const { colors, isDark } = useAppTheme(); // 👈 Cores dinâmicas ativas
 
   const { expenses: fixedList } = useFixedExpenses();
   const { installments } = useInstallments();
 
-  // Adicionada a nova aba 'annual'
   const [chartType, setChartType] = useState<"pie" | "bar" | "annual">("pie");
   const [selected, setSelected] = useState<number | null>(null);
 
   const currency = profile?.currency ?? "BRL";
 
-  // 1. LÓGICA DE DATAS INTELIGENTE
-  // Precisamos de dados desde Jan 1 (para o panorama anual)
-  // OU desde há 6 meses atrás (se estivermos no início do ano), até Dez 31.
   const fetchRange = useMemo(() => {
     const today = new Date();
     const year = today.getFullYear();
@@ -115,7 +114,6 @@ export default function ChartsScreen() {
     };
   }, []);
 
-  // 👇 Loop Silencioso de Paginação: Descarrega o histórico completo necessário
   const { transactions, hasMore, isLoading, isLoadingMore, fetchMore } =
     useTransactions({
       date_from: fetchRange.from,
@@ -128,7 +126,6 @@ export default function ChartsScreen() {
     }
   }, [hasMore, isLoading, isLoadingMore, fetchMore]);
 
-  // ── DADOS 1: Pizza de categorias (Mês atual com Contas e Cartões) ──
   const pieData = useMemo(() => {
     const today = new Date();
     const currentMonthFrom = new Date(today.getFullYear(), today.getMonth(), 1)
@@ -196,7 +193,6 @@ export default function ChartsScreen() {
 
   const pieTotal = pieData.reduce((s, d) => s + d.value, 0);
 
-  // ── DADOS 2: Gráfico de Barras (Últimos 6 meses) ──
   const months = useMemo(() => getLast6Months(), []);
   const barData = useMemo(() => {
     return months.map((m) => {
@@ -217,7 +213,6 @@ export default function ChartsScreen() {
 
   const barMax = Math.max(...barData.flatMap((d) => [d.income, d.expense]), 1);
 
-  // ── DADOS 3: Panorama Anual (Janeiro a Dezembro) ──
   const annualData = useMemo(() => {
     const year = new Date().getFullYear();
     return Array.from({ length: 12 }).map((_, m) => {
@@ -233,8 +228,6 @@ export default function ChartsScreen() {
       let income = 0;
       let expense = 0;
 
-      // Baseado puramente no histórico de transações,
-      // tal como as barras, para manter os gráficos fidedignos à realidade.
       transactions.forEach((t) => {
         if (t.date >= mFrom && t.date <= mTo) {
           const amt = Number(t.amount) || 0;
@@ -258,10 +251,6 @@ export default function ChartsScreen() {
     ...annualData.flatMap((d) => [d.income, d.expense]),
     1,
   );
-
-  // ==========================================
-  // RENDERIZADORES DOS GRÁFICOS
-  // ==========================================
 
   const PIE_R = 110;
   const HOLE_R = 65;
@@ -287,17 +276,17 @@ export default function ChartsScreen() {
                   opacity={selected === null || isSelected ? 1 : 0.4}
                   onPress={() => setSelected(isSelected ? null : i)}
                   strokeWidth={isSelected ? 2 : 0}
-                  stroke="#fff"
+                  stroke={colors.card}
                 />
               );
             })}
-            <Circle cx={CX} cy={CY} r={HOLE_R} fill="#f8fafc" />
+            <Circle cx={CX} cy={CY} r={HOLE_R} fill={colors.card} />
             <SvgText
               x={CX}
               y={CY - 12}
               textAnchor="middle"
               fontSize="11"
-              fill="#9ca3af"
+              fill={colors.subText}
             >
               {selected !== null ? pieData[selected].label : "Total"}
             </SvgText>
@@ -307,7 +296,7 @@ export default function ChartsScreen() {
               textAnchor="middle"
               fontSize="15"
               fontWeight="bold"
-              fill="#111827"
+              fill={colors.text}
             >
               {selected !== null
                 ? `${pieData[selected].pct.toFixed(1)}%`
@@ -319,7 +308,7 @@ export default function ChartsScreen() {
                 y={CY + 28}
                 textAnchor="middle"
                 fontSize="11"
-                fill="#6b7280"
+                fill={colors.subText}
               >
                 {formatCurrency(pieData[selected].value, currency)}
               </SvgText>
@@ -331,17 +320,27 @@ export default function ChartsScreen() {
           {pieData.map((d, i) => (
             <TouchableOpacity
               key={i}
-              style={[s.legendItem, selected === i && s.legendSelected]}
+              style={[
+                s.legendItem,
+                selected === i && {
+                  backgroundColor: isDark ? "#312e81" : "#f5f3ff",
+                },
+              ]}
               onPress={() => setSelected(selected === i ? null : i)}
             >
               <View style={[s.legendDot, { backgroundColor: d.color }]} />
               <View style={{ flex: 1 }}>
-                <Text style={s.legendLabel} numberOfLines={1}>
+                <Text
+                  style={[s.legendLabel, { color: colors.text }]}
+                  numberOfLines={1}
+                >
                   {d.label}
                 </Text>
-                <Text style={s.legendValue}>{d.pct.toFixed(1)}%</Text>
+                <Text style={[s.legendValue, { color: colors.subText }]}>
+                  {d.pct.toFixed(1)}%
+                </Text>
               </View>
-              <Text style={s.legendAmount}>
+              <Text style={[s.legendAmount, { color: colors.text }]}>
                 {formatCurrency(d.value, currency)}
               </Text>
             </TouchableOpacity>
@@ -363,11 +362,15 @@ export default function ChartsScreen() {
         <View style={s.barLegend}>
           <View style={s.barLegendItem}>
             <View style={[s.barLegendDot, { backgroundColor: "#22c55e" }]} />
-            <Text style={s.barLegendText}>Receitas</Text>
+            <Text style={[s.barLegendText, { color: colors.subText }]}>
+              Receitas
+            </Text>
           </View>
           <View style={s.barLegendItem}>
             <View style={[s.barLegendDot, { backgroundColor: "#ef4444" }]} />
-            <Text style={s.barLegendText}>Despesas</Text>
+            <Text style={[s.barLegendText, { color: colors.subText }]}>
+              Despesas
+            </Text>
           </View>
         </View>
 
@@ -381,10 +384,15 @@ export default function ChartsScreen() {
                   y1={y}
                   x2={CHART_W - PADDING}
                   y2={y}
-                  stroke="#e5e7eb"
+                  stroke={colors.border}
                   strokeWidth={1}
                 />
-                <SvgText x={PADDING} y={y - 3} fontSize="9" fill="#9ca3af">
+                <SvgText
+                  x={PADDING}
+                  y={y - 3}
+                  fontSize="9"
+                  fill={colors.subText}
+                >
                   {formatCurrency(barMax * pct, currency, true)}
                 </SvgText>
               </G>
@@ -422,7 +430,7 @@ export default function ChartsScreen() {
                   y={BAR_H + 20}
                   textAnchor="middle"
                   fontSize="11"
-                  fill="#6b7280"
+                  fill={colors.subText}
                 >
                   {d.label}
                 </SvgText>
@@ -433,8 +441,13 @@ export default function ChartsScreen() {
 
         <View style={s.monthSummary}>
           {barData.map((d, i) => (
-            <View key={i} style={s.monthCard}>
-              <Text style={s.monthCardLabel}>{d.label}</Text>
+            <View
+              key={i}
+              style={[s.monthCard, { backgroundColor: colors.inputBg }]}
+            >
+              <Text style={[s.monthCardLabel, { color: colors.subText }]}>
+                {d.label}
+              </Text>
               <Text style={[s.monthCardValue, { color: "#22c55e" }]}>
                 +{formatCurrency(d.income, currency)}
               </Text>
@@ -456,17 +469,14 @@ export default function ChartsScreen() {
     );
   }
 
-  // 👇 Novo Renderizador do Panorama Anual 👇
   function renderAnnual() {
     const PADDING = 20;
     const availW = CHART_W - PADDING * 2;
     const availH = 200 - PADDING * 2;
 
-    // Calcula as posições X e Y do gráfico de linhas
     const getX = (index: number) => PADDING + index * (availW / 11);
     const getY = (val: number) => PADDING + availH - (val / annualMax) * availH;
 
-    // Gera o "caminho" das linhas para ligar os pontos
     const incomePath = annualData
       .map((d, i) => `${i === 0 ? "M" : "L"}${getX(i)},${getY(d.income)}`)
       .join(" ");
@@ -476,9 +486,10 @@ export default function ChartsScreen() {
 
     return (
       <View>
-        <Text style={s.annualChartTitle}>Panorama Anual</Text>
+        <Text style={[s.annualChartTitle, { color: colors.text }]}>
+          Panorama Anual
+        </Text>
 
-        {/* Gráfico de Linhas */}
         <Svg width={CHART_W} height={200}>
           {[0, 0.5, 1].map((pct, i) => {
             const y = PADDING + availH * (1 - pct);
@@ -489,10 +500,15 @@ export default function ChartsScreen() {
                   y1={y}
                   x2={CHART_W - PADDING}
                   y2={y}
-                  stroke="#e5e7eb"
+                  stroke={colors.border}
                   strokeWidth={1}
                 />
-                <SvgText x={PADDING} y={y - 5} fontSize="9" fill="#9ca3af">
+                <SvgText
+                  x={PADDING}
+                  y={y - 5}
+                  fontSize="9"
+                  fill={colors.subText}
+                >
                   {formatCurrency(annualMax * pct, currency, true)}
                 </SvgText>
               </G>
@@ -516,17 +532,14 @@ export default function ChartsScreen() {
 
           {annualData.map((d, i) => (
             <G key={`points-${i}`}>
-              {/* Pontos de Receita */}
               <Circle cx={getX(i)} cy={getY(d.income)} r="4" fill="#22c55e" />
-              {/* Pontos de Despesa */}
               <Circle cx={getX(i)} cy={getY(d.expense)} r="4" fill="#ef4444" />
-              {/* Rótulo dos Meses */}
               <SvgText
                 x={getX(i)}
                 y={200 - 4}
                 textAnchor="middle"
                 fontSize="9"
-                fill="#6b7280"
+                fill={colors.subText}
                 rotation={-45}
                 origin={`${getX(i)}, ${200 - 4}`}
               >
@@ -539,32 +552,58 @@ export default function ChartsScreen() {
         <View style={s.barLegend}>
           <View style={s.barLegendItem}>
             <View style={[s.barLegendDot, { backgroundColor: "#22c55e" }]} />
-            <Text style={s.barLegendText}>Entradas</Text>
+            <Text style={[s.barLegendText, { color: colors.subText }]}>
+              Entradas
+            </Text>
           </View>
           <View style={s.barLegendItem}>
             <View style={[s.barLegendDot, { backgroundColor: "#ef4444" }]} />
-            <Text style={s.barLegendText}>Gastos</Text>
+            <Text style={[s.barLegendText, { color: colors.subText }]}>
+              Gastos
+            </Text>
           </View>
         </View>
 
-        {/* Tabela de Dados Anuais */}
-        <View style={s.tableContainer}>
-          <View style={s.tableHeaderRow}>
-            <Text style={[s.th, { flex: 1.5 }]}>Mês</Text>
-            <Text style={s.th}>Gastos</Text>
-            <Text style={s.th}>Entradas</Text>
-            <Text style={[s.th, { textAlign: "right" }]}>Diferença</Text>
+        <View style={[s.tableContainer, { borderColor: colors.border }]}>
+          <View
+            style={[
+              s.tableHeaderRow,
+              {
+                backgroundColor: colors.inputBg,
+                borderBottomColor: colors.border,
+              },
+            ]}
+          >
+            <Text style={[s.th, { flex: 1.5, color: colors.text }]}>Mês</Text>
+            <Text style={[s.th, { color: colors.text }]}>Gastos</Text>
+            <Text style={[s.th, { color: colors.text }]}>Entradas</Text>
+            <Text style={[s.th, { textAlign: "right", color: colors.text }]}>
+              Diferença
+            </Text>
           </View>
           {annualData.map((d, i) => (
             <View
               key={d.monthIndex}
-              style={[s.tableRow, i % 2 !== 0 && s.tableRowAlt]}
+              style={[
+                s.tableRow,
+                { borderBottomColor: colors.border },
+                i % 2 !== 0 && { backgroundColor: colors.inputBg },
+              ]}
             >
-              <Text style={[s.td, { flex: 1.5, fontWeight: "600" }]}>
+              <Text
+                style={[
+                  s.td,
+                  { flex: 1.5, fontWeight: "600", color: colors.text },
+                ]}
+              >
                 {d.label}
               </Text>
-              <Text style={s.td}>{formatCurrency(d.expense, currency)}</Text>
-              <Text style={s.td}>{formatCurrency(d.income, currency)}</Text>
+              <Text style={[s.td, { color: colors.subText }]}>
+                {formatCurrency(d.expense, currency)}
+              </Text>
+              <Text style={[s.td, { color: colors.subText }]}>
+                {formatCurrency(d.income, currency)}
+              </Text>
               <Text
                 style={[
                   s.td,
@@ -585,19 +624,34 @@ export default function ChartsScreen() {
   }
 
   return (
-    <SafeAreaView style={s.safe}>
-      <View style={s.header}>
-        <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
-          <Ionicons name="arrow-back" size={22} color="#111827" />
+    <SafeAreaView style={[s.safe, { backgroundColor: colors.bg }]}>
+      <View
+        style={[
+          s.header,
+          { backgroundColor: colors.card, borderBottomColor: colors.border },
+        ]}
+      >
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={[s.backBtn, { backgroundColor: colors.inputBg }]}
+        >
+          <Ionicons name="arrow-back" size={22} color={colors.text} />
         </TouchableOpacity>
-        <Text style={s.title}>Análise Financeira</Text>
+        <Text style={[s.title, { color: colors.text }]}>
+          Análise Financeira
+        </Text>
         <View style={{ width: 38 }} />
       </View>
 
-      {/* 3 Botões de Navegação */}
-      <View style={s.toggle}>
+      <View style={[s.toggle, { backgroundColor: colors.inputBg }]}>
         <TouchableOpacity
-          style={[s.toggleBtn, chartType === "pie" && s.toggleActive]}
+          style={[
+            s.toggleBtn,
+            chartType === "pie" && [
+              s.toggleActive,
+              { backgroundColor: colors.primary },
+            ],
+          ]}
           onPress={() => {
             setChartType("pie");
             setSelected(null);
@@ -606,17 +660,27 @@ export default function ChartsScreen() {
           <Ionicons
             name="pie-chart"
             size={16}
-            color={chartType === "pie" ? "#fff" : "#6b7280"}
+            color={chartType === "pie" ? "#fff" : colors.subText}
           />
           <Text
-            style={[s.toggleText, chartType === "pie" && s.toggleTextActive]}
+            style={[
+              s.toggleText,
+              { color: colors.subText },
+              chartType === "pie" && s.toggleTextActive,
+            ]}
           >
             Pizza
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[s.toggleBtn, chartType === "bar" && s.toggleActive]}
+          style={[
+            s.toggleBtn,
+            chartType === "bar" && [
+              s.toggleActive,
+              { backgroundColor: colors.primary },
+            ],
+          ]}
           onPress={() => {
             setChartType("bar");
             setSelected(null);
@@ -625,17 +689,27 @@ export default function ChartsScreen() {
           <Ionicons
             name="bar-chart"
             size={16}
-            color={chartType === "bar" ? "#fff" : "#6b7280"}
+            color={chartType === "bar" ? "#fff" : colors.subText}
           />
           <Text
-            style={[s.toggleText, chartType === "bar" && s.toggleTextActive]}
+            style={[
+              s.toggleText,
+              { color: colors.subText },
+              chartType === "bar" && s.toggleTextActive,
+            ]}
           >
             Barras
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[s.toggleBtn, chartType === "annual" && s.toggleActive]}
+          style={[
+            s.toggleBtn,
+            chartType === "annual" && [
+              s.toggleActive,
+              { backgroundColor: colors.primary },
+            ],
+          ]}
           onPress={() => {
             setChartType("annual");
             setSelected(null);
@@ -644,10 +718,14 @@ export default function ChartsScreen() {
           <Ionicons
             name="calendar-outline"
             size={16}
-            color={chartType === "annual" ? "#fff" : "#6b7280"}
+            color={chartType === "annual" ? "#fff" : colors.subText}
           />
           <Text
-            style={[s.toggleText, chartType === "annual" && s.toggleTextActive]}
+            style={[
+              s.toggleText,
+              { color: colors.subText },
+              chartType === "annual" && s.toggleTextActive,
+            ]}
           >
             Anual
           </Text>
@@ -659,10 +737,13 @@ export default function ChartsScreen() {
         showsVerticalScrollIndicator={false}
       >
         {isLoadingMore && (
-          <ActivityIndicator color="#6366f1" style={{ marginBottom: 10 }} />
+          <ActivityIndicator
+            color={colors.primary}
+            style={{ marginBottom: 10 }}
+          />
         )}
 
-        <Text style={s.subtitle}>
+        <Text style={[s.subtitle, { color: colors.subText }]}>
           {chartType === "pie"
             ? "Toque em uma fatia para ver detalhes do mês"
             : chartType === "bar"
@@ -670,7 +751,12 @@ export default function ChartsScreen() {
               : "Panorama geral de Entradas e Saídas do ano"}
         </Text>
 
-        <View style={s.chartBox}>
+        <View
+          style={[
+            s.chartBox,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
+        >
           {chartType === "pie"
             ? renderPie()
             : chartType === "bar"
@@ -680,9 +766,15 @@ export default function ChartsScreen() {
 
         {pieData.length === 0 && chartType === "pie" && (
           <View style={s.empty}>
-            <Ionicons name="bar-chart-outline" size={48} color="#d1d5db" />
-            <Text style={s.emptyText}>Nenhum dado disponível</Text>
-            <Text style={s.emptySubtext}>
+            <Ionicons
+              name="bar-chart-outline"
+              size={48}
+              color={colors.subText}
+            />
+            <Text style={[s.emptyText, { color: colors.text }]}>
+              Nenhum dado disponível
+            </Text>
+            <Text style={[s.emptySubtext, { color: colors.subText }]}>
               Adicione transações para ver os gráficos
             </Text>
           </View>
@@ -693,31 +785,30 @@ export default function ChartsScreen() {
 }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#f8fafc" },
+  safe: {
+    flex: 1,
+    ...(Platform.OS === "web" ? { overflow: "hidden", maxWidth: "100%" } : {}),
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 20,
     paddingVertical: 14,
-    backgroundColor: "#fff",
     borderBottomWidth: 1,
-    borderBottomColor: "#e5e7eb",
   },
   backBtn: {
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: "#f3f4f6",
     justifyContent: "center",
     alignItems: "center",
   },
-  title: { fontSize: 17, fontWeight: "700", color: "#111827" },
+  title: { fontSize: 17, fontWeight: "700" },
 
   toggle: {
     flexDirection: "row",
     margin: 20,
-    backgroundColor: "#e5e7eb",
     borderRadius: 12,
     padding: 4,
   },
@@ -730,20 +821,18 @@ const s = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 10,
   },
-  toggleActive: { backgroundColor: "#6366f1" },
-  toggleText: { fontSize: 13, fontWeight: "600", color: "#6b7280" },
+  toggleActive: {},
+  toggleText: { fontSize: 13, fontWeight: "600" },
   toggleTextActive: { color: "#fff" },
 
   scroll: { paddingBottom: 40, paddingHorizontal: 24 },
   subtitle: {
     fontSize: 12,
-    color: "#9ca3af",
     textAlign: "center",
     marginBottom: 16,
   },
 
   chartBox: {
-    backgroundColor: "#fff",
     borderRadius: 20,
     padding: 16,
     shadowColor: "#000",
@@ -761,11 +850,10 @@ const s = StyleSheet.create({
     padding: 10,
     borderRadius: 10,
   },
-  legendSelected: { backgroundColor: "#f5f3ff" },
   legendDot: { width: 12, height: 12, borderRadius: 6 },
-  legendLabel: { fontSize: 13, fontWeight: "600", color: "#111827" },
-  legendValue: { fontSize: 11, color: "#9ca3af" },
-  legendAmount: { fontSize: 13, fontWeight: "700", color: "#374151" },
+  legendLabel: { fontSize: 13, fontWeight: "600" },
+  legendValue: { fontSize: 11 },
+  legendAmount: { fontSize: 13, fontWeight: "700" },
 
   barLegend: {
     flexDirection: "row",
@@ -776,7 +864,7 @@ const s = StyleSheet.create({
   },
   barLegendItem: { flexDirection: "row", alignItems: "center", gap: 6 },
   barLegendDot: { width: 10, height: 10, borderRadius: 5 },
-  barLegendText: { fontSize: 12, color: "#6b7280" },
+  barLegendText: { fontSize: 12 },
 
   monthSummary: {
     flexDirection: "row",
@@ -787,50 +875,42 @@ const s = StyleSheet.create({
   monthCard: {
     flex: 1,
     minWidth: 80,
-    backgroundColor: "#f8fafc",
     borderRadius: 10,
     padding: 10,
     alignItems: "center",
   },
-  monthCardLabel: { fontSize: 11, color: "#9ca3af", marginBottom: 4 },
+  monthCardLabel: { fontSize: 11, marginBottom: 4 },
   monthCardValue: { fontSize: 10, fontWeight: "600" },
   monthCardBalance: { fontSize: 11, fontWeight: "800", marginTop: 4 },
 
   empty: { alignItems: "center", paddingVertical: 40, gap: 8 },
-  emptyText: { fontSize: 16, fontWeight: "600", color: "#374151" },
-  emptySubtext: { fontSize: 13, color: "#9ca3af" },
+  emptyText: { fontSize: 16, fontWeight: "600" },
+  emptySubtext: { fontSize: 13 },
 
-  // Estilos da Tabela Anual
   annualChartTitle: {
     fontSize: 18,
     fontWeight: "800",
-    color: "#111827",
     marginBottom: 16,
     textAlign: "center",
   },
   tableContainer: {
     marginTop: 16,
     borderWidth: 1,
-    borderColor: "#e5e7eb",
     borderRadius: 8,
     overflow: "hidden",
   },
   tableHeaderRow: {
     flexDirection: "row",
-    backgroundColor: "#f3f4f6",
     paddingVertical: 10,
     paddingHorizontal: 8,
     borderBottomWidth: 1,
-    borderBottomColor: "#e5e7eb",
   },
-  th: { flex: 1, fontSize: 11, fontWeight: "700", color: "#374151" },
+  th: { flex: 1, fontSize: 11, fontWeight: "700" },
   tableRow: {
     flexDirection: "row",
     paddingVertical: 10,
     paddingHorizontal: 8,
     borderBottomWidth: 1,
-    borderBottomColor: "#f3f4f6",
   },
-  tableRowAlt: { backgroundColor: "#fafafa" },
-  td: { flex: 1, fontSize: 11, color: "#4b5563" },
+  td: { flex: 1, fontSize: 11 },
 });
