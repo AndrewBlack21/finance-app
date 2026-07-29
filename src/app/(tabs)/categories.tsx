@@ -19,7 +19,7 @@ import { useCategories } from "@/hooks/useCategories";
 import { categoryService } from "@/services";
 import { Input } from "@/components/ui";
 import type { Category, CategoryType } from "@/types";
-import { useRouter } from "expo-router"; // <-- ADICIONADO
+import { useRouter } from "expo-router";
 
 const schema = z.object({
   name: z.string().min(1, "Nome obrigatório"),
@@ -83,6 +83,8 @@ export default function CategoriesScreen() {
   });
 
   const selectedType = watch("type");
+  // 👇 Lemos a cor atual do formulário para atualizar a interface em tempo real
+  const selectedColor = watch("color");
 
   const onSubmit = async (values: FormData) => {
     setIsLoading(true);
@@ -153,20 +155,33 @@ export default function CategoriesScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* 👇 Abas com cores dinâmicas para melhor UX */}
       <View style={s.tabs}>
         <TouchableOpacity
-          style={[s.tab, tab === "expense" && s.tabActive]}
+          style={[
+            s.tab,
+            tab === "expense" && {
+              borderBottomWidth: 2,
+              borderBottomColor: "#ef4444",
+            },
+          ]}
           onPress={() => setTab("expense")}
         >
-          <Text style={[s.tabText, tab === "expense" && s.tabTextActive]}>
+          <Text style={[s.tabText, tab === "expense" && { color: "#ef4444" }]}>
             Despesas ({expense.length})
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[s.tab, tab === "income" && s.tabActive]}
+          style={[
+            s.tab,
+            tab === "income" && {
+              borderBottomWidth: 2,
+              borderBottomColor: "#22c55e",
+            },
+          ]}
           onPress={() => setTab("income")}
         >
-          <Text style={[s.tabText, tab === "income" && s.tabTextActive]}>
+          <Text style={[s.tabText, tab === "income" && { color: "#22c55e" }]}>
             Receitas ({income.length})
           </Text>
         </TouchableOpacity>
@@ -195,13 +210,20 @@ export default function CategoriesScreen() {
               }
               size={26}
               color={c.color}
-              style={{ marginBottom: 8 }}
             />
+
+            {/* 👇 Adicionado o nome da categoria que estava em falta! */}
+            <Text style={[s.catName, { color: c.color }]} numberOfLines={1}>
+              {c.name}
+            </Text>
 
             {!c.user_id ? (
               <Text style={s.catDefault}>Padrão</Text>
             ) : (
-              <Text style={s.catCustom}>Personalizada</Text>
+              // 👇 Cor da etiqueta agora acompanha a cor da categoria
+              <Text style={[s.catCustom, { color: c.color }]}>
+                Personalizada
+              </Text>
             )}
           </TouchableOpacity>
         )}
@@ -238,8 +260,8 @@ export default function CategoriesScreen() {
                     style={[
                       s.typeBtn,
                       value === "expense" && {
-                        backgroundColor: "#dc2626",
-                        borderColor: "#dc2626",
+                        backgroundColor: "#ef4444",
+                        borderColor: "#ef4444",
                       },
                     ]}
                     onPress={() => onChange("expense")}
@@ -257,8 +279,8 @@ export default function CategoriesScreen() {
                     style={[
                       s.typeBtn,
                       value === "income" && {
-                        backgroundColor: "#16a34a",
-                        borderColor: "#16a34a",
+                        backgroundColor: "#22c55e",
+                        borderColor: "#22c55e",
                       },
                     ]}
                     onPress={() => onChange("income")}
@@ -299,13 +321,21 @@ export default function CategoriesScreen() {
                   {ICONS.map((i) => (
                     <TouchableOpacity
                       key={i.key}
-                      style={[s.iconBtn, value === i.key && s.iconBtnActive]}
+                      style={[
+                        s.iconBtn,
+                        // 👇 Borda e fundo interativo com base na cor selecionada
+                        value === i.key && {
+                          borderColor: selectedColor,
+                          backgroundColor: selectedColor + "20",
+                        },
+                      ]}
                       onPress={() => onChange(i.key)}
                     >
                       <Ionicons
                         name={i.name}
                         size={22}
-                        color={value === i.key ? "#6366f1" : "#6b7280"}
+                        // 👇 Ícone agora reflete a cor escolhida em vez de um roxo estático
+                        color={value === i.key ? selectedColor : "#9ca3af"}
                       />
                     </TouchableOpacity>
                   ))}
@@ -365,7 +395,6 @@ export default function CategoriesScreen() {
 }
 
 const s = StyleSheet.create({
-  // 👇 ESTILO BLINDADO PARA EVITAR SCROLL NO NAVEGADOR
   safe: {
     flex: 1,
     backgroundColor: "#f8fafc",
@@ -394,9 +423,7 @@ const s = StyleSheet.create({
     borderBottomColor: "#e5e7eb",
   },
   tab: { flex: 1, paddingVertical: 14, alignItems: "center" },
-  tabActive: { borderBottomWidth: 2, borderBottomColor: "#6366f1" },
   tabText: { fontSize: 14, color: "#9ca3af", fontWeight: "600" },
-  tabTextActive: { color: "#6366f1" },
 
   list: { padding: 16 },
   catCard: {
@@ -408,10 +435,16 @@ const s = StyleSheet.create({
     alignItems: "center",
     borderTopWidth: 3,
   },
+  // 👇 Novo estilo para dar destaque ao nome da categoria
+  catName: {
+    fontSize: 14,
+    fontWeight: "bold",
+    marginTop: 8,
+    textAlign: "center",
+  },
   catDefault: { fontSize: 10, color: "#9ca3af", marginTop: 4 },
   catCustom: {
     fontSize: 10,
-    color: "#6366f1",
     fontWeight: "600",
     marginTop: 4,
   },
@@ -463,7 +496,6 @@ const s = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "#fff",
   },
-  iconBtnActive: { borderColor: "#6366f1", backgroundColor: "#ede9fe" },
 
   colorRow: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   colorBtn: { width: 36, height: 36, borderRadius: 18 },

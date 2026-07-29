@@ -32,8 +32,6 @@ import { useBudgetGoals } from "@/hooks/useBudgetGoals";
 import { formatCurrency, formatDate } from "@/utils";
 import type { Installment, Transaction } from "@/types";
 import { Ionicons } from "@expo/vector-icons";
-
-// 👇 Importação do Hook Global de Temas
 import { useAppTheme } from "@/hooks/useTheme";
 
 const FALLBACK_COLORS = [
@@ -49,8 +47,6 @@ export default function DashboardScreen() {
   const { profile, session, logout } = useAuth();
   const router = useRouter();
   const { width } = useWindowDimensions();
-
-  // 👇 Extração das cores dinâmicas para o dashboard
   const { colors, isDark } = useAppTheme();
 
   const [balanceView, setBalanceView] = useState<"month" | "week">("month");
@@ -66,7 +62,6 @@ export default function DashboardScreen() {
     upsert,
     refetch: refetchGoals,
   } = useBudgetGoals();
-
   const [showGlobalModal, setShowGlobalModal] = useState(false);
   const [globalInput, setGlobalInput] = useState("");
 
@@ -93,8 +88,13 @@ export default function DashboardScreen() {
     label: dynMonthLabel,
     fullLabel,
   } = getMonthRange(monthOffset);
-
   const { accounts, totalBalance, refetch: refetchAccounts } = useAccounts();
+
+  // 👇 1. Separação das contas normais e de investimento
+  const regularAccounts = accounts.filter((acc) => acc.type !== "investment");
+  const investmentAccounts = accounts.filter(
+    (acc) => acc.type === "investment",
+  );
 
   const checkingBalance = useMemo(() => {
     return accounts
@@ -104,7 +104,6 @@ export default function DashboardScreen() {
 
   const { installments, refetch: refetchInstallments } = useInstallments();
   const { expenses: fixedExpenses, refetch: refetchFixed } = useFixedExpenses();
-
   const {
     transactions,
     summary,
@@ -119,11 +118,8 @@ export default function DashboardScreen() {
   useEffect(() => {
     setFilters({ date_from: from, date_to: to });
   }, [from, to, setFilters]);
-
   useEffect(() => {
-    if (hasMore && !isLoading && !isLoadingMore && fetchMore) {
-      fetchMore();
-    }
+    if (hasMore && !isLoading && !isLoadingMore && fetchMore) fetchMore();
   }, [hasMore, isLoading, isLoadingMore, fetchMore]);
 
   const onRefresh = async () => {
@@ -155,27 +151,23 @@ export default function DashboardScreen() {
     let monthExpense = 0;
     let weekIncome = 0;
     let weekExpense = 0;
-
     const checkingAccIds = new Set(
       accounts.filter((a) => a.type === "checking").map((a) => a.id),
     );
     const creditAccIds = new Set(
       accounts.filter((a) => a.type === "credit").map((a) => a.id),
     );
-
     const today = new Date();
     const startOfWeek = new Date(today);
     startOfWeek.setDate(today.getDate() - today.getDay());
     const endOfWeek = new Date(today);
     endOfWeek.setDate(today.getDate() - today.getDay() + 6);
-
     const startStr = startOfWeek.toISOString().split("T")[0];
     const endStr = endOfWeek.toISOString().split("T")[0];
 
     transactions.forEach((t) => {
       const amt = Number(t.amount) || 0;
       const isThisWeek = t.date >= startStr && t.date <= endStr;
-
       if (t.type === "income") {
         if (!t.account_id || !creditAccIds.has(t.account_id)) {
           monthIncome += amt;
@@ -195,12 +187,10 @@ export default function DashboardScreen() {
         const dueDay = f.due_day || 10;
         const dueDateStr = `${to.slice(0, 8)}${String(dueDay).padStart(2, "0")}`;
         const isThisWeek = dueDateStr >= startStr && dueDateStr <= endStr;
-
         monthExpense += amt;
         if (isThisWeek) weekExpense += amt;
       }
     });
-
     return { monthIncome, monthExpense, weekIncome, weekExpense };
   }, [transactions, fixedExpenses, accounts, to]);
 
@@ -252,32 +242,15 @@ export default function DashboardScreen() {
         percentage:
           total > 0 ? Math.round((item.value / total) * 100) + "%" : "0%",
       }))
-      .slice(0, 6);
+      .slice(0, 5); // Mostramos 5 para caber bem na lateral
 
     return { categoryData: dataList, totalCategoryExpenses: total };
   }, [expenses, installments, fixedExpenses, to]);
 
-  const { budgetSpent, budgetTop3 } = useMemo(() => {
+  const { budgetSpent } = useMemo(() => {
     let spent = 0;
-    const grouped: Record<
-      string,
-      { label: string; value: number; color: string }
-    > = {};
-
-    expenses.forEach((t) => {
-      const amt = Number(t.amount) || 0;
-      const label = t.category?.name ?? "Outros";
-      const color = t.category?.color ?? FALLBACK_COLORS[0];
-      if (!grouped[label]) grouped[label] = { label, value: 0, color };
-      grouped[label].value += amt;
-      spent += amt;
-    });
-
-    const top3 = Object.values(grouped)
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 3);
-
-    return { budgetSpent: spent, budgetTop3: top3 };
+    expenses.forEach((t) => (spent += Number(t.amount) || 0));
+    return { budgetSpent: spent };
   }, [expenses]);
 
   const budgetPercentage =
@@ -296,47 +269,41 @@ export default function DashboardScreen() {
             (Number(i.paid_installments) < Number(i.total_installments) ||
               i.invoice_paid_month === currentMonthIso),
         );
-
         const currentInstallments = allRelevant.filter(
           (i) => !i.start_date || i.start_date <= to,
         );
-
         const pendingCurrent = currentInstallments.filter(
           (i) => i.invoice_paid_month !== currentMonthIso,
         );
-
         const isInvoicePaid =
           currentInstallments.length > 0 && pendingCurrent.length === 0;
-
         const invoiceTotal = currentInstallments.reduce(
           (sum, i) => sum + (Number(i.installment_amount) || 0),
           0,
         );
-
         const allActiveForLimit = installments.filter(
           (i) =>
             i.account_id === acc.id &&
             i.paid_installments < i.total_installments,
         );
-
-        const usedLimit = allActiveForLimit.reduce((sum, i) => {
-          return (
+        const usedLimit = allActiveForLimit.reduce(
+          (sum, i) =>
             sum +
             (i.total_installments - i.paid_installments) *
-              (Number(i.installment_amount) || 0)
-          );
-        }, 0);
-
+              (Number(i.installment_amount) || 0),
+          0,
+        );
         const totalLimit = Number(acc.balance) || 0;
         const limitPercentage =
           totalLimit > 0 ? Math.min((usedLimit / totalLimit) * 100, 100) : 0;
-
-        const dueDay = acc.due_day || 10;
-        const dueDate = new Date(today.getFullYear(), today.getMonth(), dueDay);
+        const dueDate = new Date(
+          today.getFullYear(),
+          today.getMonth(),
+          acc.due_day || 10,
+        );
 
         let statusColor = "#f59e0b";
         let statusLabel = "Pendente";
-
         if (isInvoicePaid) {
           statusColor = "#4ade80";
           statusLabel = "Pago";
@@ -373,6 +340,7 @@ export default function DashboardScreen() {
           />
         }
       >
+        {/* CABEÇALHO */}
         <View style={s.header}>
           <View>
             <Text style={[s.greeting, { color: colors.text }]}>
@@ -386,36 +354,55 @@ export default function DashboardScreen() {
             <TouchableOpacity
               style={[
                 s.monthBtn,
-                { backgroundColor: isDark ? "#312e81" : "#ede9fe" },
+                { backgroundColor: isDark ? "#1f2937" : "#e0e7ff" },
               ]}
               onPress={() => setShowMonthPicker(true)}
             >
-              <Text style={s.monthBtnText}>{dynMonthLabel}</Text>
-              <Ionicons name="chevron-down" size={12} color={colors.primary} />
+              <Text
+                style={[
+                  s.monthBtnText,
+                  { color: isDark ? "#fff" : colors.primary },
+                ]}
+              >
+                {dynMonthLabel}
+              </Text>
+              <Ionicons
+                name="chevron-down"
+                size={12}
+                color={isDark ? "#fff" : colors.primary}
+              />
             </TouchableOpacity>
-
-            <TouchableOpacity onPress={() => setIsMenuVisible(true)}>
-              <Ionicons name="menu-outline" size={34} color={colors.text} />
+            <TouchableOpacity
+              style={[
+                s.menuIconButton,
+                { backgroundColor: isDark ? "#1f2937" : "#e0e7ff" },
+              ]}
+              onPress={() => setIsMenuVisible(true)}
+            >
+              <Ionicons
+                name="menu"
+                size={22}
+                color={isDark ? "#fff" : colors.primary}
+              />
             </TouchableOpacity>
           </View>
         </View>
-        <View style={s.balanceCard}>
+
+        {/* CARTÃO DE SALDO */}
+        <View style={[s.balanceCard, { backgroundColor: colors.primary }]}>
           <View style={s.balanceCardHeader}>
             <View>
               <Text style={s.balanceLabel}>Saldo Atual (Contas Corrente)</Text>
               <Text
                 style={[
                   s.balanceValue,
-                  checkingBalance < 0
-                    ? { color: "#ef4444" }
-                    : { color: "#fff" },
+                  checkingBalance < 0 && { color: "#f87171" },
                 ]}
               >
                 {checkingBalance < 0 ? "⚠️ " : ""}
                 {formatCurrency(checkingBalance, currency)}
               </Text>
             </View>
-
             <View style={s.balanceToggle}>
               <TouchableOpacity
                 style={[
@@ -451,7 +438,6 @@ export default function DashboardScreen() {
               </TouchableOpacity>
             </View>
           </View>
-
           <View style={s.balanceRow}>
             <View style={s.balanceItem}>
               <Text style={s.balanceItemLabel}>↑ Receitas</Text>
@@ -464,9 +450,7 @@ export default function DashboardScreen() {
                 )}
               </Text>
             </View>
-
             <View style={s.divider} />
-
             <View style={s.balanceItem}>
               <Text style={s.balanceItemLabel}>↓ Despesas</Text>
               <Text style={[s.balanceItemValue, { color: "#f87171" }]}>
@@ -481,6 +465,7 @@ export default function DashboardScreen() {
           </View>
         </View>
 
+        {/* MINHAS CONTAS (CORRENTE E CRÉDITO) */}
         <View style={s.section}>
           <View style={s.sectionHeader}>
             <Text style={[s.sectionTitle, { color: colors.text }]}>
@@ -503,18 +488,16 @@ export default function DashboardScreen() {
               </Text>
             </TouchableOpacity>
           </View>
-
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {accounts.map((account) => (
+            {regularAccounts.map((account) => (
               <TouchableOpacity
                 key={account.id}
                 style={[
                   s.accountCard,
                   {
-                    borderLeftColor: account.color || colors.primary,
                     backgroundColor: colors.card,
                     borderColor: colors.border,
-                    borderWidth: 1,
+                    borderLeftColor: account.color || colors.primary,
                   },
                 ]}
                 onPress={() =>
@@ -539,10 +522,7 @@ export default function DashboardScreen() {
                   </Text>
                 ) : (
                   <Text
-                    style={[
-                      s.accountBalance,
-                      { fontSize: 12, color: colors.subText },
-                    ]}
+                    style={[s.accountCreditLabel, { color: colors.subText }]}
                   >
                     Cartão de Crédito
                   </Text>
@@ -552,155 +532,94 @@ export default function DashboardScreen() {
                 </Text>
               </TouchableOpacity>
             ))}
-
             <TouchableOpacity
               activeOpacity={0.7}
-              style={{
-                width: 140,
-                height: 90,
-                borderRadius: 16,
-                borderWidth: 2,
-                borderColor: colors.border,
-                borderStyle: "dashed",
-                justifyContent: "center",
-                alignItems: "center",
-                backgroundColor: colors.bg,
-                marginRight: 16,
-                marginLeft: accounts.length === 0 ? 0 : 8,
-              }}
+              style={[
+                s.addAccountCard,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
               onPress={() => router.push("/(tabs)/accounts?openModal=1")}
             >
               <Ionicons
                 name="add-circle-outline"
-                size={28}
+                size={26}
                 color={colors.subText}
               />
-              <Text
-                style={{
-                  color: colors.subText,
-                  fontSize: 13,
-                  fontWeight: "600",
-                  marginTop: 8,
-                  textAlign: "center",
-                }}
-              >
-                Criar Nova{"\n"}Conta
+              <Text style={[s.addAccountText, { color: colors.subText }]}>
+                Nova Conta
               </Text>
             </TouchableOpacity>
           </ScrollView>
         </View>
 
-        <ScrollView style={s.section}>
-          <Text style={[s.sectionTitle, { color: colors.text }]}>
-            Faturas de Crédito Ativas
-          </Text>
-          <View
-            style={[
-              s.chartCard,
-              { backgroundColor: "transparent", elevation: 0, padding: 0 },
-            ]}
-          >
-            <CreditCardCarousel data={creditCardsStatus} currency={currency} />
+        {/* 👇 MEUS INVESTIMENTOS (NOVA SECÇÃO SEPARADA) */}
+        <View style={s.section}>
+          <View style={s.sectionHeader}>
+            <Text style={[s.sectionTitle, { color: colors.text }]}>
+              Meus Investimentos
+            </Text>
           </View>
-        </ScrollView>
-
-        {totalBudget > 0 && (
-          <View style={s.section}>
-            <View style={s.sectionHeader}>
-              <Text style={[s.sectionTitle, { color: colors.text }]}>
-                Progresso das Metas
-              </Text>
-              <TouchableOpacity onPress={() => router.push("/(tabs)/budget")}>
-                <Text style={[s.seeAll, { color: colors.primary }]}>
-                  Ver Metas
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {investmentAccounts.map((account) => (
+              <TouchableOpacity
+                key={account.id}
+                style={[
+                  s.accountCard,
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: colors.border,
+                    borderLeftColor: account.color || "#8b5cf6",
+                  },
+                ]}
+                onPress={() =>
+                  router.push({
+                    pathname: "/(tabs)/accounts",
+                    params: {
+                      id: account.id,
+                      name: account.name,
+                      balance: String(account.balance),
+                      currency: account.currency,
+                      color: account.color,
+                    },
+                  })
+                }
+              >
+                <Text style={[s.accountName, { color: colors.text }]}>
+                  {account.name}
+                </Text>
+                <Text style={[s.accountBalance, { color: colors.text }]}>
+                  {formatCurrency(account.balance, account.currency)}
+                </Text>
+                <Text style={[s.accountType, { color: colors.subText }]}>
+                  Corretora / Banco
                 </Text>
               </TouchableOpacity>
-            </View>
-
-            <View style={s.budgetCard}>
-              <View style={s.budgetHeader}>
-                <Text style={s.budgetText}>Orçamento do Mês</Text>
-                <TouchableOpacity
-                  style={{
-                    backgroundColor: "rgba(255,255,255,0.2)",
-                    paddingHorizontal: 12,
-                    paddingVertical: 4,
-                    borderRadius: 12,
-                  }}
-                  onPress={() => {
-                    setGlobalInput(
-                      totalBudget > 0 ? totalBudget.toString() : "",
-                    );
-                    setShowGlobalModal(true);
-                  }}
-                >
-                  <Text
-                    style={{ color: "#fff", fontSize: 12, fontWeight: "bold" }}
-                  >
-                    {totalBudget > 0 ? "Editar Meta" : "+ Definir Meta"}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              <View style={s.budgetBarBg}>
-                <View
-                  style={[
-                    s.budgetBarFill,
-                    {
-                      width: `${Math.min(budgetPercentage, 100)}%`,
-                      backgroundColor:
-                        budgetPercentage > 100 ? "#ef4444" : "#4ade80",
-                    },
-                  ]}
-                />
-              </View>
-
-              <Text style={s.budgetValues}>
-                {formatCurrency(budgetSpent, currency)} de{" "}
-                {formatCurrency(totalBudget, currency)}
+            ))}
+            <TouchableOpacity
+              activeOpacity={0.7}
+              style={[
+                s.addAccountCard,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+              onPress={() => router.push("/(tabs)/accounts?openModal=1")}
+            >
+              <Ionicons name="trending-up" size={26} color={colors.subText} />
+              <Text style={[s.addAccountText, { color: colors.subText }]}>
+                Novo Investimento
               </Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
 
-              <View style={s.budgetTopCats}>
-                <Text style={s.budgetTopTitle}>Top 3 Gastos (Débito):</Text>
-                {budgetTop3.map((c, i) => (
-                  <View key={i} style={s.budgetTopRow}>
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        gap: 6,
-                      }}
-                    >
-                      <View
-                        style={[s.legendDot, { backgroundColor: c.color }]}
-                      />
-                      <Text style={s.budgetCatName} numberOfLines={1}>
-                        {c.label}
-                      </Text>
-                    </View>
-                    <Text style={s.budgetCatValue}>
-                      {formatCurrency(c.value, currency)}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            </View>
-          </View>
-        )}
-
-        {/* 👇 GRÁFICO DE PIZZA CORRIGIDO COM CORES DINÂMICAS */}
+        {/* GASTOS POR CATEGORIA (PIE CHART LADO A LADO) */}
         <View style={s.section}>
           <Text style={[s.sectionTitle, { color: colors.text }]}>
-            Gastos por categoria
+            Gastos por Categoria
           </Text>
           <View
             style={[
-              s.chartCard,
-              {
-                backgroundColor: colors.card,
-                borderColor: colors.border,
-                borderWidth: 1,
-              },
+              s.categoryMainCard,
+              { backgroundColor: colors.card, borderColor: colors.border },
             ]}
           >
             {isLoading ? (
@@ -711,17 +630,17 @@ export default function DashboardScreen() {
             ) : categoryData.length === 0 ? (
               <EmptyChart message="Nenhum gasto registrado este mês." />
             ) : (
-              <>
-                <View style={s.pieWrap}>
+              // 👇 Estrutura flex-row para colocar lado a lado
+              <View style={s.chartRowLayout}>
+                <View style={s.pieWrapLeft}>
                   <PieChart
                     data={categoryData.map((item) => ({
                       value: item.value,
                       color: item.color,
                     }))}
                     donut
-                    radius={82}
-                    innerRadius={52}
-                    // Cor de fundo do buraco central da rosquinha ajustada ao tema
+                    radius={65} // Tamanho reduzido para caber ao lado
+                    innerRadius={45}
                     innerCircleColor={colors.card}
                     centerLabelComponent={() => (
                       <View style={s.pieCenter}>
@@ -739,25 +658,178 @@ export default function DashboardScreen() {
                     )}
                   />
                 </View>
-                <View style={s.legend}>
+
+                <View style={s.legendRight}>
                   {categoryData.map((item) => (
-                    <ChartLegendItem
-                      key={item.label}
-                      label={item.label}
-                      color={item.color}
-                      value={`${formatCurrency(item.value, currency)} (${item.percentage})`}
-                    />
+                    <View key={item.label} style={s.legendItemRow}>
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          flex: 1,
+                        }}
+                      >
+                        <View
+                          style={[s.legendDot, { backgroundColor: item.color }]}
+                        />
+                        <Text
+                          style={[s.legendLabel, { color: colors.subText }]}
+                          numberOfLines={1}
+                        >
+                          {item.label}
+                        </Text>
+                      </View>
+                      <Text style={[s.legendValue, { color: colors.text }]}>
+                        {formatCurrency(item.value, currency)}
+                      </Text>
+                    </View>
                   ))}
                 </View>
-              </>
+              </View>
             )}
           </View>
         </View>
+
+        {/* METAS COM POUPAR E INVESTIR */}
+        {totalBudget > 0 && (
+          <View style={s.section}>
+            <View style={s.sectionHeader}>
+              <Text style={[s.sectionTitle, { color: colors.text }]}>
+                Metas
+              </Text>
+              <TouchableOpacity onPress={() => router.push("/(tabs)/budget")}>
+                <Text style={[s.seeAll, { color: colors.primary }]}>
+                  Ver Metas
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <View
+              style={[
+                s.budgetCard,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+            >
+              {/* Orçamento Geral */}
+              <View style={s.budgetHeader}>
+                <Text style={[s.budgetText, { color: colors.primary }]}>
+                  Orçamento do Mês
+                </Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    setGlobalInput(
+                      totalBudget > 0 ? totalBudget.toString() : "",
+                    );
+                    setShowGlobalModal(true);
+                  }}
+                >
+                  <Text style={[s.budgetEditText, { color: colors.text }]}>
+                    {formatCurrency(budgetSpent, currency)} de{" "}
+                    {formatCurrency(totalBudget, currency)}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              <View
+                style={[
+                  s.budgetBarBg,
+                  { backgroundColor: isDark ? "#30363d" : "#e5e7eb" },
+                ]}
+              >
+                <View
+                  style={[
+                    s.budgetBarFill,
+                    {
+                      width: `${Math.min(budgetPercentage, 100)}%`,
+                      backgroundColor:
+                        budgetPercentage > 100 ? "#f87171" : colors.primary,
+                    },
+                  ]}
+                />
+              </View>
+              <Text style={[s.budgetPercentText, { color: colors.text }]}>
+                {Math.round(budgetPercentage)}%
+              </Text>
+
+              {/* 👇 Sub-metas: Poupar e Investir */}
+              <View style={s.subGoalsContainer}>
+                {/* Cartão Poupar */}
+                <View
+                  style={[
+                    s.subGoalCard,
+                    { backgroundColor: colors.bg, borderColor: colors.border },
+                  ]}
+                >
+                  <Text style={[s.subGoalTitle, { color: colors.subText }]}>
+                    Poupar
+                  </Text>
+                  <View style={s.subGoalRow}>
+                    <Text style={[s.subGoalValue, { color: colors.text }]}>
+                      R$ 2.500,00
+                    </Text>
+                    <Text style={[s.subGoalPercent, { color: colors.text }]}>
+                      83%
+                    </Text>
+                  </View>
+                  <View
+                    style={[
+                      s.budgetBarBg,
+                      {
+                        backgroundColor: isDark ? "#30363d" : "#e5e7eb",
+                        height: 4,
+                      },
+                    ]}
+                  >
+                    <View
+                      style={[
+                        s.budgetBarFill,
+                        { width: `83%`, backgroundColor: colors.primary },
+                      ]}
+                    />
+                  </View>
+                </View>
+
+                {/* Cartão Investir */}
+                <View
+                  style={[
+                    s.subGoalCard,
+                    { backgroundColor: colors.bg, borderColor: colors.border },
+                  ]}
+                >
+                  <Text style={[s.subGoalTitle, { color: colors.subText }]}>
+                    Investir
+                  </Text>
+                  <View style={s.subGoalRow}>
+                    <Text style={[s.subGoalValue, { color: colors.text }]}>
+                      R$ 1.000,00
+                    </Text>
+                    <Text style={[s.subGoalPercent, { color: colors.text }]}>
+                      40%
+                    </Text>
+                  </View>
+                  <View
+                    style={[
+                      s.budgetBarBg,
+                      {
+                        backgroundColor: isDark ? "#30363d" : "#e5e7eb",
+                        height: 4,
+                      },
+                    ]}
+                  >
+                    <View
+                      style={[
+                        s.budgetBarFill,
+                        { width: `40%`, backgroundColor: colors.primary },
+                      ]}
+                    />
+                  </View>
+                </View>
+              </View>
+            </View>
+          </View>
+        )}
       </ScrollView>
 
-      {/* ============================================== */}
-      {/* MENU LATERAL (MODAL)                           */}
-      {/* ============================================== */}
+      {/* MENU LATERAL (MODAL) */}
       <Modal visible={isMenuVisible} transparent animationType="fade">
         <View style={s.menuOverlay}>
           <TouchableOpacity
@@ -784,10 +856,10 @@ export default function DashboardScreen() {
                 <View
                   style={[
                     s.menuIconWrapper,
-                    { backgroundColor: isDark ? "#451a03" : "#fef3c7" },
+                    { backgroundColor: isDark ? "#1f2937" : "#e0e7ff" },
                   ]}
                 >
-                  <Ionicons name="trending-up" size={20} color="#d97706" />
+                  <Ionicons name="trending-up" size={20} color="#38bdf8" />
                 </View>
                 <Text style={[s.menuItemText, { color: colors.text }]}>
                   Meus Investimentos
@@ -804,10 +876,10 @@ export default function DashboardScreen() {
                 <View
                   style={[
                     s.menuIconWrapper,
-                    { backgroundColor: isDark ? "#1e1b4b" : "#e0e7ff" },
+                    { backgroundColor: isDark ? "#1f2937" : "#e0e7ff" },
                   ]}
                 >
-                  <Ionicons name="pie-chart" size={20} color="#4f46e5" />
+                  <Ionicons name="pie-chart" size={20} color={colors.primary} />
                 </View>
                 <Text style={[s.menuItemText, { color: colors.text }]}>
                   Análise Gráfica
@@ -824,33 +896,13 @@ export default function DashboardScreen() {
                 <View
                   style={[
                     s.menuIconWrapper,
-                    { backgroundColor: isDark ? "#052e16" : "#dcfce7" },
+                    { backgroundColor: isDark ? "#1f2937" : "#e0e7ff" },
                   ]}
                 >
-                  <Ionicons name="flag-outline" size={20} color="#22c55e" />
+                  <Ionicons name="flag-outline" size={20} color="#4ade80" />
                 </View>
                 <Text style={[s.menuItemText, { color: colors.text }]}>
                   Metas de Gastos
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[s.menuItem, { borderBottomColor: colors.border }]}
-                onPress={() => {
-                  setIsMenuVisible(false);
-                  alert("Em breve: Exportar para Excel");
-                }}
-              >
-                <View
-                  style={[
-                    s.menuIconWrapper,
-                    { backgroundColor: isDark ? "#0c4a6e" : "#e0f2fe" },
-                  ]}
-                >
-                  <Ionicons name="document-text" size={20} color="#0284c7" />
-                </View>
-                <Text style={[s.menuItemText, { color: colors.text }]}>
-                  Exportar dados para planilha
                 </Text>
               </TouchableOpacity>
 
@@ -864,10 +916,10 @@ export default function DashboardScreen() {
                 <View
                   style={[
                     s.menuIconWrapper,
-                    { backgroundColor: isDark ? "#713f12" : "#fef08a" },
+                    { backgroundColor: isDark ? "#1f2937" : "#e0e7ff" },
                   ]}
                 >
-                  <Ionicons name="help-circle" size={22} color="#ca8a04" />
+                  <Ionicons name="help-circle" size={22} color="#facc15" />
                 </View>
                 <Text style={[s.menuItemText, { color: colors.text }]}>
                   Ajuda e Tutorial
@@ -885,13 +937,13 @@ export default function DashboardScreen() {
               >
                 <Ionicons
                   name="settings-outline"
-                  size={24}
+                  size={22}
                   color={colors.subText}
                 />
                 <Text
                   style={[
                     s.menuItemText,
-                    { color: colors.subText, marginLeft: 16 },
+                    { color: colors.subText, marginLeft: 14 },
                   ]}
                 >
                   Configurações
@@ -910,9 +962,9 @@ export default function DashboardScreen() {
                   }
                 }}
               >
-                <Ionicons name="log-out-outline" size={24} color="#dc2626" />
+                <Ionicons name="log-out-outline" size={22} color="#f87171" />
                 <Text
-                  style={[s.menuItemText, { color: "#dc2626", marginLeft: 16 }]}
+                  style={[s.menuItemText, { color: "#f87171", marginLeft: 14 }]}
                 >
                   Sair da conta
                 </Text>
@@ -921,88 +973,7 @@ export default function DashboardScreen() {
           </View>
         </View>
       </Modal>
-
-      {/* ============================================== */}
-      {/* MODAL: AJUDA E TUTORIAL (PWA)                  */}
-      {/* ============================================== */}
-      <Modal visible={showHelpModal} transparent animationType="fade">
-        <View style={s.helpOverlay}>
-          <View style={[s.helpContent, { backgroundColor: colors.card }]}>
-            <View style={s.helpHeader}>
-              <Text style={[s.helpTitle, { color: colors.text }]}>
-                Ajuda e Tutorial
-              </Text>
-              <TouchableOpacity onPress={() => setShowHelpModal(false)}>
-                <Ionicons name="close" size={24} color={colors.text} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={s.helpSubtitle}>
-                Como instalar a aplicação no telemóvel (PWA)
-              </Text>
-
-              <View style={s.helpSection}>
-                <Ionicons name="logo-apple" size={20} color={colors.text} />
-                <Text style={[s.helpSectionTitle, { color: colors.text }]}>
-                  Para iOS (iPhone/iPad):
-                </Text>
-              </View>
-              <Text style={[s.helpText, { color: colors.subText }]}>
-                1. Abra a aplicação no navegador Safari.
-              </Text>
-              <Text style={[s.helpText, { color: colors.subText }]}>
-                2. Toque no ícone de Partilhar (um quadrado com uma seta
-                apontada para cima, na barra inferior da tela).
-              </Text>
-              <Text style={[s.helpText, { color: colors.subText }]}>
-                3. Deslize as opções para baixo e selecione "Adicionar ao Ecrã
-                Principal".
-              </Text>
-
-              <View style={s.helpSection}>
-                <Ionicons name="logo-android" size={20} color="#34d399" />
-                <Text style={[s.helpSectionTitle, { color: colors.text }]}>
-                  Para Android:
-                </Text>
-              </View>
-              <Text style={[s.helpText, { color: colors.subText }]}>
-                1. Abra a aplicação no navegador Google Chrome.
-              </Text>
-              <Text style={[s.helpText, { color: colors.subText }]}>
-                2. Toque no ícone de Menu (os três pontos verticais no canto
-                superior direito).
-              </Text>
-              <Text style={[s.helpText, { color: colors.subText }]}>
-                3. Selecione a opção "Adicionar ao Ecrã Principal" ou "Instalar
-                Aplicação".
-              </Text>
-
-              <View
-                style={[
-                  s.helpBox,
-                  { backgroundColor: isDark ? "#422006" : "#fef08a" },
-                ]}
-              >
-                <Ionicons name="bulb-outline" size={24} color="#ca8a04" />
-                <Text
-                  style={[
-                    s.helpBoxText,
-                    { color: isDark ? "#fde047" : "#854d0e" },
-                  ]}
-                >
-                  Instalar a aplicação permite-lhe aceder mais rapidamente à sua
-                  conta e usar a plataforma em ecrã inteiro, tal como uma
-                  aplicação nativa!
-                </Text>
-              </View>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
-      {/* ============================================== */}
-      {/* MODAL: SELETOR DE MÊS                          */}
-      {/* ============================================== */}
+      {/* MODAL: SELETOR DE MÊS */}
       <Modal visible={showMonthPicker} transparent animationType="fade">
         <TouchableOpacity
           style={s.monthPickerOverlay}
@@ -1010,7 +981,10 @@ export default function DashboardScreen() {
           onPress={() => setShowMonthPicker(false)}
         >
           <View
-            style={[s.monthPickerContent, { backgroundColor: colors.card }]}
+            style={[
+              s.monthPickerContent,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
           >
             <Text style={[s.monthPickerTitle, { color: colors.text }]}>
               Selecionar mês
@@ -1024,7 +998,7 @@ export default function DashboardScreen() {
                   style={[
                     s.monthPickerItem,
                     active && {
-                      backgroundColor: isDark ? "#312e81" : "#ede9fe",
+                      backgroundColor: isDark ? "#1f2937" : "#e0e7ff",
                     },
                   ]}
                   onPress={() => {
@@ -1054,116 +1028,13 @@ export default function DashboardScreen() {
           </View>
         </TouchableOpacity>
       </Modal>
-
-      {/* MODAL: DEFINIR META GLOBAL DO MÊS */}
-      <Modal visible={showGlobalModal} transparent animationType="fade">
-        <TouchableOpacity
-          style={{
-            flex: 1,
-            backgroundColor: "rgba(0,0,0,0.5)",
-            justifyContent: "center",
-            alignItems: "center",
-          }}
-          activeOpacity={1}
-          onPress={() => setShowGlobalModal(false)}
-        >
-          <TouchableOpacity
-            activeOpacity={1}
-            style={{
-              backgroundColor: colors.card,
-              padding: 24,
-              borderRadius: 20,
-              width: "90%",
-              maxWidth: 400,
-            }}
-          >
-            <Text
-              style={{
-                fontSize: 18,
-                fontWeight: "bold",
-                marginBottom: 8,
-                color: colors.text,
-              }}
-            >
-              Meta do Mês
-            </Text>
-            <Text
-              style={{ fontSize: 13, color: colors.subText, marginBottom: 20 }}
-            >
-              Defina o valor máximo que pretende gastar no débito este mês.
-            </Text>
-
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                backgroundColor: colors.inputBg,
-                padding: 14,
-                borderRadius: 12,
-                marginBottom: 20,
-                borderWidth: 1,
-                borderColor: colors.border,
-              }}
-            >
-              <Text
-                style={{
-                  fontWeight: "bold",
-                  color: colors.subText,
-                  marginRight: 8,
-                }}
-              >
-                {currency}
-              </Text>
-              <TextInput
-                style={{
-                  flex: 1,
-                  fontSize: 20,
-                  fontWeight: "bold",
-                  color: colors.text,
-                }}
-                value={globalInput}
-                onChangeText={setGlobalInput}
-                keyboardType="numeric"
-                placeholder="0,00"
-                placeholderTextColor={colors.subText}
-                autoFocus
-              />
-            </View>
-
-            <TouchableOpacity
-              style={{
-                backgroundColor: colors.primary,
-                padding: 16,
-                borderRadius: 12,
-                alignItems: "center",
-              }}
-              onPress={async () => {
-                const val = parseFloat(globalInput.replace(",", "."));
-                if (isNaN(val) || val <= 0)
-                  return Alert.alert("Erro", "Digite um valor válido.");
-
-                await upsert(null, "Orçamento do Mês", val, currency);
-                setShowGlobalModal(false);
-              }}
-            >
-              <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 15 }}>
-                Salvar Meta
-              </Text>
-            </TouchableOpacity>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
     </SafeAreaView>
   );
 }
 
 // ============================================================
-// COMPONENTES AUXILIARES
+// COMPONENTES E ESTILOS
 // ============================================================
-
-function shortenLabel(label: string) {
-  return label.length > 15 ? `${label.slice(0, 14)}...` : label;
-}
 
 function EmptyChart({ message }: { message: string }) {
   const { colors } = useAppTheme();
@@ -1174,264 +1045,8 @@ function EmptyChart({ message }: { message: string }) {
   );
 }
 
-function ChartLegendItem({
-  label,
-  color,
-  value,
-}: {
-  label: string;
-  color: string;
-  value: string;
-}) {
-  const { colors } = useAppTheme();
-  return (
-    <View style={s.legendItem}>
-      <View style={[s.legendDot, { backgroundColor: color }]} />
-      {/* 👇 Legendas atualizadas com cores dinâmicas para legibilidade perfeita */}
-      <Text style={[s.legendLabel, { color: colors.text }]} numberOfLines={1}>
-        {label}
-      </Text>
-      <Text style={[s.legendValue, { color: colors.text }]}>{value}</Text>
-    </View>
-  );
-}
-
-function CreditCardCarousel({
-  data,
-  currency,
-}: {
-  data: any[];
-  currency: string;
-}) {
-  const [activeIndex, setActiveIndex] = useState(0);
-  const flatListRef = useRef<FlatList>(null);
-  const router = useRouter();
-  const CARD_WIDTH = 280;
-
-  const { colors, isDark } = useAppTheme();
-
-  const handleScroll = (event: any) => {
-    const scrollPosition = event.nativeEvent.contentOffset.x;
-    const index = Math.round(scrollPosition / CARD_WIDTH);
-    setActiveIndex(index);
-  };
-
-  const scrollToIndex = (index: number) => {
-    if (index >= 0 && index <= data.length) {
-      const offsetToScroll = index * (CARD_WIDTH + 16);
-      flatListRef.current?.scrollToOffset({
-        offset: offsetToScroll,
-        animated: true,
-      });
-      setActiveIndex(index);
-    }
-  };
-
-  return (
-    <View style={s.carouselContainer}>
-      <View style={s.carouselRow}>
-        <TouchableOpacity
-          onPress={() => scrollToIndex(activeIndex - 1)}
-          style={s.arrowBtn}
-        >
-          <Text style={s.arrowText}>{"<"}</Text>
-        </TouchableOpacity>
-
-        <FlatList
-          ref={flatListRef}
-          data={data}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          snapToInterval={CARD_WIDTH + 16}
-          decelerationRate="fast"
-          onScroll={handleScroll}
-          scrollEventThrottle={16}
-          keyExtractor={(item) => item.label}
-          style={{ flex: 1 }}
-          contentContainerStyle={{ paddingHorizontal: 16 }}
-          ListFooterComponent={
-            <TouchableOpacity
-              activeOpacity={0.7}
-              style={{
-                width: CARD_WIDTH,
-                height: 190,
-                borderRadius: 16,
-                borderWidth: 2,
-                borderColor: colors.border,
-                borderStyle: "dashed",
-                justifyContent: "center",
-                alignItems: "center",
-                backgroundColor: colors.bg,
-                marginHorizontal: 8,
-              }}
-              onPress={() => router.push("/(tabs)/accounts?openModal=1")}
-            >
-              <Ionicons name="card-outline" size={36} color={colors.subText} />
-              <Text
-                style={{
-                  color: colors.subText,
-                  fontSize: 16,
-                  fontWeight: "bold",
-                  marginTop: 12,
-                }}
-              >
-                Novo Cartão
-              </Text>
-            </TouchableOpacity>
-          }
-          renderItem={({ item, index }) => {
-            const isFocused = index === activeIndex;
-            const nomeBanco = item.label.toLowerCase();
-            let bgColor = item.color;
-            if (nomeBanco.includes("nubank")) bgColor = "#8A05BE";
-            if (nomeBanco.includes("itaú") || nomeBanco.includes("itau"))
-              bgColor = "#EC7000";
-
-            return (
-              <View
-                style={[
-                  s.physicalCard,
-                  {
-                    backgroundColor: bgColor,
-                    transform: [{ scale: isFocused ? 1 : 0.9 }],
-                  },
-                ]}
-              >
-                <View style={s.cardTop}>
-                  <View style={s.chip}>
-                    <View style={s.chipLine} />
-                    <View style={s.chipLine} />
-                    <View style={s.chipLine} />
-                  </View>
-                  <Text style={s.bankLogoText}>{item.label}</Text>
-                </View>
-
-                <View>
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      marginBottom: 6,
-                    }}
-                  >
-                    <View
-                      style={{
-                        width: 10,
-                        height: 10,
-                        borderRadius: 5,
-                        backgroundColor: item.statusColor,
-                        marginRight: 6,
-                        borderWidth: 1,
-                        borderColor: "rgba(255,255,255,0.3)",
-                      }}
-                    />
-                    <Text
-                      style={{
-                        color: item.statusColor,
-                        fontSize: 13,
-                        fontWeight: "bold",
-                      }}
-                    >
-                      {item.statusLabel}
-                    </Text>
-                  </View>
-
-                  <Text style={s.cardLabel}>Valor da Fatura</Text>
-                  <Text style={s.cardAmount}>
-                    {formatCurrency(item.value, currency)}
-                  </Text>
-
-                  <View style={{ marginTop: 12 }}>
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        justifyContent: "space-between",
-                        marginBottom: 4,
-                      }}
-                    >
-                      <Text
-                        style={{ color: "rgba(255,255,255,0.8)", fontSize: 11 }}
-                      >
-                        Limite Utilizado
-                      </Text>
-                      <Text
-                        style={{
-                          color: "rgba(255,255,255,0.9)",
-                          fontSize: 11,
-                          fontWeight: "bold",
-                        }}
-                      >
-                        {Math.round(item.limitPercentage)}%
-                      </Text>
-                    </View>
-                    <View
-                      style={{
-                        height: 4,
-                        backgroundColor: "rgba(255,255,255,0.3)",
-                        borderRadius: 2,
-                        overflow: "hidden",
-                      }}
-                    >
-                      <View
-                        style={{
-                          width: `${item.limitPercentage}%`,
-                          height: "100%",
-                          backgroundColor:
-                            item.limitPercentage > 90 ? "#f87171" : "#4ade80",
-                        }}
-                      />
-                    </View>
-                    <Text
-                      style={{
-                        color: "rgba(255,255,255,0.7)",
-                        fontSize: 10,
-                        marginTop: 4,
-                      }}
-                    >
-                      Disp:{" "}
-                      {formatCurrency(
-                        item.totalLimit - item.usedLimit,
-                        currency,
-                      )}
-                    </Text>
-                  </View>
-                </View>
-              </View>
-            );
-          }}
-        />
-
-        <TouchableOpacity
-          onPress={() => scrollToIndex(activeIndex + 1)}
-          style={s.arrowBtn}
-        >
-          <Text style={s.arrowText}>{">"}</Text>
-        </TouchableOpacity>
-      </View>
-      <View style={s.pagination}>
-        {Array.from({ length: data.length + 1 }).map((_, index) => (
-          <View
-            key={index}
-            style={[
-              s.dot,
-              activeIndex === index
-                ? [s.dotActive, { backgroundColor: colors.primary }]
-                : [s.dotInactive, { backgroundColor: colors.border }],
-            ]}
-          />
-        ))}
-      </View>
-    </View>
-  );
-}
-
 const s = StyleSheet.create({
-  safe: {
-    flex: 1,
-    ...(Platform.OS === "web"
-      ? ({ overflow: "hidden", maxWidth: "100%" } as any)
-      : {}),
-  },
+  safe: { flex: 1 },
   scroll: { paddingBottom: 32 },
 
   header: {
@@ -1440,358 +1055,221 @@ const s = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 20,
     paddingTop: 16,
-    paddingBottom: 8,
+    paddingBottom: 12,
   },
   greeting: { fontSize: 22, fontWeight: "bold" },
-  monthLabel: {
-    fontSize: 13,
-    marginTop: 2,
-    textTransform: "capitalize",
-  },
-
+  monthLabel: { fontSize: 13, marginTop: 2, textTransform: "capitalize" },
   monthBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: 6,
     borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 6,
   },
-  monthBtnText: { fontSize: 12, fontWeight: "700", color: "#6366f1" },
+  monthBtnText: { fontSize: 12, fontWeight: "700" },
+  menuIconButton: { padding: 8, borderRadius: 20 },
 
   balanceCard: {
-    margin: 20,
-    borderRadius: 20,
-    backgroundColor: "#6366f1",
-    padding: 24,
+    marginHorizontal: 20,
+    marginTop: 8,
+    borderRadius: 24,
+    padding: 22,
   },
-  balanceLabel: { color: "#c7d2fe", fontSize: 13, marginBottom: 6 },
-  balanceValue: {
-    fontSize: 32,
-    fontWeight: "bold",
-    marginBottom: 20,
+  balanceCardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 14,
   },
-  balanceRow: { flexDirection: "row", alignItems: "center" },
+  balanceLabel: { color: "#d1d5db", fontSize: 12, marginBottom: 4 },
+  balanceValue: { fontSize: 30, fontWeight: "bold", color: "#fff" },
+  balanceToggle: {
+    flexDirection: "row",
+    backgroundColor: "rgba(0,0,0,0.2)",
+    borderRadius: 12,
+    padding: 2,
+  },
+  balanceToggleBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+  },
+  balanceToggleBtnActive: { backgroundColor: "#fff" },
+  balanceToggleText: { fontSize: 10, fontWeight: "700", color: "#d1d5db" },
+  balanceToggleTextActive: { color: "#000" },
+  balanceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.15)",
+    paddingTop: 14,
+  },
   balanceItem: { flex: 1 },
-  balanceItemLabel: { color: "#c7d2fe", fontSize: 12, marginBottom: 4 },
-  balanceItemValue: { fontSize: 16, fontWeight: "600" },
+  balanceItemLabel: { color: "#d1d5db", fontSize: 11, marginBottom: 2 },
+  balanceItemValue: { fontSize: 14, fontWeight: "bold" },
   divider: {
     width: 1,
-    height: 32,
-    backgroundColor: "#818cf8",
-    marginHorizontal: 16,
+    height: 26,
+    backgroundColor: "rgba(255,255,255,0.15)",
+    marginHorizontal: 12,
   },
 
-  section: { marginTop: 8, paddingHorizontal: 20, marginBottom: 16 },
+  section: { marginTop: 24, paddingHorizontal: 20 },
   sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 12,
   },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    marginBottom: 12,
-  },
+  sectionTitle: { fontSize: 16, fontWeight: "700" },
   seeAll: { fontSize: 13, fontWeight: "600" },
 
-  chartCard: {
-    borderRadius: 12,
+  accountCard: {
+    borderRadius: 16,
     padding: 16,
-    marginBottom: 8,
-    overflow: "hidden",
+    marginRight: 12,
+    minWidth: 140,
+    borderLeftWidth: 4,
+    borderWidth: 1,
   },
-  chartLoading: { paddingVertical: 36 },
-  pieWrap: { alignItems: "center", paddingVertical: 8 },
-  pieCenter: { alignItems: "center", justifyContent: "center" },
-  pieCenterLabel: { fontSize: 11, fontWeight: "600" },
-  pieCenterValue: {
+  accountName: { fontSize: 13, fontWeight: "600", marginBottom: 6 },
+  accountBalance: { fontSize: 15, fontWeight: "bold", marginBottom: 4 },
+  accountCreditLabel: { fontSize: 12, marginBottom: 4 },
+  accountType: { fontSize: 11, textTransform: "capitalize" },
+  addAccountCard: {
+    width: 140,
+    height: 100,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderStyle: "dashed",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  addAccountText: {
     fontSize: 12,
-    fontWeight: "800",
-    marginTop: 2,
+    fontWeight: "600",
+    marginTop: 6,
+    textAlign: "center",
   },
-  legend: { gap: 10, marginTop: 8 },
-  legendItem: { flexDirection: "row", alignItems: "center", gap: 8 },
-  legendDot: { width: 10, height: 10, borderRadius: 5 },
-  legendLabel: { flex: 1, fontSize: 13, fontWeight: "600" },
-  legendValue: { fontSize: 13, fontWeight: "700" },
+
+  // 👇 Novos estilos do Gráfico Lado a Lado
+  categoryMainCard: { borderRadius: 16, padding: 16, borderWidth: 1 },
+  chartRowLayout: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  pieWrapLeft: { alignItems: "center", justifyContent: "center" },
+  pieCenter: { alignItems: "center", justifyContent: "center" },
+  pieCenterLabel: { fontSize: 9, fontWeight: "600" },
+  pieCenterValue: { fontSize: 11, fontWeight: "800", marginTop: 2 },
+  legendRight: { flex: 1, marginLeft: 20, gap: 10 },
+  legendItemRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  legendDot: { width: 8, height: 8, borderRadius: 4, marginRight: 8 },
+  legendLabel: { fontSize: 11, fontWeight: "500", marginRight: 8 },
+  legendValue: { fontSize: 11, fontWeight: "700" },
+  chartLoading: { paddingVertical: 36 },
   emptyChart: {
     minHeight: 120,
     alignItems: "center",
     justifyContent: "center",
   },
-  emptyText: { fontSize: 14, fontStyle: "italic" },
+  emptyText: { fontSize: 13, fontStyle: "italic" },
 
-  carouselContainer: { alignItems: "center", marginTop: 4 },
-  carouselRow: {
+  // 👇 Novos estilos das Metas
+  budgetCard: { borderRadius: 16, padding: 16, borderWidth: 1 },
+  budgetHeader: {
     flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
+    marginBottom: 10,
+  },
+  budgetText: { fontSize: 13, fontWeight: "700" },
+  budgetEditText: { fontSize: 11, fontWeight: "500" },
+  budgetBarBg: {
+    height: 6,
+    borderRadius: 3,
     overflow: "hidden",
-    justifyContent: "space-between",
-    width: "100%",
-  },
-  arrowBtn: { padding: 8, zIndex: 10 },
-  arrowText: { fontSize: 24, fontWeight: "bold", color: "#9ca3af" },
-  physicalCard: {
-    width: 280,
-    height: 190,
-    borderRadius: 16,
-    padding: 20,
-    marginHorizontal: 8,
-    justifyContent: "space-between",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  cardTop: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-  },
-  chip: {
-    width: 38,
-    height: 28,
-    backgroundColor: "#fbbf24",
-    borderRadius: 6,
-    justifyContent: "space-evenly",
-    paddingHorizontal: 4,
-    opacity: 0.9,
-  },
-  chipLine: { height: 1, backgroundColor: "#d97706", width: "100%" },
-  bankLogoText: {
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "900",
-    textTransform: "uppercase",
-    opacity: 0.9,
-  },
-  cardLabel: { color: "rgba(255,255,255,0.7)", fontSize: 12, marginBottom: 2 },
-  cardAmount: {
-    color: "#fff",
-    fontSize: 26,
-    fontWeight: "bold",
-    letterSpacing: 1,
-  },
-  pagination: { flexDirection: "row", marginTop: 20, gap: 8 },
-  dot: { width: 8, height: 8, borderRadius: 4 },
-  dotActive: { width: 20 },
-  dotInactive: {},
-  accountCard: {
-    borderRadius: 12,
-    padding: 16,
-    marginRight: 12,
-    minWidth: 140,
-    borderLeftWidth: 4,
-    elevation: 2,
-  },
-  accountName: {
-    fontSize: 13,
-    fontWeight: "600",
     marginBottom: 6,
   },
-  accountBalance: {
-    fontSize: 16,
-    fontWeight: "bold",
-    marginBottom: 4,
-  },
-  accountType: { fontSize: 11, textTransform: "capitalize" },
+  budgetBarFill: { height: "100%", borderRadius: 3 },
+  budgetPercentText: { fontSize: 11, fontWeight: "bold", textAlign: "right" },
 
+  subGoalsContainer: { flexDirection: "row", gap: 12, marginTop: 16 },
+  subGoalCard: { flex: 1, borderRadius: 12, padding: 12, borderWidth: 1 },
+  subGoalTitle: { fontSize: 11, fontWeight: "600", marginBottom: 8 },
+  subGoalRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  subGoalValue: { fontSize: 13, fontWeight: "bold" },
+  subGoalPercent: { fontSize: 11, fontWeight: "bold" }, // Estilos do Menu Lateral
   menuOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.4)",
+    backgroundColor: "rgba(0,0,0,0.6)",
     flexDirection: "row",
     justifyContent: "flex-end",
   },
   menuCloseArea: { flex: 1 },
   menuContent: {
-    width: "75%",
+    width: "80%",
     maxWidth: 320,
     height: "100%",
     padding: 24,
     justifyContent: "space-between",
-    shadowColor: "#000",
-    shadowOffset: { width: -2, height: 0 },
-    shadowOpacity: 0.2,
-    elevation: 5,
   },
   menuHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 40,
-    marginTop: Platform.OS === "ios" ? 40 : 10,
+    marginBottom: 30,
+    marginTop: Platform.OS === "ios" ? 30 : 0,
   },
-  menuTitle: { fontSize: 24, fontWeight: "bold" },
+  menuTitle: { fontSize: 22, fontWeight: "bold" },
   menuBody: { flex: 1 },
   menuItem: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 16,
+    paddingVertical: 14,
     borderBottomWidth: 1,
   },
   menuIconWrapper: {
-    width: 36,
-    height: 36,
+    width: 34,
+    height: 34,
     borderRadius: 10,
     justifyContent: "center",
     alignItems: "center",
     marginRight: 12,
   },
-  menuItemText: { fontSize: 16, fontWeight: "600", flex: 1 },
-  menuFooter: {
-    borderTopWidth: 1,
-    paddingTop: 16,
-    paddingBottom: Platform.OS === "ios" ? 20 : 0,
-  },
-
+  menuItemText: { fontSize: 15, fontWeight: "600", flex: 1 },
+  menuFooter: { borderTopWidth: 1, paddingTop: 14 },
+  // Estilos do Seletor de Mês
   monthPickerOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.45)",
+    backgroundColor: "rgba(0,0,0,0.6)",
     justifyContent: "flex-end",
   },
   monthPickerContent: {
-    borderRadius: 20,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     padding: 20,
-    margin: 12,
+    borderWidth: 1,
   },
-  monthPickerTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    marginBottom: 12,
-  },
+  monthPickerTitle: { fontSize: 16, fontWeight: "700", marginBottom: 12 },
   monthPickerItem: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 13,
-    paddingHorizontal: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
     borderRadius: 10,
   },
   monthPickerItemText: { fontSize: 14 },
-
-  budgetCard: {
-    backgroundColor: "#6366f1",
-    borderRadius: 16,
-    padding: 16,
-    elevation: 2,
-  },
-  budgetHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  budgetText: { fontSize: 14, fontWeight: "600", color: "#e0e7ff" },
-  budgetBarBg: {
-    height: 8,
-    backgroundColor: "#4f46e5",
-    borderRadius: 4,
-    overflow: "hidden",
-    marginBottom: 8,
-  },
-  budgetBarFill: { height: 8, borderRadius: 4 },
-  budgetValues: { fontSize: 12, color: "#c7d2fe", marginBottom: 16 },
-  budgetTopCats: {
-    borderTopWidth: 1,
-    borderTopColor: "#818cf8",
-    paddingTop: 12,
-  },
-  budgetTopTitle: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#c7d2fe",
-    marginBottom: 8,
-  },
-  budgetTopRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 6,
-  },
-  budgetCatName: {
-    fontSize: 13,
-    color: "#fff",
-    fontWeight: "500",
-    maxWidth: 120,
-  },
-  budgetCatValue: { fontSize: 13, color: "#fff", fontWeight: "600" },
-  balanceCardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-  },
-  balanceToggle: {
-    flexDirection: "row",
-    backgroundColor: "rgba(255,255,255,0.2)",
-    borderRadius: 8,
-    padding: 2,
-    marginTop: 4,
-  },
-  balanceToggleBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-  },
-  balanceToggleBtnActive: { backgroundColor: "#fff" },
-  balanceToggleText: { fontSize: 11, fontWeight: "700", color: "#e0e7ff" },
-  balanceToggleTextActive: { color: "#6366f1" },
-
-  helpOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-  helpContent: {
-    borderRadius: 20,
-    padding: 24,
-    width: "100%",
-    maxWidth: 400,
-    maxHeight: "80%",
-  },
-  helpHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 20,
-  },
-  helpTitle: { fontSize: 20, fontWeight: "bold" },
-  helpSubtitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#4f46e5",
-    marginBottom: 16,
-  },
-  helpSection: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  helpSectionTitle: { fontSize: 16, fontWeight: "bold" },
-  helpText: {
-    fontSize: 14,
-    marginBottom: 6,
-    lineHeight: 20,
-    paddingLeft: 4,
-  },
-  helpBox: {
-    flexDirection: "row",
-    padding: 12,
-    borderRadius: 12,
-    marginTop: 24,
-    gap: 12,
-    alignItems: "center",
-  },
-  helpBoxText: {
-    flex: 1,
-    fontSize: 13,
-    fontWeight: "600",
-    lineHeight: 18,
-  },
 });

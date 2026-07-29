@@ -5,9 +5,9 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
-  Dimensions,
   ActivityIndicator,
   Platform,
+  useWindowDimensions, // 👈 Adicionada a ferramenta para calcular larguras dinamicamente
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, {
@@ -25,10 +25,7 @@ import { useFixedExpenses } from "@/hooks/useFixedExpenses";
 import { useInstallments } from "@/hooks/useInstallments";
 import { formatCurrency } from "@/utils";
 import { useAuth } from "@/hooks/useAuth";
-import { useAppTheme } from "@/hooks/useTheme"; // 👈 Motor de temas global
-
-const { width: SW } = Dimensions.get("window");
-const CHART_W = SW - 48;
+import { useAppTheme } from "@/hooks/useTheme";
 
 const PALETTE = [
   "#6366f1",
@@ -85,7 +82,12 @@ function slicePath(
 export default function ChartsScreen() {
   const router = useRouter();
   const { profile } = useAuth();
-  const { colors, isDark } = useAppTheme(); // 👈 Cores dinâmicas ativas
+  const { colors, isDark } = useAppTheme();
+
+  // 👈 1. Capturamos a largura real da tela no momento em que abre
+  const { width: SW } = useWindowDimensions();
+  // 👈 2. Descontamos 80px (24px de cada lado da ScrollView + 16px de cada lado do Cartão)
+  const CHART_W = SW - 80;
 
   const { expenses: fixedList } = useFixedExpenses();
   const { installments } = useInstallments();
@@ -98,16 +100,12 @@ export default function ChartsScreen() {
   const fetchRange = useMemo(() => {
     const today = new Date();
     const year = today.getFullYear();
-
     const sixMonthsAgo = new Date();
     sixMonthsAgo.setMonth(today.getMonth() - 5);
     sixMonthsAgo.setDate(1);
-
     const firstDayOfYear = new Date(year, 0, 1);
-
     const fetchFrom =
       sixMonthsAgo < firstDayOfYear ? sixMonthsAgo : firstDayOfYear;
-
     return {
       from: fetchFrom.toISOString().split("T")[0],
       to: new Date(year, 11, 31).toISOString().split("T")[0],
@@ -227,7 +225,6 @@ export default function ChartsScreen() {
 
       let income = 0;
       let expense = 0;
-
       transactions.forEach((t) => {
         if (t.date >= mFrom && t.date <= mTo) {
           const amt = Number(t.amount) || 0;
@@ -252,16 +249,19 @@ export default function ChartsScreen() {
     1,
   );
 
-  const PIE_R = 110;
-  const HOLE_R = 65;
-  const CX = CHART_W / 2;
-  const CY = 135;
-
   function renderPie() {
+    // 👈 3. Ajuste do Raio para impedir que corte a tela
+    const PIE_R = Math.min(110, CHART_W / 2 - 10);
+    const HOLE_R = PIE_R * 0.6; // Mantém a proporção do buraco
+    const CX = CHART_W / 2;
+    const CY = PIE_R + 25;
+    const SVG_H = PIE_R * 2 + 50;
+
     let startAngle = 0;
+
     return (
       <View>
-        <Svg width={CHART_W} height={280}>
+        <Svg width={CHART_W} height={SVG_H}>
           <G>
             {pieData.map((d, i) => {
               const end = startAngle + d.deg;
@@ -352,10 +352,12 @@ export default function ChartsScreen() {
 
   function renderBar() {
     const BAR_H = 200;
-    const BAR_W = 28;
-    const GAP =
-      (CHART_W - barData.length * BAR_W * 2 - 32) / (barData.length + 1);
     const PADDING = 16;
+
+    // 👈 4. Largura e espaços dinâmicos para as barras não se sobreporem
+    const availW = CHART_W - PADDING * 2;
+    const BAR_W = Math.min(20, availW / (barData.length * 3));
+    const GAP = (availW - barData.length * BAR_W * 2) / (barData.length + 1);
 
     return (
       <View>
@@ -429,7 +431,7 @@ export default function ChartsScreen() {
                   x={x + BAR_W}
                   y={BAR_H + 20}
                   textAnchor="middle"
-                  fontSize="11"
+                  fontSize="10"
                   fill={colors.subText}
                 >
                   {d.label}
@@ -532,8 +534,8 @@ export default function ChartsScreen() {
 
           {annualData.map((d, i) => (
             <G key={`points-${i}`}>
-              <Circle cx={getX(i)} cy={getY(d.income)} r="4" fill="#22c55e" />
-              <Circle cx={getX(i)} cy={getY(d.expense)} r="4" fill="#ef4444" />
+              <Circle cx={getX(i)} cy={getY(d.income)} r="3" fill="#22c55e" />
+              <Circle cx={getX(i)} cy={getY(d.expense)} r="3" fill="#ef4444" />
               <SvgText
                 x={getX(i)}
                 y={200 - 4}
@@ -806,12 +808,7 @@ const s = StyleSheet.create({
   },
   title: { fontSize: 17, fontWeight: "700" },
 
-  toggle: {
-    flexDirection: "row",
-    margin: 20,
-    borderRadius: 12,
-    padding: 4,
-  },
+  toggle: { flexDirection: "row", margin: 20, borderRadius: 12, padding: 4 },
   toggleBtn: {
     flex: 1,
     flexDirection: "row",
@@ -826,11 +823,7 @@ const s = StyleSheet.create({
   toggleTextActive: { color: "#fff" },
 
   scroll: { paddingBottom: 40, paddingHorizontal: 24 },
-  subtitle: {
-    fontSize: 12,
-    textAlign: "center",
-    marginBottom: 16,
-  },
+  subtitle: { fontSize: 12, textAlign: "center", marginBottom: 16 },
 
   chartBox: {
     borderRadius: 20,
