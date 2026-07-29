@@ -19,7 +19,7 @@ import { useCategories } from "@/hooks/useCategories";
 import { useBudgetGoals } from "@/hooks/useBudgetGoals";
 import { useAuth } from "@/hooks/useAuth";
 import { useRouter } from "expo-router";
-import { useAppTheme } from "@/hooks/useTheme"; // 👈 Motor de temas global
+import { useAppTheme } from "@/hooks/useTheme";
 
 const { width: SW } = Dimensions.get("window");
 
@@ -93,11 +93,11 @@ export default function BudgetScreen() {
   const router = useRouter();
   const { profile } = useAuth();
   const { categories } = useCategories();
-  const { goals, totalBudget, upsert, remove } = useBudgetGoals();
-  const { colors, isDark } = useAppTheme(); // 👈 Cores dinâmicas ativas
 
-  const [showGlobalModal, setShowGlobalModal] = useState(false);
-  const [globalInput, setGlobalInput] = useState("");
+  // O totalBudget original não é mais usado, extraímos apenas os objetivos e as funções
+  const { goals, upsert, remove } = useBudgetGoals();
+  const { colors, isDark } = useAppTheme();
+
   const [monthOffset, setMonthOffset] = useState(0);
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [showCatPicker, setShowCatPicker] = useState(false);
@@ -154,8 +154,16 @@ export default function BudgetScreen() {
     return map;
   }, [transactions]);
 
+  // CÁLCULO AUTOMÁTICO DA META GLOBAL
+  const dynamicTotalBudget = useMemo(() => {
+    return goals
+      .filter((g) => g.category_id != null) // Apenas metas associadas a categorias
+      .reduce((sum, g) => sum + (g.monthly_limit || 0), 0);
+  }, [goals]);
+
   const totalSpent = Object.values(spentByCategory).reduce((s, v) => s + v, 0);
-  const totalPct = totalBudget > 0 ? (totalSpent / totalBudget) * 100 : 0;
+  const totalPct =
+    dynamicTotalBudget > 0 ? (totalSpent / dynamicTotalBudget) * 100 : 0;
 
   const catRows = useMemo(() => {
     const seen = new Set<string>();
@@ -210,14 +218,16 @@ export default function BudgetScreen() {
 
     const biggestExpense = catRows[0];
     const biggestPct =
-      totalBudget > 0 ? (biggestExpense.spent / totalBudget) * 100 : 0;
+      dynamicTotalBudget > 0
+        ? (biggestExpense.spent / dynamicTotalBudget) * 100
+        : 0;
 
     if (totalPct > 100) {
       return `⚠️ ${biggestExpense.name} concentra o maior gasto: ${biggestPct.toFixed(0)}% da meta. Orçamento estourado!`;
     }
 
     return `💡 ${biggestExpense.name} concentra o maior gasto: ${biggestPct.toFixed(0)}% da meta. Tudo dentro do planejado.`;
-  }, [catRows, totalBudget, totalPct]);
+  }, [catRows, dynamicTotalBudget, totalPct]);
 
   const projection = useMemo(() => {
     const today = new Date();
@@ -245,10 +255,11 @@ export default function BudgetScreen() {
 
     const dailyAvg = daysPassed > 0 ? totalSpent / daysPassed : 0;
     const projTotal = daysPassed > 0 ? totalSpent + dailyAvg * daysLeft : 0;
-    const projStatusColor = projTotal > totalBudget ? "#ef4444" : "#22c55e";
+    const projStatusColor =
+      projTotal > dynamicTotalBudget ? "#ef4444" : "#22c55e";
 
     return { dailyAvg, daysLeft, projTotal, projStatusColor };
-  }, [from, totalSpent, totalBudget]);
+  }, [from, totalSpent, dynamicTotalBudget]);
 
   const openEdit = (
     catId: string,
@@ -353,24 +364,14 @@ export default function BudgetScreen() {
       >
         <View style={s.darkCard}>
           <View style={s.darkCardTop}>
-            <View
-              style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
-            >
-              <Text style={s.darkCardSmall}>ORÇAMENTO MENSAL</Text>
-              <TouchableOpacity
-                onPress={() => {
-                  setGlobalInput(totalBudget > 0 ? totalBudget.toString() : "");
-                  setShowGlobalModal(true);
-                }}
-              >
-                <Ionicons name="pencil" size={14} color="#a5b4fc" />
-              </TouchableOpacity>
-            </View>
+            <Text style={s.darkCardSmall}>ORÇAMENTO MENSAL</Text>
             <Text style={s.darkCardSmall}>{mLabel}</Text>
           </View>
 
           <View style={s.darkCardMid}>
-            <Text style={s.darkCardBig}>{fmt(totalBudget, currency)}</Text>
+            <Text style={s.darkCardBig}>
+              {fmt(dynamicTotalBudget, currency)}
+            </Text>
           </View>
 
           <View style={s.darkProgressBg}>
@@ -572,7 +573,7 @@ export default function BudgetScreen() {
                       {fmt(totalSpent, currency)}
                     </Text>
                     <Text style={s.detailsSubValue}>
-                      de {fmt(totalBudget, currency)} no orçamento
+                      de {fmt(dynamicTotalBudget, currency)} no orçamento
                     </Text>
                   </View>
                   <View style={s.detailsCircleWrap}>
@@ -852,65 +853,6 @@ export default function BudgetScreen() {
               </View>
             </TouchableOpacity>
           )}
-        </TouchableOpacity>
-      </Modal>
-
-      {/* MODAL: ORÇAMENTO GLOBAL DO MÊS */}
-      <Modal visible={showGlobalModal} transparent animationType="slide">
-        <TouchableOpacity
-          style={s.overlay}
-          activeOpacity={1}
-          onPress={() => setShowGlobalModal(false)}
-        >
-          <TouchableOpacity
-            activeOpacity={1}
-            style={[s.editBox, { backgroundColor: colors.card }]}
-          >
-            <Text style={[s.editTitle, { color: colors.text }]}>
-              Meta do Mês
-            </Text>
-            <Text style={[s.editSub, { color: colors.subText }]}>
-              Defina o valor máximo de gastos para este mês.
-            </Text>
-
-            <View
-              style={[
-                s.editInputRow,
-                {
-                  backgroundColor: colors.inputBg,
-                  borderColor: colors.border,
-                  borderWidth: 1,
-                },
-              ]}
-            >
-              <Text style={[s.editCurrency, { color: colors.subText }]}>
-                {currency}
-              </Text>
-              <TextInput
-                style={[s.editInput, { color: colors.text }]}
-                value={globalInput}
-                onChangeText={setGlobalInput}
-                keyboardType="numeric"
-                placeholder="0,00"
-                placeholderTextColor={colors.subText}
-                autoFocus
-              />
-            </View>
-
-            <TouchableOpacity
-              style={[s.saveBtn, { backgroundColor: colors.primary }]}
-              onPress={async () => {
-                const val = parseFloat(globalInput.replace(",", "."));
-                if (isNaN(val) || val <= 0)
-                  return Alert.alert("Erro", "Digite um valor válido.");
-
-                await upsert(null, "Orçamento do Mês", val, currency);
-                setShowGlobalModal(false);
-              }}
-            >
-              <Text style={s.saveBtnText}>Salvar Meta do Mês</Text>
-            </TouchableOpacity>
-          </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
     </SafeAreaView>
