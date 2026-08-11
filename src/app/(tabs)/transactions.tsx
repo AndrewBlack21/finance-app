@@ -457,8 +457,15 @@ function TransactionItem({
   onDelete,
 }: any) {
   const isIncome = t.type === "income";
-  const isInvoicePayment = t.title && t.title.startsWith("Fatura");
-  const color = isIncome ? "#16a34a" : "#dc2626";
+
+  // 👇 1. Nova lógica para detetar qualquer movimentação de fatura (Pagamento, Cancelado, Estorno)
+  const isInvoicePayment =
+    t.title && (t.title.includes("Fatura") || t.title.includes("Estorno"));
+  const isCanceled = t.title && t.title.includes("(Cancelado)");
+
+  const baseColor = isIncome ? "#16a34a" : "#dc2626";
+  // 👇 2. Se a transação foi cancelada, fica cinzenta para não confundir o utilizador
+  const displayColor = isCanceled ? colors.subText : baseColor;
 
   return (
     <View style={[s.item, { backgroundColor: colors.card }]}>
@@ -467,7 +474,7 @@ function TransactionItem({
           s.itemIcon,
           {
             backgroundColor: isInvoicePayment
-              ? "#6366f118"
+              ? "#6366f118" // Fundo azul claro para cartões
               : (t.category?.color ?? colors.primary) + "20",
           },
         ]}
@@ -477,14 +484,27 @@ function TransactionItem({
             isInvoicePayment ? "card" : isIncome ? "arrow-up" : "arrow-down"
           }
           size={20}
-          color={isInvoicePayment ? colors.primary : color}
+          color={isInvoicePayment ? colors.primary : displayColor}
         />
       </View>
       <View style={s.itemInfo}>
-        <Text style={[s.itemTitle, { color: colors.text }]}>{t.title}</Text>
+        {/* Título riscado se estiver cancelado */}
+        <Text
+          style={[
+            s.itemTitle,
+            {
+              color: isCanceled ? colors.subText : colors.text,
+              textDecorationLine: isCanceled ? "line-through" : "none",
+            },
+          ]}
+        >
+          {t.title}
+        </Text>
+
+        {/* 👇 3. Subtítulo Limpo: Mostra apenas a data se for fatura */}
         <Text style={[s.itemCategory, { color: colors.subText }]}>
           {isInvoicePayment
-            ? `Pagamento de Fatura · ${formatDate(t.date)}`
+            ? `Data: ${formatDate(t.date)}`
             : `${t.category?.name ?? "Sem categoria"} · ${formatDate(t.date)}`}
         </Text>
       </View>
@@ -492,25 +512,32 @@ function TransactionItem({
         <Text
           style={[
             s.itemAmount,
-            { color: isInvoicePayment ? colors.text : color },
+            {
+              color: displayColor,
+              textDecorationLine: isCanceled ? "line-through" : "none",
+            },
           ]}
         >
           {isIncome ? "+" : "-"}
           {formatCurrency(t.amount, currency)}
         </Text>
+
         <View style={s.itemActions}>
+          {/* 👇 4. Esconde Editar e Apagar para Faturas (Protege o banco de dados) */}
           {!isInvoicePayment && (
-            <TouchableOpacity onPress={onEdit} style={s.editBtn}>
-              <Ionicons
-                name="create-outline"
-                size={14}
-                color={colors.primary}
-              />
-            </TouchableOpacity>
+            <>
+              <TouchableOpacity onPress={onEdit} style={s.editBtn}>
+                <Ionicons
+                  name="create-outline"
+                  size={14}
+                  color={colors.primary}
+                />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={onDelete} style={s.deleteBtn}>
+                <Ionicons name="trash-outline" size={14} color="#ef4444" />
+              </TouchableOpacity>
+            </>
           )}
-          <TouchableOpacity onPress={onDelete} style={s.deleteBtn}>
-            <Ionicons name="trash-outline" size={14} color="#ef4444" />
-          </TouchableOpacity>
         </View>
       </View>
     </View>

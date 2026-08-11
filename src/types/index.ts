@@ -26,6 +26,7 @@ export interface Account {
   color: string;
   created_at: string;
   due_day: number | null;
+  closing_day?: number | null;
 }
 export interface InstallmentGroup {
   account_id: string;
@@ -76,6 +77,18 @@ export interface Goal {
   deadline: string | null;
   color: string;
   created_at: string;
+}
+
+export interface Invoice {
+  id: string;
+  account_id: string;
+  reference: string;
+  closing_date: string;
+  due_date: string;
+  status: "aberta" | "fechada" | "paga" | "atrasada";
+  paid_amount?: number | null;
+  paid_from_account_id?: string | null;
+  transaction_id?: string | null;
 }
 
 // ============================================================
@@ -181,19 +194,22 @@ export interface Installment {
   // Calculados no frontend
   remaining_installments?: number;
   progress?: number;
-  invoice_paid_month: string | null; // ex: "2026-07"
+  invoice_id?: string | null;
+  invoice?: Invoice | null;
 }
 
-export type CreateInstallment = Omit<
-  Installment,
-  | "id"
-  | "user_id"
-  | "created_at"
-  | "account"
-  | "remaining_installments"
-  | "progress"
->;
-export type UpdateInstallment = Partial<CreateInstallment>;
+export interface CreateInstallment {
+  title: string;
+  total_amount: number;
+  total_installments: number;
+  installment_amount: number;
+  account_id: string;
+  currency: string;
+  start_date?: string; // 👇 Garanta que o start_date existe aqui!
+}
+export type UpdateInstallment = Partial<CreateInstallment> & {
+  paid_installments?: number;
+};
 export interface ServiceResponse<T> {
   data: T | null;
   error: string | null;

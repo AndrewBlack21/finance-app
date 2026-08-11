@@ -9,7 +9,44 @@ export function useFixedExpenses() {
   const fetch = async () => {
     setIsLoading(true);
     const { data } = await fixedExpenseService.list();
-    setExpenses(data ?? []);
+
+    let validExpenses = data ?? [];
+
+    // 👇 INTELIGÊNCIA DE VIRADA DE MÊS (Auto-Reset) 👇
+    const currentMonth = new Date().toISOString().slice(0, 7); // Ex: "2026-08"
+
+    // 1. Verifica se há alguma conta que foi paga num mês anterior
+    const hasOutdated = validExpenses.some(
+      (e) => e.is_paid && e.paid_at && e.paid_at.slice(0, 7) < currentMonth,
+    );
+
+    if (hasOutdated) {
+      // 2. Atualiza automaticamente no banco as contas do passado para "pendente"
+      const updated = await Promise.all(
+        validExpenses.map(async (expense) => {
+          if (
+            expense.is_paid &&
+            expense.paid_at &&
+            expense.paid_at.slice(0, 7) < currentMonth
+          ) {
+            // Volta a conta para o estado original (Não paga)
+            const { data: refreshed } = await fixedExpenseService.update(
+              expense.id,
+              {
+                is_paid: false,
+                paid_at: null,
+              } as any,
+            );
+
+            return refreshed || { ...expense, is_paid: false, paid_at: null };
+          }
+          return expense;
+        }),
+      );
+      validExpenses = updated; // Atualiza a lista visual com os dados corrigidos
+    }
+
+    setExpenses(validExpenses);
     setIsLoading(false);
   };
 
@@ -25,9 +62,7 @@ export function useFixedExpenses() {
     return { error };
   };
 
-  // Paga a conta e cria transação de despesa automaticamente
   const markAsPaid = async (expense: FixedExpense) => {
-    // 👇 TRAVA DE SEGURANÇA NO BACKEND 👇
     if (!expense.account_id) {
       return {
         error:
@@ -35,7 +70,10 @@ export function useFixedExpenses() {
       };
     }
 
-    // Cria a transação de despesa (Já não tem a linha "amount" duplicada que estava a dar erro de compilação antes)
+    // Usamos a data de hoje para registar a transação
+    const todayStr = new Date().toISOString().split("T")[0];
+
+    // Cria a transação de despesa
     const { error: txError } = await transactionService.create({
       title: `${expense.title} (Conta Fixa)`,
       amount: expense.amount,
@@ -43,20 +81,22 @@ export function useFixedExpenses() {
       type: "expense",
       account_id: expense.account_id,
       category_id: expense.category_id,
-      date: new Date().toISOString().split("T")[0],
+      date: todayStr,
       notes: "Gerado automaticamente por conta fixa",
       recurring: true,
     } as any);
 
     if (txError) return { error: txError };
 
-    // Marca como paga
+    // Marca a conta como paga. O teu backend já deve tratar do 'paid_at'
     const { data, error } = await fixedExpenseService.markAsPaid(
       expense.id,
       expense.account_id,
     );
-    if (data)
+
+    if (data) {
       setExpenses((prev) => prev.map((e) => (e.id === expense.id ? data : e)));
+    }
 
     return { error };
   };
@@ -77,6 +117,7 @@ export function useFixedExpenses() {
     setIsLoading(false);
     return { error };
   };
+
   // Totais
   const totalMonth = expenses.reduce((s, e) => s + e.amount, 0);
   const totalPaid = expenses
@@ -85,46 +126,6 @@ export function useFixedExpenses() {
   const totalPending = totalMonth - totalPaid;
   const pendingCount = expenses.filter((e) => !e.is_paid).length;
 
-  // ============================================================
-  // INTELIGÊNCIA: GERA CÓPIAS PARA O NOVO MÊS
-  // ============================================================
-  const generateMonthlyFixedExpenses = async () => {
-    setIsLoading(true);
-
-    const currentMonth = new Date().toISOString().slice(0, 7); // Ex: "2026-07"
-
-    // 1. Verifica se já geramos contas para este mês (para não duplicar)
-    const { data: currentExpenses } =
-      await fixedExpenseService.getForMonth(currentMonth);
-
-    if (currentExpenses && currentExpenses.length === 0) {
-      // 2. Se está vazio, pega as contas recorrentes ativas
-      const { data: allActive } = await fixedExpenseService.getAllRecurring();
-
-      if (allActive && allActive.length > 0) {
-        // 3. Prepara as cópias com o status "não pago" para o mês atual
-        const copies = allActive.map((expense) => ({
-          title: expense.title,
-          amount: expense.amount,
-          currency: expense.currency,
-          due_day: expense.due_day,
-          account_id: expense.account_id,
-          category_id: expense.category_id,
-          is_paid: false, // Começa devendo!
-          paid_at: null,
-          recurring: true,
-          // Ajusta a data para o mês atual
-          date: `${currentMonth}-${String(expense.due_day).padStart(2, "0")}`,
-        }));
-
-        // 4. Salva as cópias no banco
-        await fixedExpenseService.createMany(copies);
-        await fetch(); // Atualiza a tela
-      }
-    }
-    setIsLoading(false);
-  };
-
   return {
     expenses,
     isLoading,
@@ -132,7 +133,6 @@ export function useFixedExpenses() {
     totalPaid,
     totalPending,
     pendingCount,
-    generateMonthlyFixedExpenses,
     create,
     markAsPaid,
     undoPaid,

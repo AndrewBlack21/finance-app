@@ -32,7 +32,12 @@ export default function RegisterScreen() {
   });
 
   const onSubmit = async ({ name, email, password }: RegisterForm) => {
-    const { error } = await register({ name, email, password });
+    const { error } = await register({
+      name,
+      email,
+      password,
+      lgpd_accepted: true,
+    });
     if (error) setError("root", { message: error });
   };
 

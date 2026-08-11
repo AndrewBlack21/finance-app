@@ -29,7 +29,7 @@ import {
 import type { Transaction, Installment, Account } from "@/types";
 import { useInstallments } from "@/hooks/useInstallments";
 import { TransactionForm } from "@/components/forms/TransactionForm";
-import { useAppTheme } from "@/hooks/useTheme"; // 👈 Motor de temas global
+import { useAppTheme } from "@/hooks/useTheme";
 
 type Tab = "debito" | "credito" | "historico";
 type Period = "day" | "week" | "month";
@@ -59,8 +59,8 @@ export default function AccountDetailScreen() {
     color: string;
   }>();
   const router = useRouter();
-  const { colors, isDark } = useAppTheme(); // 👈 Cores dinâmicas ativas
-
+  const { colors, isDark } = useAppTheme();
+  const [type, setType] = useState("checking");
   const isAllAccounts = id === "all";
 
   const [tab, setTab] = useState<Tab>("debito");
@@ -68,11 +68,11 @@ export default function AccountDetailScreen() {
   const [newBankColor, setNewBankColor] = useState("#830ad1");
   const [period, setPeriod] = useState<Period>("month");
   const [newBankType, setNewBankType] = useState<
-    "checking" | "savings" | "credit"
+    "checking" | "savings" | "credit" | "investment"
   >("checking");
   const [newBankBalance, setNewBankBalance] = useState("");
   const [dueDay, setDueDay] = useState("10");
-
+  const [closingDay, setClosingDay] = useState("3");
   const [baseDate, setBaseDate] = useState(new Date());
   const [monthPickerVisible, setMonthPickerVisible] = useState(false);
 
@@ -102,6 +102,7 @@ export default function AccountDetailScreen() {
     if (isAllAccounts) return;
     const acc = accounts.find((a) => String(a.id) === String(id));
 
+    setClosingDay(acc?.closing_day ? String(acc.closing_day) : "3");
     setNewBankName(acc?.name || name);
     setNewBankBalance(
       acc ? String(acc.balance) : String(parseFloat(balance || "0")),
@@ -122,7 +123,7 @@ export default function AccountDetailScreen() {
     if (Platform.OS === "web") {
       const ok = window.confirm(msg);
       if (ok) {
-        removeAccount(id).then(() => router.replace("/(tabs)/"));
+        removeAccount(id).then(() => router.replace("/"));
       }
     } else {
       Alert.alert("Excluir Conta", msg, [
@@ -132,7 +133,7 @@ export default function AccountDetailScreen() {
           style: "destructive",
           onPress: async () => {
             await removeAccount(id);
-            router.replace("/(tabs)/");
+            router.replace("/");
           },
         },
       ]);
@@ -316,14 +317,31 @@ export default function AccountDetailScreen() {
       return { currentTotalIn: inc, currentTotalOut: exp };
     }
     if (tab === "credito") {
+      // 👇 LÓGICA BLINDADA: Atualiza o calculador de despesas na aba de Crédito
       const currentMonthIso = new Date().toISOString().slice(0, 7);
-      const currentMonthInst = installments.filter(
-        (i) =>
-          (!i.start_date || i.start_date <= to) &&
-          (i.paid_installments < i.total_installments ||
-            i.invoice_paid_month === currentMonthIso),
-      );
-      const exp = currentMonthInst.reduce(
+      const pendingCurrent = installments.filter((item) => {
+        if (item.paid_installments >= item.total_installments) return false;
+        if (
+          item.invoice?.status === "aberta" ||
+          item.invoice?.status === "fechada"
+        )
+          return true;
+        if (item.invoice?.status === "paga") return false;
+
+        const dateStr = item.start_date
+          ? item.start_date.split("T")[0]
+          : item.created_at
+            ? item.created_at.split("T")[0]
+            : new Date().toISOString().split("T")[0];
+        const [y, m] = dateStr.split("-").map(Number);
+        const totalMonths = y * 12 + (m - 1) + item.paid_installments;
+        const refY = Math.floor(totalMonths / 12);
+        const refM = (totalMonths % 12) + 1;
+        const itemRef = `${refY}-${String(refM).padStart(2, "0")}`;
+
+        return itemRef <= currentMonthIso;
+      });
+      const exp = pendingCurrent.reduce(
         (sum, i) => sum + Number(i.installment_amount),
         0,
       );
@@ -343,13 +361,30 @@ export default function AccountDetailScreen() {
     }
 
     if (tab === "credito") {
+      // 👇 LÓGICA BLINDADA: Garante o Saldo Global quando "Todas as Contas" é de crédito
       const currentMonthIso = new Date().toISOString().slice(0, 7);
-      const pendingCurrent = installments.filter(
-        (i) =>
-          i.paid_installments < i.total_installments &&
-          (!i.start_date || i.start_date <= to) &&
-          i.invoice_paid_month !== currentMonthIso,
-      );
+      const pendingCurrent = installments.filter((item) => {
+        if (item.paid_installments >= item.total_installments) return false;
+        if (
+          item.invoice?.status === "aberta" ||
+          item.invoice?.status === "fechada"
+        )
+          return true;
+        if (item.invoice?.status === "paga") return false;
+
+        const dateStr = item.start_date
+          ? item.start_date.split("T")[0]
+          : item.created_at
+            ? item.created_at.split("T")[0]
+            : new Date().toISOString().split("T")[0];
+        const [y, m] = dateStr.split("-").map(Number);
+        const totalMonths = y * 12 + (m - 1) + item.paid_installments;
+        const refY = Math.floor(totalMonths / 12);
+        const refM = (totalMonths % 12) + 1;
+        const itemRef = `${refY}-${String(refM).padStart(2, "0")}`;
+
+        return itemRef <= currentMonthIso;
+      });
       return pendingCurrent.reduce(
         (sum, i) => sum + Number(i.installment_amount),
         0,
@@ -488,11 +523,28 @@ export default function AccountDetailScreen() {
                 ? Math.min((usedLimit / totalLimit) * 100, 100)
                 : 0;
 
-            const pendingCurrent = allActive.filter(
-              (i) =>
-                (!i.start_date || i.start_date <= to) &&
-                i.invoice_paid_month !== currentMonthIso,
-            );
+            // 👇 LÓGICA BLINDADA: Valor que aparece bem grande no topo da conta
+            const pendingCurrent = allActive.filter((item) => {
+              if (
+                item.invoice?.status === "aberta" ||
+                item.invoice?.status === "fechada"
+              )
+                return true;
+              if (item.invoice?.status === "paga") return false;
+
+              const dateStr = item.start_date
+                ? item.start_date.split("T")[0]
+                : item.created_at
+                  ? item.created_at.split("T")[0]
+                  : new Date().toISOString().split("T")[0];
+              const [y, m] = dateStr.split("-").map(Number);
+              const totalMonths = y * 12 + (m - 1) + item.paid_installments;
+              const refY = Math.floor(totalMonths / 12);
+              const refM = (totalMonths % 12) + 1;
+              const itemRef = `${refY}-${String(refM).padStart(2, "0")}`;
+
+              return itemRef <= currentMonthIso;
+            });
 
             let displayValue = 0;
             let subtitleLabel = "";
@@ -931,104 +983,148 @@ export default function AccountDetailScreen() {
                 O que está a adicionar?
               </Text>
               <View style={{ flexDirection: "row", gap: 10, marginBottom: 12 }}>
-                <TouchableOpacity
-                  style={{
-                    flex: 1,
-                    padding: 8,
-                    borderWidth: 1,
-                    borderColor:
-                      newBankType === "checking"
-                        ? colors.primary
-                        : colors.border,
-                    borderRadius: 8,
-                    alignItems: "center",
-                    backgroundColor:
-                      newBankType === "checking" ? colors.inputBg : colors.card,
-                  }}
-                  onPress={() => setNewBankType("checking")}
-                >
-                  <Text
-                    style={{
-                      color:
-                        newBankType === "checking"
-                          ? colors.primary
-                          : colors.subText,
-                      fontSize: 12,
-                      fontWeight: "bold",
-                      textAlign: "center",
-                    }}
+                <View style={s.typeSelectorContainer}>
+                  {/* Botão Conta Bancária */}
+                  <TouchableOpacity
+                    style={[
+                      s.typeBtn,
+                      {
+                        backgroundColor: colors.inputBg,
+                        borderColor: colors.border,
+                      },
+                      newBankType === "checking" && {
+                        borderColor: colors.primary,
+                        backgroundColor: colors.primary + "20",
+                      },
+                    ]}
+                    onPress={() => setNewBankType("checking")}
                   >
-                    🏦 Conta Bancária{"\n"}
-                    <Text style={{ fontSize: 10, fontWeight: "normal" }}>
+                    <Text style={s.typeIcon}>🏦</Text>
+                    <Text style={[s.typeText, { color: colors.text }]}>
+                      Conta Bancária
+                    </Text>
+                    <Text style={[s.typeSubText, { color: colors.subText }]}>
                       (Tem Saldo Real)
                     </Text>
-                  </Text>
-                </TouchableOpacity>
+                  </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={{
-                    flex: 1,
-                    padding: 8,
-                    borderWidth: 1,
-                    borderColor:
-                      newBankType === "credit" ? colors.primary : colors.border,
-                    borderRadius: 8,
-                    alignItems: "center",
-                    backgroundColor:
-                      newBankType === "credit" ? colors.inputBg : colors.card,
-                  }}
-                  onPress={() => setNewBankType("credit")}
-                >
-                  <Text
-                    style={{
-                      color:
-                        newBankType === "credit"
-                          ? colors.primary
-                          : colors.subText,
-                      fontSize: 12,
-                      fontWeight: "bold",
-                      textAlign: "center",
-                    }}
+                  {/* Botão Cartão de Crédito */}
+                  <TouchableOpacity
+                    style={[
+                      s.typeBtn,
+                      {
+                        backgroundColor: colors.inputBg,
+                        borderColor: colors.border,
+                      },
+                      newBankType === "credit" && {
+                        borderColor: colors.primary,
+                        backgroundColor: colors.primary + "20",
+                      },
+                    ]}
+                    onPress={() => setNewBankType("credit")}
                   >
-                    💳 Cartão de Crédito{"\n"}
-                    <Text style={{ fontSize: 10, fontWeight: "normal" }}>
+                    <Text style={s.typeIcon}>💳</Text>
+                    <Text style={[s.typeText, { color: colors.text }]}>
+                      Cartão de Crédito
+                    </Text>
+                    <Text style={[s.typeSubText, { color: colors.subText }]}>
                       (Gera Faturas)
                     </Text>
-                  </Text>
-                </TouchableOpacity>
+                  </TouchableOpacity>
+
+                  {/* Botão Investimento */}
+                  <TouchableOpacity
+                    style={[
+                      s.typeBtn,
+                      {
+                        backgroundColor: colors.inputBg,
+                        borderColor: colors.border,
+                      },
+                      newBankType === "investment" && {
+                        borderColor: colors.primary,
+                        backgroundColor: colors.primary + "20",
+                      },
+                    ]}
+                    onPress={() => setNewBankType("investment")}
+                  >
+                    <Text style={s.typeIcon}>📈</Text>
+                    <Text style={[s.typeText, { color: colors.text }]}>
+                      Investimento
+                    </Text>
+                    <Text style={[s.typeSubText, { color: colors.subText }]}>
+                      (Rende Juros)
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
 
               {newBankType === "credit" && (
-                <View style={{ marginBottom: 12 }}>
-                  <Text
-                    style={{
-                      fontSize: 13,
-                      color: colors.subText,
-                      marginBottom: 4,
-                    }}
-                  >
-                    Dia de Vencimento da Fatura
-                  </Text>
-                  <TextInput
-                    style={{
-                      borderWidth: 1,
-                      borderColor: colors.border,
-                      backgroundColor: colors.inputBg,
-                      color: colors.text,
-                      borderRadius: 8,
-                      padding: 10,
-                      fontSize: 16,
-                    }}
-                    value={dueDay}
-                    onChangeText={(text) => {
-                      const num = text.replace(/[^0-9]/g, "");
-                      if (Number(num) <= 31) setDueDay(num);
-                    }}
-                    keyboardType="decimal-pad"
-                    maxLength={2}
-                    placeholder="Ex: 10"
-                    placeholderTextColor={colors.subText}
-                  />
+                <View
+                  style={{ flexDirection: "row", gap: 10, marginBottom: 12 }}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text
+                      style={{
+                        fontSize: 13,
+                        color: colors.subText,
+                        marginBottom: 4,
+                      }}
+                    >
+                      Dia de Fechamento
+                    </Text>
+                    <TextInput
+                      style={{
+                        borderWidth: 1,
+                        borderColor: colors.border,
+                        backgroundColor: colors.inputBg,
+                        color: colors.text,
+                        borderRadius: 8,
+                        padding: 10,
+                        fontSize: 16,
+                      }}
+                      value={closingDay}
+                      onChangeText={(text) => {
+                        const num = text.replace(/[^0-9]/g, "");
+                        if (Number(num) <= 31) setClosingDay(num);
+                      }}
+                      keyboardType="decimal-pad"
+                      maxLength={2}
+                      placeholder="Ex: 3"
+                      placeholderTextColor={colors.subText}
+                    />
+                  </View>
+
+                  <View style={{ flex: 1 }}>
+                    <Text
+                      style={{
+                        fontSize: 13,
+                        color: colors.subText,
+                        marginBottom: 4,
+                      }}
+                    >
+                      Dia de Vencimento
+                    </Text>
+                    <TextInput
+                      style={{
+                        borderWidth: 1,
+                        borderColor: colors.border,
+                        backgroundColor: colors.inputBg,
+                        color: colors.text,
+                        borderRadius: 8,
+                        padding: 10,
+                        fontSize: 16,
+                      }}
+                      value={dueDay}
+                      onChangeText={(text) => {
+                        const num = text.replace(/[^0-9]/g, "");
+                        if (Number(num) <= 31) setDueDay(num);
+                      }}
+                      keyboardType="decimal-pad"
+                      maxLength={2}
+                      placeholder="Ex: 10"
+                      placeholderTextColor={colors.subText}
+                    />
+                  </View>
                 </View>
               )}
 
@@ -1104,6 +1200,10 @@ export default function AccountDetailScreen() {
                     currency: "BRL",
                     due_day:
                       newBankType === "credit" ? parseInt(dueDay, 10) : null,
+                    closing_day:
+                      newBankType === "credit"
+                        ? parseInt(closingDay, 10)
+                        : null,
                   };
                   if (isEditing) {
                     await updateAccount(id, payload);
@@ -1388,6 +1488,9 @@ function InstallmentCard({
     year: "numeric",
   }).format(dateObj);
 
+  const remainingCount = i.total_installments - i.paid_installments;
+  const remainingAmount = remainingCount * i.installment_amount;
+
   return (
     <View
       style={[
@@ -1416,6 +1519,17 @@ function InstallmentCard({
         <Text style={[s.itemSub, { color: colors.subText }]}>
           Progresso: Parcela {i.paid_installments + 1} de {i.total_installments}
         </Text>
+        {remainingCount > 0 && (
+          <Text
+            style={[
+              s.itemSub,
+              { color: colors.primary, fontWeight: "600", marginTop: 2 },
+            ]}
+          >
+            Restam {remainingCount} parcelas (Total:{" "}
+            {formatCurrency(remainingAmount, currency)})
+          </Text>
+        )}
       </View>
 
       <View style={{ alignItems: "flex-end", justifyContent: "center" }}>
@@ -2027,4 +2141,40 @@ const s = StyleSheet.create({
     gap: 8,
   },
   alertText: { color: "#1e40af", fontSize: 12, fontWeight: "600", flex: 1 },
+  typeSelectorContainer: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 20,
+  },
+  typeBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#30363d",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#161b22",
+  },
+  typeBtnActive: {
+    borderColor: "#3b30ff",
+    backgroundColor: "rgba(59, 48, 255, 0.15)",
+  },
+  typeIcon: {
+    fontSize: 20,
+    marginBottom: 6,
+  },
+  typeText: {
+    fontSize: 11,
+    fontWeight: "bold",
+    color: "#fff",
+    marginBottom: 2,
+    textAlign: "center",
+  },
+  typeSubText: {
+    fontSize: 9,
+    color: "#9ca3af",
+    textAlign: "center",
+  },
 });

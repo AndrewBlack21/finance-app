@@ -30,7 +30,7 @@ import { useInstallments } from "@/hooks/useInstallments";
 import { useFixedExpenses } from "@/hooks/useFixedExpenses";
 import { useBudgetGoals } from "@/hooks/useBudgetGoals";
 import { formatCurrency, formatDate } from "@/utils";
-import type { Installment, Transaction } from "@/types";
+import type { Installment, Transaction, FixedExpense } from "@/types";
 import { Ionicons } from "@expo/vector-icons";
 import { useAppTheme } from "@/hooks/useTheme";
 
@@ -42,6 +42,8 @@ const FALLBACK_COLORS = [
   "#22c55e",
   "#0ea5e9",
 ];
+
+const globalIgnoredBills = new Set<string>();
 
 export default function DashboardScreen() {
   const { profile, session, logout } = useAuth();
@@ -56,6 +58,9 @@ export default function DashboardScreen() {
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [showHelpModal, setShowHelpModal] = useState(false);
 
+  const [ignoredBills, setIgnoredBills] =
+    useState<Set<string>>(globalIgnoredBills);
+
   const {
     totalBudget,
     globalGoal,
@@ -64,6 +69,10 @@ export default function DashboardScreen() {
   } = useBudgetGoals();
   const [showGlobalModal, setShowGlobalModal] = useState(false);
   const [globalInput, setGlobalInput] = useState("");
+
+  const [showPouparModal, setShowPouparModal] = useState(false);
+  const [pouparInput, setPouparInput] = useState("");
+  const [metaPoupanca, setMetaPoupanca] = useState(2500);
 
   const getMonthRange = (offset: number) => {
     const d = new Date();
@@ -88,22 +97,40 @@ export default function DashboardScreen() {
     label: dynMonthLabel,
     fullLabel,
   } = getMonthRange(monthOffset);
+
   const { accounts, totalBalance, refetch: refetchAccounts } = useAccounts();
 
-  // 👇 1. Separação das contas normais e de investimento
-  const regularAccounts = accounts.filter((acc) => acc.type !== "investment");
+  const checkingAccounts = accounts.filter((acc) => acc.type === "checking");
+
   const investmentAccounts = accounts.filter(
     (acc) => acc.type === "investment",
   );
 
+  const totalInvestido = useMemo(() => {
+    return investmentAccounts.reduce(
+      (sum, acc) => sum + (Number(acc.balance) || 0),
+      0,
+    );
+  }, [investmentAccounts]);
+
+  const metaInvestimento = 5000;
+  const percentagemInvestida =
+    metaInvestimento > 0 ? (totalInvestido / metaInvestimento) * 100 : 0;
+
   const checkingBalance = useMemo(() => {
-    return accounts
-      .filter((acc) => acc.type === "checking")
-      .reduce((sum, acc) => sum + (Number(acc.balance) || 0), 0);
-  }, [accounts]);
+    return checkingAccounts.reduce(
+      (sum, acc) => sum + (Number(acc.balance) || 0),
+      0,
+    );
+  }, [checkingAccounts]);
 
   const { installments, refetch: refetchInstallments } = useInstallments();
-  const { expenses: fixedExpenses, refetch: refetchFixed } = useFixedExpenses();
+  const {
+    expenses: fixedExpenses,
+    refetch: refetchFixed,
+    markAsPaid,
+  } = useFixedExpenses();
+
   const {
     transactions,
     summary,
@@ -146,14 +173,57 @@ export default function DashboardScreen() {
   const currency = profile?.currency ?? "BRL";
   const expenses = transactions.filter((t) => t.type === "expense");
 
+  const upcomingBills = useMemo(() => {
+    const todayDay = new Date().getDate();
+
+    return fixedExpenses.filter((f) => {
+      if (f.is_paid || ignoredBills.has(f.id)) return false;
+
+      const diff = f.due_day - todayDay;
+      return diff >= 0 && diff <= 3;
+    });
+  }, [fixedExpenses, ignoredBills]);
+
+  const handleIgnoreUpcoming = (id: string) => {
+    globalIgnoredBills.add(id);
+    setIgnoredBills(new Set(globalIgnoredBills));
+  };
+
+  const handlePayUpcoming = async (expense: FixedExpense) => {
+    const confirmAction = async () => {
+      globalIgnoredBills.add(expense.id);
+      setIgnoredBills(new Set(globalIgnoredBills));
+
+      const { error } = await markAsPaid(expense);
+      if (error) {
+        globalIgnoredBills.delete(expense.id);
+        setIgnoredBills(new Set(globalIgnoredBills));
+        Alert.alert("Erro", error);
+      } else {
+        if (refetchFixed) refetchFixed();
+        if (refetchAccounts) refetchAccounts();
+        if (refetchTransactions) refetchTransactions();
+      }
+    };
+
+    if (Platform.OS === "web") {
+      if (window.confirm(`Confirmar pagamento de ${expense.title}?`)) {
+        confirmAction();
+      }
+    } else {
+      Alert.alert("Pagar conta", `Confirmar pagamento de ${expense.title}?`, [
+        { text: "Cancelar", style: "cancel" },
+        { text: "Confirmar", onPress: confirmAction },
+      ]);
+    }
+  };
+
   const totals = useMemo(() => {
     let monthIncome = 0;
     let monthExpense = 0;
     let weekIncome = 0;
     let weekExpense = 0;
-    const checkingAccIds = new Set(
-      accounts.filter((a) => a.type === "checking").map((a) => a.id),
-    );
+    const checkingAccIds = new Set(checkingAccounts.map((a) => a.id));
     const creditAccIds = new Set(
       accounts.filter((a) => a.type === "credit").map((a) => a.id),
     );
@@ -192,7 +262,7 @@ export default function DashboardScreen() {
       }
     });
     return { monthIncome, monthExpense, weekIncome, weekExpense };
-  }, [transactions, fixedExpenses, accounts, to]);
+  }, [transactions, fixedExpenses, checkingAccounts, accounts, to]);
 
   const { categoryData, totalCategoryExpenses } = useMemo(() => {
     let total = 0;
@@ -212,7 +282,7 @@ export default function DashboardScreen() {
 
     installments.forEach((i) => {
       if (
-        i.paid_installments < i.total_installments &&
+        Number(i.paid_installments) < Number(i.total_installments) &&
         (!i.start_date || i.start_date <= to)
       ) {
         const amt = Number(i.installment_amount) || 0;
@@ -242,7 +312,7 @@ export default function DashboardScreen() {
         percentage:
           total > 0 ? Math.round((item.value / total) * 100) + "%" : "0%",
       }))
-      .slice(0, 5); // Mostramos 5 para caber bem na lateral
+      .slice(0, 5);
 
     return { categoryData: dataList, totalCategoryExpenses: total };
   }, [expenses, installments, fixedExpenses, to]);
@@ -256,75 +326,143 @@ export default function DashboardScreen() {
   const budgetPercentage =
     totalBudget > 0 ? (budgetSpent / totalBudget) * 100 : 0;
 
+  const valorPoupado = Math.max(0, totals.monthIncome - totals.monthExpense);
+  const percentagemPoupada =
+    metaPoupanca > 0 ? (valorPoupado / metaPoupanca) * 100 : 0;
+
+  // 👇 CÁLCULO INTELIGENTE: Cruza faturas, parcelas e pagamentos registrados
   const creditCardsStatus = useMemo(() => {
-    const currentMonthIso = to.slice(0, 7);
-    const today = new Date();
+    const currentMonthRef = from.slice(0, 7); // Ex: "2026-08"
+    const today = new Date().toISOString().split("T")[0];
     const creditAccounts = accounts.filter((acc) => acc.type === "credit");
 
-    return creditAccounts
-      .map((acc) => {
-        const allRelevant = installments.filter(
+    return creditAccounts.map((acc) => {
+      const accInstallments = installments.filter(
+        (i) => i.account_id === acc.id,
+      );
+
+      const allActive = accInstallments.filter(
+        (i) => Number(i.paid_installments) < Number(i.total_installments),
+      );
+
+      // 1. Procura se existe transação de pagamento desta fatura no mês selecionado
+      const paymentTx = transactions.find(
+        (t) =>
+          t.type === "expense" &&
+          t.title?.toLowerCase().includes("fatura") &&
+          t.title?.toLowerCase().includes(acc.name.toLowerCase()) &&
+          t.date >= from &&
+          t.date <= to,
+      );
+
+      // 2. Compras pendentes para a fatura do mês atual
+      const pendingCurrent = allActive.filter((item) => {
+        if (
+          item.invoice?.status === "aberta" ||
+          item.invoice?.status === "fechada"
+        )
+          return true;
+        if (item.invoice?.status === "paga") return false;
+
+        const paidInst = Number(item.paid_installments) || 0;
+        const dateStr = item.start_date
+          ? item.start_date.split("T")[0]
+          : item.created_at
+            ? item.created_at.split("T")[0]
+            : new Date().toISOString().split("T")[0];
+        const [y, m] = dateStr.split("-").map(Number);
+        const totalMonths = y * 12 + (m - 1) + paidInst;
+        const refY = Math.floor(totalMonths / 12);
+        const refM = (totalMonths % 12) + 1;
+        const itemRef = `${refY}-${String(refM).padStart(2, "0")}`;
+
+        return itemRef <= currentMonthRef;
+      });
+
+      const currentInvoice =
+        pendingCurrent.find((i) => i.invoice)?.invoice ?? null;
+
+      // 3. Verificamos se a fatura está paga
+      const hasPaidInvoice = accInstallments.some(
+        (i) =>
+          i.invoice?.status === "paga" &&
+          i.invoice?.reference === currentMonthRef,
+      );
+      const isInvoicePaid =
+        Boolean(paymentTx) ||
+        hasPaidInvoice ||
+        (pendingCurrent.length === 0 && accInstallments.length > 0);
+
+      // 4. Valor da fatura (se foi paga, exibe o valor pago; se está pendente, soma as compras pendentes)
+      let invoiceTotal = 0;
+      if (paymentTx) {
+        invoiceTotal = Number(paymentTx.amount) || 0;
+      } else if (hasPaidInvoice) {
+        const paidInv = accInstallments.find(
           (i) =>
-            i.account_id === acc.id &&
-            (Number(i.paid_installments) < Number(i.total_installments) ||
-              i.invoice_paid_month === currentMonthIso),
-        );
-        const currentInstallments = allRelevant.filter(
-          (i) => !i.start_date || i.start_date <= to,
-        );
-        const pendingCurrent = currentInstallments.filter(
-          (i) => i.invoice_paid_month !== currentMonthIso,
-        );
-        const isInvoicePaid =
-          currentInstallments.length > 0 && pendingCurrent.length === 0;
-        const invoiceTotal = currentInstallments.reduce(
+            i.invoice?.status === "paga" &&
+            i.invoice?.reference === currentMonthRef,
+        )?.invoice;
+        invoiceTotal =
+          Number(paidInv?.paid_amount) ||
+          pendingCurrent.reduce(
+            (sum, i) => sum + (Number(i.installment_amount) || 0),
+            0,
+          );
+      } else {
+        invoiceTotal = pendingCurrent.reduce(
           (sum, i) => sum + (Number(i.installment_amount) || 0),
           0,
         );
-        const allActiveForLimit = installments.filter(
-          (i) =>
-            i.account_id === acc.id &&
-            i.paid_installments < i.total_installments,
-        );
-        const usedLimit = allActiveForLimit.reduce(
-          (sum, i) =>
-            sum +
-            (i.total_installments - i.paid_installments) *
-              (Number(i.installment_amount) || 0),
-          0,
-        );
-        const totalLimit = Number(acc.balance) || 0;
-        const limitPercentage =
-          totalLimit > 0 ? Math.min((usedLimit / totalLimit) * 100, 100) : 0;
-        const dueDate = new Date(
-          today.getFullYear(),
-          today.getMonth(),
-          acc.due_day || 10,
-        );
+      }
 
-        let statusColor = "#f59e0b";
-        let statusLabel = "Pendente";
-        if (isInvoicePaid) {
-          statusColor = "#4ade80";
-          statusLabel = "Pago";
-        } else if (today > dueDate) {
-          statusColor = "#f87171";
+      // 5. Limite utilizado
+      const usedLimit = allActive.reduce(
+        (sum, i) =>
+          sum +
+          (Number(i.total_installments) - Number(i.paid_installments)) *
+            (Number(i.installment_amount) || 0),
+        0,
+      );
+      const totalLimit = Number(acc.balance) || 0;
+      const limitPercentage =
+        totalLimit > 0 ? Math.min((usedLimit / totalLimit) * 100, 100) : 0;
+
+      // 6. Definição do status e cor
+      let statusColor = "#facc15"; // Amarelo/Laranja
+      let statusLabel = "Pendente";
+
+      if (isInvoicePaid || (!currentInvoice && allActive.length === 0)) {
+        statusColor = "#4ade80"; // Verde
+        statusLabel = "Pago";
+      } else if (currentInvoice) {
+        if (
+          currentInvoice.status === "fechada" &&
+          today > currentInvoice.due_date
+        ) {
+          statusColor = "#f87171"; // Vermelho
           statusLabel = "Vencido";
+        } else if (currentInvoice.status === "fechada") {
+          statusColor = "#facc15";
+          statusLabel = "Fechada";
         }
+      }
 
-        return {
-          label: acc.name,
-          color: acc.color || FALLBACK_COLORS[0],
-          value: invoiceTotal,
-          statusColor,
-          statusLabel,
-          usedLimit,
-          totalLimit,
-          limitPercentage,
-        };
-      })
-      .filter((card) => card.value > 0 || card.statusLabel === "Pago");
-  }, [accounts, installments, to]);
+      return {
+        id: acc.id,
+        currency: acc.currency,
+        balance: String(acc.balance),
+        label: acc.name,
+        color: acc.color || "#6366f1",
+        value: invoiceTotal,
+        statusColor,
+        statusLabel,
+        usedLimit,
+        totalLimit,
+        limitPercentage,
+      };
+    });
+  }, [accounts, installments, transactions, from, to]);
 
   return (
     <SafeAreaView style={[s.safe, { backgroundColor: colors.bg }]}>
@@ -465,7 +603,75 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        {/* MINHAS CONTAS (CORRENTE E CRÉDITO) */}
+        {/* ALERTA DE CONTAS FIXAS PRÓXIMAS DO VENCIMENTO */}
+        {upcomingBills.length > 0 && (
+          <View style={s.section}>
+            <Text
+              style={[s.sectionTitle, { color: colors.text, marginBottom: 12 }]}
+            >
+              Contas a vencer em breve
+            </Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              {upcomingBills.map((bill) => {
+                const diff = bill.due_day - new Date().getDate();
+                const textDue =
+                  diff === 0
+                    ? "Vence hoje!"
+                    : `Vence em ${diff} dia${diff > 1 ? "s" : ""}`;
+
+                return (
+                  <View
+                    key={bill.id}
+                    style={[
+                      s.upcomingCard,
+                      { backgroundColor: colors.card, borderColor: "#f59e0b" },
+                    ]}
+                  >
+                    <View style={s.upcomingInfo}>
+                      <Text style={[s.upcomingTitle, { color: colors.text }]}>
+                        {bill.title}
+                      </Text>
+                      <Text style={[s.upcomingSub, { color: "#f59e0b" }]}>
+                        {textDue}
+                      </Text>
+                      <Text style={[s.upcomingValue, { color: colors.text }]}>
+                        {formatCurrency(bill.amount, currency)}
+                      </Text>
+                    </View>
+                    <View style={s.upcomingActions}>
+                      <TouchableOpacity
+                        style={[
+                          s.upcomingBtn,
+                          { backgroundColor: colors.inputBg },
+                        ]}
+                        onPress={() => handleIgnoreUpcoming(bill.id)}
+                      >
+                        <Text
+                          style={[s.upcomingBtnText, { color: colors.subText }]}
+                        >
+                          Ignorar
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[
+                          s.upcomingBtn,
+                          { backgroundColor: colors.primary },
+                        ]}
+                        onPress={() => handlePayUpcoming(bill)}
+                      >
+                        <Text style={[s.upcomingBtnText, { color: "#fff" }]}>
+                          Pagar
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                );
+              })}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* MINHAS CONTAS (CORRENTE) */}
         <View style={s.section}>
           <View style={s.sectionHeader}>
             <Text style={[s.sectionTitle, { color: colors.text }]}>
@@ -489,7 +695,7 @@ export default function DashboardScreen() {
             </TouchableOpacity>
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {regularAccounts.map((account) => (
+            {checkingAccounts.map((account) => (
               <TouchableOpacity
                 key={account.id}
                 style={[
@@ -516,19 +722,11 @@ export default function DashboardScreen() {
                 <Text style={[s.accountName, { color: colors.text }]}>
                   {account.name}
                 </Text>
-                {account.type === "checking" ? (
-                  <Text style={[s.accountBalance, { color: colors.text }]}>
-                    {formatCurrency(account.balance, account.currency)}
-                  </Text>
-                ) : (
-                  <Text
-                    style={[s.accountCreditLabel, { color: colors.subText }]}
-                  >
-                    Cartão de Crédito
-                  </Text>
-                )}
+                <Text style={[s.accountBalance, { color: colors.text }]}>
+                  {formatCurrency(account.balance, account.currency)}
+                </Text>
                 <Text style={[s.accountType, { color: colors.subText }]}>
-                  {account.type === "checking" ? "Conta Corrente" : "Crédito"}
+                  Conta Corrente
                 </Text>
               </TouchableOpacity>
             ))}
@@ -552,7 +750,119 @@ export default function DashboardScreen() {
           </ScrollView>
         </View>
 
-        {/* 👇 MEUS INVESTIMENTOS (NOVA SECÇÃO SEPARADA) */}
+        {/* FATURAS DE CRÉDITO ATIVAS */}
+        {creditCardsStatus.length > 0 && (
+          <View style={s.section}>
+            <View style={s.sectionHeader}>
+              <Text style={[s.sectionTitle, { color: colors.text }]}>
+                Faturas de Crédito Ativas
+              </Text>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              {creditCardsStatus.map((card, index) => (
+                <TouchableOpacity
+                  key={index}
+                  activeOpacity={0.9}
+                  style={[
+                    s.creditCardPhysical,
+                    { backgroundColor: card.color },
+                  ]}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/(tabs)/accounts",
+                      params: {
+                        id: card.id,
+                        name: card.label,
+                        balance: card.balance,
+                        currency: card.currency,
+                        color: card.color,
+                      },
+                    })
+                  }
+                >
+                  <View style={s.ccTopRow}>
+                    <View style={s.ccChip}>
+                      <View style={s.ccChipLine} />
+                      <View style={s.ccChipLine} />
+                      <View style={s.ccChipLine} />
+                    </View>
+                    <Text style={s.ccBankName}>{card.label.toUpperCase()}</Text>
+                  </View>
+
+                  <View style={s.ccStatusRow}>
+                    <View
+                      style={[
+                        s.ccStatusDot,
+                        { backgroundColor: card.statusColor },
+                      ]}
+                    />
+                    <Text style={s.ccStatusText}>{card.statusLabel}</Text>
+                  </View>
+
+                  <View style={s.ccAmountArea}>
+                    <Text style={s.ccAmountLabel}>Valor da Fatura</Text>
+                    <Text style={s.ccAmountValue}>
+                      {formatCurrency(card.value, currency)}
+                    </Text>
+                  </View>
+
+                  <View style={s.ccLimitArea}>
+                    <View style={s.ccLimitRow}>
+                      <Text style={s.ccLimitLabel}>Limite Utilizado</Text>
+                      <Text style={s.ccLimitPercent}>
+                        {Math.round(card.limitPercentage)}%
+                      </Text>
+                    </View>
+                    <View style={s.ccLimitBarBg}>
+                      <View
+                        style={[
+                          s.ccLimitBarFill,
+                          {
+                            width: `${Math.min(card.limitPercentage, 100)}%`,
+                            backgroundColor:
+                              card.limitPercentage > 90 ? "#ef4444" : "#4ade80",
+                          },
+                        ]}
+                      />
+                    </View>
+                    <Text style={s.ccLimitAvailable}>
+                      Disp:{" "}
+                      {formatCurrency(
+                        Math.max(0, card.totalLimit - card.usedLimit),
+                        currency,
+                      )}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+
+              <TouchableOpacity
+                activeOpacity={0.7}
+                style={[
+                  s.addCreditCardCard,
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                ]}
+                onPress={() => router.push("/(tabs)/accounts?openModal=1")}
+              >
+                <Ionicons
+                  name="add-circle-outline"
+                  size={32}
+                  color={colors.subText}
+                />
+                <Text
+                  style={[
+                    s.addAccountText,
+                    { color: colors.subText, marginTop: 8 },
+                  ]}
+                >
+                  Novo Cartão
+                </Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        )}
+
+        {/* MEUS INVESTIMENTOS */}
         <View style={s.section}>
           <View style={s.sectionHeader}>
             <Text style={[s.sectionTitle, { color: colors.text }]}>
@@ -611,7 +921,7 @@ export default function DashboardScreen() {
           </ScrollView>
         </View>
 
-        {/* GASTOS POR CATEGORIA (PIE CHART LADO A LADO) */}
+        {/* GASTOS POR CATEGORIA */}
         <View style={s.section}>
           <Text style={[s.sectionTitle, { color: colors.text }]}>
             Gastos por Categoria
@@ -630,7 +940,6 @@ export default function DashboardScreen() {
             ) : categoryData.length === 0 ? (
               <EmptyChart message="Nenhum gasto registrado este mês." />
             ) : (
-              // 👇 Estrutura flex-row para colocar lado a lado
               <View style={s.chartRowLayout}>
                 <View style={s.pieWrapLeft}>
                   <PieChart
@@ -639,7 +948,7 @@ export default function DashboardScreen() {
                       color: item.color,
                     }))}
                     donut
-                    radius={65} // Tamanho reduzido para caber ao lado
+                    radius={65}
                     innerRadius={45}
                     innerCircleColor={colors.card}
                     centerLabelComponent={() => (
@@ -694,9 +1003,33 @@ export default function DashboardScreen() {
         {totalBudget > 0 && (
           <View style={s.section}>
             <View style={s.sectionHeader}>
-              <Text style={[s.sectionTitle, { color: colors.text }]}>
-                Metas
-              </Text>
+              <View
+                style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+              >
+                <Text
+                  style={[
+                    s.sectionTitle,
+                    { color: colors.text, marginBottom: 0 },
+                  ]}
+                >
+                  Metas
+                </Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    Alert.alert(
+                      "Por que separar as suas contas?",
+                      "🏦 Conta Corrente: É o seu dinheiro para os gastos do dia a dia.\n\n📈 Conta de Investimento: É o dinheiro para o seu futuro ou emergências.\n\nAo separar as duas, o sistema ajuda-o a não gastar o dinheiro que estava guardado para os seus sonhos, mostrando exatamente o seu progresso na meta Investir!",
+                    );
+                  }}
+                >
+                  <Ionicons
+                    name="information-circle-outline"
+                    size={20}
+                    color={colors.primary}
+                  />
+                </TouchableOpacity>
+              </View>
+
               <TouchableOpacity onPress={() => router.push("/(tabs)/budget")}>
                 <Text style={[s.seeAll, { color: colors.primary }]}>
                   Ver Metas
@@ -710,7 +1043,6 @@ export default function DashboardScreen() {
                 { backgroundColor: colors.card, borderColor: colors.border },
               ]}
             >
-              {/* Orçamento Geral */}
               <View style={s.budgetHeader}>
                 <Text style={[s.budgetText, { color: colors.primary }]}>
                   Orçamento do Mês
@@ -750,45 +1082,86 @@ export default function DashboardScreen() {
                 {Math.round(budgetPercentage)}%
               </Text>
 
-              {/* 👇 Sub-metas: Poupar e Investir */}
               <View style={s.subGoalsContainer}>
-                {/* Cartão Poupar */}
-                <View
+                <TouchableOpacity
                   style={[
                     s.subGoalCard,
                     { backgroundColor: colors.bg, borderColor: colors.border },
                   ]}
+                  onPress={() => {
+                    setPouparInput(metaPoupanca.toString());
+                    setShowPouparModal(true);
+                  }}
                 >
-                  <Text style={[s.subGoalTitle, { color: colors.subText }]}>
-                    Poupar
-                  </Text>
-                  <View style={s.subGoalRow}>
-                    <Text style={[s.subGoalValue, { color: colors.text }]}>
-                      R$ 2.500,00
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      marginBottom: 8,
+                    }}
+                  >
+                    <Text
+                      style={[
+                        s.subGoalTitle,
+                        { color: colors.subText, marginBottom: 0 },
+                      ]}
+                    >
+                      Poupar
                     </Text>
-                    <Text style={[s.subGoalPercent, { color: colors.text }]}>
-                      83%
+                    <Ionicons name="pencil" size={14} color={colors.primary} />
+                  </View>
+                  <View style={s.subGoalRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text
+                        style={[s.subGoalValue, { color: colors.text }]}
+                        numberOfLines={1}
+                      >
+                        {formatCurrency(valorPoupado, currency)}
+                      </Text>
+                      <Text
+                        style={{
+                          fontSize: 10,
+                          color: colors.subText,
+                          marginTop: 2,
+                        }}
+                      >
+                        Meta: {formatCurrency(metaPoupanca, currency)}
+                      </Text>
+                    </View>
+
+                    <Text
+                      style={[
+                        s.subGoalPercent,
+                        { color: colors.text, marginLeft: 8 },
+                      ]}
+                    >
+                      {Math.round(percentagemPoupada)}%
                     </Text>
                   </View>
+
                   <View
                     style={[
                       s.budgetBarBg,
                       {
                         backgroundColor: isDark ? "#30363d" : "#e5e7eb",
                         height: 4,
+                        marginTop: 6,
                       },
                     ]}
                   >
                     <View
                       style={[
                         s.budgetBarFill,
-                        { width: `83%`, backgroundColor: colors.primary },
+                        {
+                          width: `${Math.min(percentagemPoupada, 100)}%`,
+                          backgroundColor: colors.primary,
+                        },
                       ]}
                     />
                   </View>
-                </View>
+                </TouchableOpacity>
 
-                {/* Cartão Investir */}
                 <View
                   style={[
                     s.subGoalCard,
@@ -800,10 +1173,10 @@ export default function DashboardScreen() {
                   </Text>
                   <View style={s.subGoalRow}>
                     <Text style={[s.subGoalValue, { color: colors.text }]}>
-                      R$ 1.000,00
+                      {formatCurrency(totalInvestido, currency)}
                     </Text>
                     <Text style={[s.subGoalPercent, { color: colors.text }]}>
-                      40%
+                      {Math.round(percentagemInvestida)}%
                     </Text>
                   </View>
                   <View
@@ -818,7 +1191,10 @@ export default function DashboardScreen() {
                     <View
                       style={[
                         s.budgetBarFill,
-                        { width: `40%`, backgroundColor: colors.primary },
+                        {
+                          width: `${Math.min(percentagemInvestida, 100)}%`,
+                          backgroundColor: colors.primary,
+                        },
                       ]}
                     />
                   </View>
@@ -973,7 +1349,7 @@ export default function DashboardScreen() {
           </View>
         </View>
       </Modal>
-      {/* MODAL: SELETOR DE MÊS */}
+
       <Modal visible={showMonthPicker} transparent animationType="fade">
         <TouchableOpacity
           style={s.monthPickerOverlay}
@@ -1028,13 +1404,67 @@ export default function DashboardScreen() {
           </View>
         </TouchableOpacity>
       </Modal>
+
+      <Modal visible={showPouparModal} transparent animationType="fade">
+        <TouchableOpacity
+          style={s.modalOverlayCenter}
+          activeOpacity={1}
+          onPress={() => setShowPouparModal(false)}
+        >
+          <TouchableOpacity
+            activeOpacity={1}
+            style={[
+              s.modalCardCenter,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <Text style={[s.modalCardTitle, { color: colors.text }]}>
+              Meta de Poupança
+            </Text>
+            <Text style={[s.modalCardSub, { color: colors.subText }]}>
+              Defina o valor que pretende poupar este mês (O que sobra das suas
+              Receitas).
+            </Text>
+
+            <View
+              style={[
+                s.modalInputWrap,
+                { backgroundColor: colors.bg, borderColor: colors.border },
+              ]}
+            >
+              <Text style={[s.modalInputCurrency, { color: colors.subText }]}>
+                {currency}
+              </Text>
+              <TextInput
+                style={[s.modalTextInput, { color: colors.text }]}
+                value={pouparInput}
+                onChangeText={setPouparInput}
+                keyboardType="numeric"
+                placeholder="0,00"
+                placeholderTextColor={colors.subText}
+                autoFocus
+              />
+            </View>
+
+            <TouchableOpacity
+              style={[s.modalSaveBtn, { backgroundColor: colors.primary }]}
+              onPress={() => {
+                const val = parseFloat(pouparInput.replace(",", "."));
+                if (isNaN(val) || val <= 0)
+                  return Alert.alert("Erro", "Digite um valor válido.");
+
+                setMetaPoupanca(val);
+                setShowPouparModal(false);
+              }}
+            >
+              <Text style={s.modalSaveText}>Salvar Meta</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
-
-// ============================================================
-// COMPONENTES E ESTILOS
-// ============================================================
 
 function EmptyChart({ message }: { message: string }) {
   const { colors } = useAppTheme();
@@ -1153,7 +1583,108 @@ const s = StyleSheet.create({
     textAlign: "center",
   },
 
-  // 👇 Novos estilos do Gráfico Lado a Lado
+  creditCardPhysical: {
+    width: 280,
+    height: 170,
+    borderRadius: 16,
+    padding: 16,
+    marginRight: 16,
+    justifyContent: "space-between",
+    elevation: 5,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+  },
+
+  addCreditCardCard: {
+    width: 200,
+    height: 170,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderStyle: "dashed",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 16,
+  },
+
+  ccTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+  },
+  ccChip: {
+    width: 34,
+    height: 26,
+    backgroundColor: "#fcd34d",
+    borderRadius: 4,
+    justifyContent: "space-evenly",
+    paddingVertical: 4,
+    paddingHorizontal: 5,
+  },
+  ccChipLine: {
+    height: 1.5,
+    backgroundColor: "rgba(0,0,0,0.2)",
+    width: "100%",
+  },
+  ccBankName: {
+    color: "#fff",
+    fontWeight: "900",
+    fontSize: 16,
+    letterSpacing: 1,
+  },
+  ccStatusRow: { flexDirection: "row", alignItems: "center", marginTop: 4 },
+  ccStatusDot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
+  ccStatusText: { color: "#fff", fontSize: 12, fontWeight: "600" },
+  ccAmountArea: { marginTop: 4 },
+  ccAmountLabel: { color: "rgba(255,255,255,0.8)", fontSize: 11 },
+  ccAmountValue: { color: "#fff", fontSize: 24, fontWeight: "bold" },
+  ccLimitArea: { marginTop: 8 },
+  ccLimitRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 6,
+  },
+  ccLimitLabel: { color: "rgba(255,255,255,0.8)", fontSize: 10 },
+  ccLimitPercent: { color: "#fff", fontSize: 11, fontWeight: "bold" },
+  ccLimitBarBg: {
+    height: 4,
+    backgroundColor: "rgba(255,255,255,0.3)",
+    borderRadius: 2,
+    overflow: "hidden",
+  },
+  ccLimitBarFill: { height: "100%", backgroundColor: "#fff", borderRadius: 2 },
+  ccLimitAvailable: {
+    color: "rgba(255,255,255,0.8)",
+    fontSize: 10,
+    marginTop: 4,
+  },
+
+  upcomingCard: {
+    borderRadius: 16,
+    padding: 16,
+    marginRight: 12,
+    minWidth: 220,
+    borderWidth: 1,
+  },
+  upcomingInfo: { marginBottom: 12 },
+  upcomingTitle: { fontSize: 15, fontWeight: "bold" },
+  upcomingSub: {
+    fontSize: 12,
+    fontWeight: "600",
+    marginTop: 2,
+    marginBottom: 4,
+  },
+  upcomingValue: { fontSize: 18, fontWeight: "800" },
+  upcomingActions: { flexDirection: "row", gap: 8 },
+  upcomingBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  upcomingBtnText: { fontSize: 12, fontWeight: "bold" },
+
   categoryMainCard: { borderRadius: 16, padding: 16, borderWidth: 1 },
   chartRowLayout: {
     flexDirection: "row",
@@ -1181,7 +1712,6 @@ const s = StyleSheet.create({
   },
   emptyText: { fontSize: 13, fontStyle: "italic" },
 
-  // 👇 Novos estilos das Metas
   budgetCard: { borderRadius: 16, padding: 16, borderWidth: 1 },
   budgetHeader: {
     flexDirection: "row",
@@ -1210,7 +1740,8 @@ const s = StyleSheet.create({
     marginBottom: 6,
   },
   subGoalValue: { fontSize: 13, fontWeight: "bold" },
-  subGoalPercent: { fontSize: 11, fontWeight: "bold" }, // Estilos do Menu Lateral
+  subGoalPercent: { fontSize: 11, fontWeight: "bold" },
+
   menuOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.6)",
@@ -1250,7 +1781,7 @@ const s = StyleSheet.create({
   },
   menuItemText: { fontSize: 15, fontWeight: "600", flex: 1 },
   menuFooter: { borderTopWidth: 1, paddingTop: 14 },
-  // Estilos do Seletor de Mês
+
   monthPickerOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.6)",
@@ -1272,4 +1803,54 @@ const s = StyleSheet.create({
     borderRadius: 10,
   },
   monthPickerItemText: { fontSize: 14 },
+
+  modalOverlayCenter: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalCardCenter: {
+    padding: 24,
+    borderRadius: 20,
+    width: "90%",
+    maxWidth: 400,
+    borderWidth: 1,
+  },
+  modalCardTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    marginBottom: 6,
+  },
+  modalCardSub: {
+    fontSize: 13,
+    marginBottom: 20,
+  },
+  modalInputWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 14,
+    borderRadius: 12,
+    marginBottom: 20,
+    borderWidth: 1,
+  },
+  modalInputCurrency: {
+    fontWeight: "bold",
+    marginRight: 8,
+  },
+  modalTextInput: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: "bold",
+  },
+  modalSaveBtn: {
+    padding: 16,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  modalSaveText: {
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 15,
+  },
 });

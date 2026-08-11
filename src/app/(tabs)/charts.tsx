@@ -7,7 +7,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Platform,
-  useWindowDimensions, // 👈 Adicionada a ferramenta para calcular larguras dinamicamente
+  useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, {
@@ -79,14 +79,33 @@ function slicePath(
   return `M${cx},${cy} L${s.x},${s.y} A${r},${r} 0 ${large} 1 ${e.x},${e.y} Z`;
 }
 
+// 👇 1. MÁQUINA DO TEMPO: Descobre se uma compra a crédito estava ativa num mês específico do passado/futuro
+function isInstallmentActiveInMonth(inst: any, year: number, month: number) {
+  const dateStr = inst.start_date
+    ? inst.start_date.split("T")[0]
+    : inst.created_at.split("T")[0];
+  const [sYear, sMonth] = dateStr.split("-").map(Number);
+  const startM = sMonth - 1; // Ajuste porque em Javascript os meses vão de 0 a 11
+  const monthsDiff = (year - sYear) * 12 + (month - startM);
+  return monthsDiff >= 0 && monthsDiff < inst.total_installments;
+}
+
+// 👇 2. MÁQUINA DO TEMPO: Descobre se uma conta fixa já existia num mês específico do passado/futuro
+function isFixedActiveInMonth(f: any, year: number, month: number) {
+  if (!f.created_at) return true;
+  const dateStr = f.created_at.split("T")[0];
+  const [sYear, sMonth] = dateStr.split("-").map(Number);
+  const startM = sMonth - 1;
+  const monthsDiff = (year - sYear) * 12 + (month - startM);
+  return monthsDiff >= 0;
+}
+
 export default function ChartsScreen() {
   const router = useRouter();
   const { profile } = useAuth();
   const { colors, isDark } = useAppTheme();
 
-  // 👈 1. Capturamos a largura real da tela no momento em que abre
   const { width: SW } = useWindowDimensions();
-  // 👈 2. Descontamos 80px (24px de cada lado da ScrollView + 16px de cada lado do Cartão)
   const CHART_W = SW - 80;
 
   const { expenses: fixedList } = useFixedExpenses();
@@ -124,52 +143,53 @@ export default function ChartsScreen() {
     }
   }, [hasMore, isLoading, isLoadingMore, fetchMore]);
 
+  // 👇 LÓGICA DO GRÁFICO DE PIZZA CORRIGIDA
   const pieData = useMemo(() => {
     const today = new Date();
-    const currentMonthFrom = new Date(today.getFullYear(), today.getMonth(), 1)
+    const currentYear = today.getFullYear();
+    const currentMonth = today.getMonth();
+    const currentMonthFrom = new Date(currentYear, currentMonth, 1)
       .toISOString()
       .split("T")[0];
-    const currentMonthTo = new Date(
-      today.getFullYear(),
-      today.getMonth() + 1,
-      0,
-    )
+    const currentMonthTo = new Date(currentYear, currentMonth + 1, 0)
       .toISOString()
       .split("T")[0];
 
     const map: Record<string, { label: string; value: number; color: string }> =
       {};
 
+    // 1. Transações Normais (Excluindo pagamentos de Fatura!)
     transactions
       .filter(
         (t) =>
           t.type === "expense" &&
           t.date >= currentMonthFrom &&
-          t.date <= currentMonthTo,
+          t.date <= currentMonthTo &&
+          !t.title?.includes("Fatura"), // 👈 O segredo para não contar 2x
       )
       .forEach((t) => {
         const amt = Number(t.amount) || 0;
-        const key = t.category?.name ?? "Sem categoria";
+        const key = t.category?.name ?? "Outros (Sem Categoria / Cartão)";
         const color = t.category?.color ?? "#9ca3af";
         if (!map[key]) map[key] = { label: key, value: 0, color };
         map[key].value += amt;
       });
 
+    // 2. Compras no Cartão de Crédito
     installments.forEach((i) => {
-      if (
-        i.paid_installments < i.total_installments &&
-        (!i.start_date || i.start_date <= currentMonthTo)
-      ) {
+      if (isInstallmentActiveInMonth(i, currentYear, currentMonth)) {
         const amt = Number(i.installment_amount) || 0;
-        const key = (i as any).category?.name ?? "Cartão de Crédito";
-        const color = (i as any).category?.color ?? "#f97316";
+        const key =
+          (i as any).category?.name ?? "Outros (Sem Categoria / Cartão)";
+        const color = (i as any).category?.color ?? "#9ca3af";
         if (!map[key]) map[key] = { label: key, value: 0, color };
         map[key].value += amt;
       }
     });
 
+    // 3. Contas Fixas
     fixedList.forEach((f) => {
-      if (!f.is_paid) {
+      if (isFixedActiveInMonth(f, currentYear, currentMonth)) {
         const amt = Number(f.amount) || 0;
         const key = f.category?.name ?? "Contas Fixas";
         const color = f.category?.color ?? "#f59e0b";
@@ -192,49 +212,95 @@ export default function ChartsScreen() {
   const pieTotal = pieData.reduce((s, d) => s + d.value, 0);
 
   const months = useMemo(() => getLast6Months(), []);
+
+  // 👇 LÓGICA DO GRÁFICO DE BARRAS CORRIGIDA
   const barData = useMemo(() => {
     return months.map((m) => {
-      const inMonth = transactions.filter(
-        (t) => t.date >= m.from && t.date <= m.to,
-      );
-      return {
-        label: m.label,
-        income: inMonth
-          .filter((t) => t.type === "income")
-          .reduce((s, t) => s + (Number(t.amount) || 0), 0),
-        expense: inMonth
-          .filter((t) => t.type === "expense")
-          .reduce((s, t) => s + (Number(t.amount) || 0), 0),
-      };
-    });
-  }, [transactions, months]);
-
-  const barMax = Math.max(...barData.flatMap((d) => [d.income, d.expense]), 1);
-
-  const annualData = useMemo(() => {
-    const year = new Date().getFullYear();
-    return Array.from({ length: 12 }).map((_, m) => {
-      const mFrom = new Date(year, m, 1).toISOString().split("T")[0];
-      const mTo = new Date(year, m + 1, 0).toISOString().split("T")[0];
-      const label = new Date(year, m, 1).toLocaleString("pt-BR", {
-        month: "long",
-      });
-      const shortLabel = new Date(year, m, 1)
-        .toLocaleString("pt-BR", { month: "short" })
-        .replace(".", "");
+      const mDate = new Date(m.from + "T00:00:00");
+      const y = mDate.getFullYear();
+      const mo = mDate.getMonth();
 
       let income = 0;
       let expense = 0;
+
+      // 1. Transações (Excluindo as faturas para não baralhar as receitas e despesas)
       transactions.forEach((t) => {
-        if (t.date >= mFrom && t.date <= mTo) {
+        if (
+          t.date >= m.from &&
+          t.date <= m.to &&
+          !t.title?.includes("Fatura")
+        ) {
           const amt = Number(t.amount) || 0;
           if (t.type === "income") income += amt;
           else expense += amt;
         }
       });
 
+      // 2. Adicionando o Cartão de Crédito ao histórico de Barras
+      installments.forEach((inst) => {
+        if (isInstallmentActiveInMonth(inst, y, mo)) {
+          expense += Number(inst.installment_amount) || 0;
+        }
+      });
+
+      // 3. Adicionando as Contas Fixas ao histórico de Barras
+      fixedList.forEach((f) => {
+        if (isFixedActiveInMonth(f, y, mo)) {
+          expense += Number(f.amount) || 0;
+        }
+      });
+
       return {
-        monthIndex: m,
+        label: m.label,
+        income,
+        expense,
+      };
+    });
+  }, [transactions, installments, fixedList, months]);
+
+  const barMax = Math.max(...barData.flatMap((d) => [d.income, d.expense]), 1);
+
+  // 👇 LÓGICA DO GRÁFICO ANUAL CORRIGIDA
+  const annualData = useMemo(() => {
+    const year = new Date().getFullYear();
+    return Array.from({ length: 12 }).map((_, mo) => {
+      const mFrom = new Date(year, mo, 1).toISOString().split("T")[0];
+      const mTo = new Date(year, mo + 1, 0).toISOString().split("T")[0];
+      const label = new Date(year, mo, 1).toLocaleString("pt-BR", {
+        month: "long",
+      });
+      const shortLabel = new Date(year, mo, 1)
+        .toLocaleString("pt-BR", { month: "short" })
+        .replace(".", "");
+
+      let income = 0;
+      let expense = 0;
+
+      // 1. Transações sem faturas
+      transactions.forEach((t) => {
+        if (t.date >= mFrom && t.date <= mTo && !t.title?.includes("Fatura")) {
+          const amt = Number(t.amount) || 0;
+          if (t.type === "income") income += amt;
+          else expense += amt;
+        }
+      });
+
+      // 2. Cartões de Crédito Anual
+      installments.forEach((inst) => {
+        if (isInstallmentActiveInMonth(inst, year, mo)) {
+          expense += Number(inst.installment_amount) || 0;
+        }
+      });
+
+      // 3. Contas Fixas Anual
+      fixedList.forEach((f) => {
+        if (isFixedActiveInMonth(f, year, mo)) {
+          expense += Number(f.amount) || 0;
+        }
+      });
+
+      return {
+        monthIndex: mo,
         label: label.charAt(0).toUpperCase() + label.slice(1),
         shortLabel: shortLabel.charAt(0).toUpperCase() + shortLabel.slice(1),
         income,
@@ -242,7 +308,7 @@ export default function ChartsScreen() {
         diff: income - expense,
       };
     });
-  }, [transactions]);
+  }, [transactions, installments, fixedList]);
 
   const annualMax = Math.max(
     ...annualData.flatMap((d) => [d.income, d.expense]),
@@ -250,9 +316,8 @@ export default function ChartsScreen() {
   );
 
   function renderPie() {
-    // 👈 3. Ajuste do Raio para impedir que corte a tela
     const PIE_R = Math.min(110, CHART_W / 2 - 10);
-    const HOLE_R = PIE_R * 0.6; // Mantém a proporção do buraco
+    const HOLE_R = PIE_R * 0.6;
     const CX = CHART_W / 2;
     const CY = PIE_R + 25;
     const SVG_H = PIE_R * 2 + 50;
@@ -354,7 +419,6 @@ export default function ChartsScreen() {
     const BAR_H = 200;
     const PADDING = 16;
 
-    // 👈 4. Largura e espaços dinâmicos para as barras não se sobreporem
     const availW = CHART_W - PADDING * 2;
     const BAR_W = Math.min(20, availW / (barData.length * 3));
     const GAP = (availW - barData.length * BAR_W * 2) / (barData.length + 1);

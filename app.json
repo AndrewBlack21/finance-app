@@ -6,7 +6,9 @@
     "scheme": "financeapp",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.seuNome.financeapp"
@@ -38,7 +40,10 @@
         "start_url": "/"
       }
     },
-    "plugins": ["expo-router"],
+    "plugins": [
+      "expo-router",
+      "@react-native-community/datetimepicker"
+    ],
     "experiments": {
       "typedRoutes": true
     }

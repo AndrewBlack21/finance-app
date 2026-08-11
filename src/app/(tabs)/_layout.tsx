@@ -1,5 +1,5 @@
 import { Tabs } from "expo-router";
-import { StyleSheet } from "react-native";
+import { StyleSheet, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { ComponentProps } from "react";
 import { useAppTheme } from "@/hooks/useTheme";
@@ -30,18 +30,20 @@ export default function TabsLayout() {
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: colors.card as string,
-          borderTopColor: colors.border as string,
-          height: 60,
-          paddingBottom: 6,
-          paddingTop: 6,
+          backgroundColor: colors.card,
+          borderTopColor: colors.border,
+          height: Platform.OS === "ios" ? 90 : 70, // 👈 Altura extra para caber o texto com folga
+          paddingBottom: Platform.OS === "ios" ? 30 : 10, // 👇 Dá espaço em baixo
+          paddingTop: 8,
         },
-        tabBarActiveTintColor: colors.primary as string,
-        tabBarInactiveTintColor: colors.subText as string,
         tabBarLabelStyle: {
           fontSize: 11,
-          fontWeight: "600",
+          fontWeight: "bold",
+          paddingBottom: 5, // 👇 Garante que a letra não toca no fundo
+          marginTop: 2,
         },
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.subText,
       }}
     >
       <Tabs.Screen

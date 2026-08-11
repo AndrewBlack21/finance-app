@@ -1,11 +1,17 @@
 // ============================================================
 // FORMATAÇÃO DE MOEDA — multi-moeda
 // ============================================================
-export function formatCurrency(amount: number, currency = "BRL"): string {
+export function formatCurrency(
+  amount: number,
+  currency = "BRL",
+  compact = false,
+): string {
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
     currency,
-    minimumFractionDigits: 2,
+    notation: compact ? "compact" : "standard",
+    minimumFractionDigits: compact ? 0 : 2,
+    maximumFractionDigits: compact ? 1 : 2,
   }).format(amount);
 }
 

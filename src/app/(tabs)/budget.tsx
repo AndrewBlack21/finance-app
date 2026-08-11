@@ -21,6 +21,10 @@ import { useAuth } from "@/hooks/useAuth";
 import { useRouter } from "expo-router";
 import { useAppTheme } from "@/hooks/useTheme";
 
+// 👇 IMPORTAÇÕES NOVAS: Trazendo os cartões e despesas fixas para a matemática das metas
+import { useInstallments } from "@/hooks/useInstallments";
+import { useFixedExpenses } from "@/hooks/useFixedExpenses";
+
 const { width: SW } = Dimensions.get("window");
 
 function Ring({
@@ -94,9 +98,12 @@ export default function BudgetScreen() {
   const { profile } = useAuth();
   const { categories } = useCategories();
 
-  // O totalBudget original não é mais usado, extraímos apenas os objetivos e as funções
   const { goals, upsert, remove } = useBudgetGoals();
   const { colors, isDark } = useAppTheme();
+
+  // Instanciando os novos hooks
+  const { installments } = useInstallments();
+  const { expenses: fixedExpenses } = useFixedExpenses();
 
   const [monthOffset, setMonthOffset] = useState(0);
   const [showMonthPicker, setShowMonthPicker] = useState(false);
@@ -143,21 +150,44 @@ export default function BudgetScreen() {
     }
   }, [hasMore, isLoading, isLoadingMore, fetchMore]);
 
+  // 👇 LÓGICA CORRIGIDA: Cálculo real de consumo baseado nas 3 fontes de gastos
   const spentByCategory = useMemo(() => {
     const map: Record<string, number> = {};
+
+    // 1. Transações normais (Ignorando pagamentos de fatura para evitar contagem dupla)
     transactions
-      .filter((t) => t.type === "expense")
+      .filter((t) => t.type === "expense" && !t.title?.includes("Fatura"))
       .forEach((t) => {
         const key = t.category_id ?? "__none__";
         map[key] = (map[key] ?? 0) + (Number(t.amount) || 0);
       });
-    return map;
-  }, [transactions]);
 
-  // CÁLCULO AUTOMÁTICO DA META GLOBAL
+    // 2. Compras no Cartão de Crédito (Parcelas ativas no mês)
+    installments.forEach((i) => {
+      if (
+        i.paid_installments < i.total_installments &&
+        (!i.start_date || i.start_date <= to)
+      ) {
+        // Como parcelas atualmente não têm categoria forçada, elas caem em __none__
+        const key = (i as any).category_id ?? "__none__";
+        map[key] = (map[key] ?? 0) + (Number(i.installment_amount) || 0);
+      }
+    });
+
+    // 3. Despesas Fixas (Ainda não pagas no mês)
+    fixedExpenses.forEach((f) => {
+      if (!f.is_paid) {
+        const key = f.category_id ?? "__none__";
+        map[key] = (map[key] ?? 0) + (Number(f.amount) || 0);
+      }
+    });
+
+    return map;
+  }, [transactions, installments, fixedExpenses, to]);
+
   const dynamicTotalBudget = useMemo(() => {
     return goals
-      .filter((g) => g.category_id != null) // Apenas metas associadas a categorias
+      .filter((g) => g.category_id != null)
       .reduce((sum, g) => sum + (g.monthly_limit || 0), 0);
   }, [goals]);
 
@@ -176,6 +206,7 @@ export default function BudgetScreen() {
       goalId: string | null;
     }[] = [];
 
+    // Metas definidas
     goals.forEach((g) => {
       if (!g.category_id) return;
       const cat = categories.find((c) => c.id === g.category_id);
@@ -191,6 +222,7 @@ export default function BudgetScreen() {
       });
     });
 
+    // Categorias com gastos mas sem metas
     categories.forEach((cat) => {
       if (seen.has(cat.id)) return;
       const spent = spentByCategory[cat.id] ?? 0;
@@ -204,6 +236,19 @@ export default function BudgetScreen() {
         goalId: null,
       });
     });
+
+    // 👇 REVELANDO OS FANTASMAS: Mostra os gastos sem categoria ou do cartão
+    const semCategoria = spentByCategory["__none__"] ?? 0;
+    if (semCategoria > 0) {
+      rows.push({
+        id: "__none__",
+        name: "Outros (Sem Categoria / Cartão)",
+        color: "#9ca3af", // Cor neutra
+        spent: semCategoria,
+        limit: null,
+        goalId: null,
+      });
+    }
 
     return rows.sort((a, b) => b.spent - a.spent);
   }, [goals, categories, spentByCategory]);
@@ -268,6 +313,13 @@ export default function BudgetScreen() {
     currentLimit?: number,
     goalId?: string | null,
   ) => {
+    if (catId === "__none__") {
+      Alert.alert(
+        "Aviso",
+        "Gastos 'Sem Categoria' ou compras de Cartão de Crédito genéricas não podem ter metas estáticas. Atribua categorias às transações primeiro.",
+      );
+      return;
+    }
     setEditModal({ id: goalId || null, catId, label: name, color });
     setLimitInput(currentLimit?.toString() ?? "");
   };
@@ -497,30 +549,33 @@ export default function BudgetScreen() {
                     <Ionicons name="trash" size={14} color="#dc2626" />
                   </TouchableOpacity>
                 )}
-                <TouchableOpacity
-                  style={[
-                    s.editBtn,
-                    { backgroundColor: isDark ? "#312e81" : "#ede9fe" },
-                  ]}
-                  onPress={() =>
-                    openEdit(
-                      row.id,
-                      row.name,
-                      row.color,
-                      row.limit ?? undefined,
-                      row.goalId,
-                    )
-                  }
-                >
-                  <Ionicons
-                    name={row.limit ? "pencil" : "add"}
-                    size={14}
-                    color={colors.primary}
-                  />
-                  <Text style={[s.editBtnText, { color: colors.primary }]}>
-                    {row.limit ? "Editar" : "Definir"}
-                  </Text>
-                </TouchableOpacity>
+                {/* Oculta botão de editar na linha "Sem Categoria" */}
+                {row.id !== "__none__" && (
+                  <TouchableOpacity
+                    style={[
+                      s.editBtn,
+                      { backgroundColor: isDark ? "#312e81" : "#ede9fe" },
+                    ]}
+                    onPress={() =>
+                      openEdit(
+                        row.id,
+                        row.name,
+                        row.color,
+                        row.limit ?? undefined,
+                        row.goalId,
+                      )
+                    }
+                  >
+                    <Ionicons
+                      name={row.limit ? "pencil" : "add"}
+                      size={14}
+                      color={colors.primary}
+                    />
+                    <Text style={[s.editBtnText, { color: colors.primary }]}>
+                      {row.limit ? "Editar" : "Definir"}
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
           );
