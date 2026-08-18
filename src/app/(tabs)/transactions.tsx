@@ -5,7 +5,6 @@ import {
   FlatList,
   TouchableOpacity,
   Modal,
-  ScrollView,
   StyleSheet,
   ActivityIndicator,
   Alert,
@@ -19,7 +18,7 @@ import { useAccounts } from "@/hooks/useAccounts";
 import { TransactionForm } from "@/components/forms/TransactionForm";
 import { formatCurrency, formatDate } from "@/utils";
 import { useAuth } from "@/hooks/useAuth";
-import { useAppTheme } from "@/hooks/useTheme"; // 👈 Importação do motor de temas
+import { useAppTheme } from "@/hooks/useTheme";
 import type {
   Transaction,
   CreateTransaction,
@@ -29,7 +28,7 @@ import type {
 export default function TransactionsScreen() {
   const { profile } = useAuth();
   const { accounts, update: updateAccount } = useAccounts();
-  const { colors, isDark } = useAppTheme(); // 👈 Cores dinâmicas
+  const { colors, isDark } = useAppTheme();
 
   const {
     transactions,
@@ -86,7 +85,6 @@ export default function TransactionsScreen() {
 
   const handleUpdate = async (data: CreateTransaction) => {
     if (!editing) return;
-
     const oldAcc = accounts.find((a) => a.id === editing.account_id);
     const newAcc = accounts.find((a) => a.id === data.account_id);
 
@@ -98,7 +96,6 @@ export default function TransactionsScreen() {
         const revertModifier =
           editing.type === "expense" ? oldAmount : -oldAmount;
         const oldBalance = Number(oldAcc.balance) + revertModifier;
-
         const newAmount = Number(data.amount) || 0;
         const applyModifier = data.type === "expense" ? -newAmount : newAmount;
 
@@ -132,7 +129,6 @@ export default function TransactionsScreen() {
           });
         }
       }
-
       const { error } = await remove(id);
       if (error) Alert.alert("Erro", error);
       else onRefresh();
@@ -205,11 +201,10 @@ export default function TransactionsScreen() {
     const dateA = new Date(a.date).getTime();
     const dateB = new Date(b.date).getTime();
     if (dateA !== dateB) return dateB - dateA;
-    if (a.created_at && b.created_at) {
+    if (a.created_at && b.created_at)
       return (
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       );
-    }
     return 0;
   });
 
@@ -217,16 +212,6 @@ export default function TransactionsScreen() {
     <SafeAreaView style={[s.safe, { backgroundColor: colors.bg }]}>
       <View style={s.header}>
         <Text style={[s.title, { color: colors.text }]}>Transações</Text>
-        <TouchableOpacity
-          style={s.addBtn}
-          onPress={() => {
-            setEditing(null);
-            setModalVisible(true);
-          }}
-        >
-          <Ionicons name="add" size={18} color="#fff" />
-          <Text style={s.addBtnText}>Nova</Text>
-        </TouchableOpacity>
       </View>
 
       <View style={s.summaryRow}>
@@ -236,7 +221,6 @@ export default function TransactionsScreen() {
             {
               backgroundColor: colors.card,
               borderColor: colors.border,
-              borderLeftColor: "#16a34a",
               borderWidth: 1,
             },
           ]}
@@ -244,7 +228,7 @@ export default function TransactionsScreen() {
           <Text style={[s.summaryLabel, { color: colors.subText }]}>
             Receitas
           </Text>
-          <Text style={[s.summaryValue, { color: "#16a34a" }]}>
+          <Text style={[s.summaryValue, { color: "#10b981" }]}>
             {formatCurrency(summary.income, profile?.currency)}
           </Text>
         </View>
@@ -254,7 +238,6 @@ export default function TransactionsScreen() {
             {
               backgroundColor: colors.card,
               borderColor: colors.border,
-              borderLeftColor: "#dc2626",
               borderWidth: 1,
             },
           ]}
@@ -262,7 +245,7 @@ export default function TransactionsScreen() {
           <Text style={[s.summaryLabel, { color: colors.subText }]}>
             Despesas
           </Text>
-          <Text style={[s.summaryValue, { color: "#dc2626" }]}>
+          <Text style={[s.summaryValue, { color: "#ef4444" }]}>
             {formatCurrency(summary.expense, profile?.currency)}
           </Text>
         </View>
@@ -351,7 +334,19 @@ export default function TransactionsScreen() {
         />
       )}
 
+      {/* 👇 O GRANDE BOTÃO FLUTUANTE ROXO NO CENTRO (FAB) */}
+      <TouchableOpacity
+        style={[s.fab, { backgroundColor: colors.primary }]}
+        onPress={() => {
+          setEditing(null);
+          setModalVisible(true);
+        }}
+      >
+        <Ionicons name="add" size={32} color="#fff" />
+      </TouchableOpacity>
+
       <Modal visible={calendarVisible} transparent={true} animationType="fade">
+        {/* ... Modal do calendário permanece igual ... */}
         <View style={s.modalOverlay}>
           <View style={[s.calendarContainer, { backgroundColor: colors.card }]}>
             <View style={s.calendarHeader}>
@@ -399,56 +394,32 @@ export default function TransactionsScreen() {
         </View>
       </Modal>
 
+      {/* 👇 O MODAL DE CRIAÇÃO AGORA É APENAS UMA VIEW PARA A COR PREENCHER O TOPO */}
       <Modal
         visible={modalVisible}
         animationType="slide"
         presentationStyle="pageSheet"
       >
-        <SafeAreaView style={[s.modal, { backgroundColor: colors.bg }]}>
-          <View
-            style={[
-              s.modalHeader,
-              {
-                backgroundColor: colors.card,
-                borderBottomColor: colors.border,
-              },
-            ]}
-          >
-            <Text style={[s.modalTitle, { color: colors.text }]}>
-              {editing ? "Editar Transação" : "Nova Transação"}
-            </Text>
-            <TouchableOpacity
-              onPress={() => {
-                setModalVisible(false);
-                setEditing(null);
-              }}
-            >
-              <Text style={[s.modalClose, { color: colors.primary }]}>
-                Fechar
-              </Text>
-            </TouchableOpacity>
-          </View>
+        <View style={{ flex: 1, backgroundColor: colors.bg }}>
           <TransactionForm
             isLoading={!!isLoading}
             initialValues={editing ? editing : undefined}
             onSubmit={async (data: CreateTransaction) => {
-              if (editing) {
-                await handleUpdate(data);
-              } else {
-                await handleCreate(data);
-              }
+              if (editing) await handleUpdate(data);
+              else await handleCreate(data);
             }}
             onCancel={() => {
               setModalVisible(false);
               setEditing(null);
             }}
           />
-        </SafeAreaView>
+        </View>
       </Modal>
     </SafeAreaView>
   );
 }
 
+// 👇 ESTILO LIMPO E MODERNO PARA A LISTA (Imagem 6)
 function TransactionItem({
   transaction: t,
   currency,
@@ -457,38 +428,34 @@ function TransactionItem({
   onDelete,
 }: any) {
   const isIncome = t.type === "income";
-
-  // 👇 1. Nova lógica para detetar qualquer movimentação de fatura (Pagamento, Cancelado, Estorno)
   const isInvoicePayment =
     t.title && (t.title.includes("Fatura") || t.title.includes("Estorno"));
   const isCanceled = t.title && t.title.includes("(Cancelado)");
 
-  const baseColor = isIncome ? "#16a34a" : "#dc2626";
-  // 👇 2. Se a transação foi cancelada, fica cinzenta para não confundir o utilizador
+  const baseColor = isIncome ? "#10b981" : "#ef4444"; // Verde e Vermelho do Design
   const displayColor = isCanceled ? colors.subText : baseColor;
 
   return (
-    <View style={[s.item, { backgroundColor: colors.card }]}>
-      <View
-        style={[
-          s.itemIcon,
-          {
-            backgroundColor: isInvoicePayment
-              ? "#6366f118" // Fundo azul claro para cartões
-              : (t.category?.color ?? colors.primary) + "20",
-          },
-        ]}
-      >
+    <View
+      style={[
+        s.item,
+        { backgroundColor: colors.card, borderBottomColor: colors.border },
+      ]}
+    >
+      <View style={[s.itemIcon, { backgroundColor: colors.inputBg }]}>
         <Ionicons
-          name={
-            isInvoicePayment ? "card" : isIncome ? "arrow-up" : "arrow-down"
+          name={isInvoicePayment ? "card" : isIncome ? "arrow-down" : "cart"}
+          size={18}
+          color={
+            isCanceled
+              ? colors.subText
+              : isInvoicePayment
+                ? colors.primary
+                : baseColor
           }
-          size={20}
-          color={isInvoicePayment ? colors.primary : displayColor}
         />
       </View>
       <View style={s.itemInfo}>
-        {/* Título riscado se estiver cancelado */}
         <Text
           style={[
             s.itemTitle,
@@ -497,15 +464,12 @@ function TransactionItem({
               textDecorationLine: isCanceled ? "line-through" : "none",
             },
           ]}
+          numberOfLines={1}
         >
           {t.title}
         </Text>
-
-        {/* 👇 3. Subtítulo Limpo: Mostra apenas a data se for fatura */}
         <Text style={[s.itemCategory, { color: colors.subText }]}>
-          {isInvoicePayment
-            ? `Data: ${formatDate(t.date)}`
-            : `${t.category?.name ?? "Sem categoria"} · ${formatDate(t.date)}`}
+          {isInvoicePayment ? `Fatura` : (t.category?.name ?? "Sem categoria")}
         </Text>
       </View>
       <View style={s.itemRight}>
@@ -521,24 +485,29 @@ function TransactionItem({
           {isIncome ? "+" : "-"}
           {formatCurrency(t.amount, currency)}
         </Text>
+        <Text
+          style={[
+            s.itemCategory,
+            { color: colors.subText, textAlign: "right" },
+          ]}
+        >
+          {formatDate(t.date).substring(0, 6)}
+        </Text>
 
-        <View style={s.itemActions}>
-          {/* 👇 4. Esconde Editar e Apagar para Faturas (Protege o banco de dados) */}
-          {!isInvoicePayment && (
-            <>
-              <TouchableOpacity onPress={onEdit} style={s.editBtn}>
-                <Ionicons
-                  name="create-outline"
-                  size={14}
-                  color={colors.primary}
-                />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={onDelete} style={s.deleteBtn}>
-                <Ionicons name="trash-outline" size={14} color="#ef4444" />
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
+        {!isInvoicePayment && (
+          <View style={s.itemActions}>
+            <TouchableOpacity onPress={onEdit} style={s.actionIcon}>
+              <Ionicons
+                name="create-outline"
+                size={14}
+                color={colors.subText}
+              />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={onDelete} style={s.actionIcon}>
+              <Ionicons name="trash-outline" size={14} color="#ef4444" />
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
     </View>
   );
@@ -551,81 +520,78 @@ const s = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingTop: 16,
+    paddingBottom: 8,
   },
-  title: { fontSize: 22, fontWeight: "bold" },
-  addBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: "#6366f1",
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  addBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
+  title: { fontSize: 24, fontWeight: "bold" },
+
+  // Resumo
   summaryRow: {
     flexDirection: "row",
     paddingHorizontal: 20,
     gap: 12,
     marginBottom: 16,
   },
-  summaryCard: {
-    flex: 1,
-    borderRadius: 12,
-    padding: 14,
-    borderLeftWidth: 4,
-  },
-  summaryLabel: { fontSize: 12, marginBottom: 4 },
-  summaryValue: { fontSize: 16, fontWeight: "700" },
-  list: { paddingHorizontal: 20, paddingBottom: 32 },
+  summaryCard: { flex: 1, borderRadius: 16, padding: 16 },
+  summaryLabel: { fontSize: 13, marginBottom: 4, fontWeight: "600" },
+  summaryValue: { fontSize: 18, fontWeight: "bold" },
+
+  // Lista Limpa
+  list: { paddingHorizontal: 20, paddingBottom: 100 }, // Espaço para o FAB
   item: {
     flexDirection: "row",
     alignItems: "center",
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 8,
-  },
-  itemIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 12,
-  },
-  itemInfo: { flex: 1 },
-  itemTitle: { fontSize: 14, fontWeight: "600" },
-  itemCategory: { fontSize: 12, marginTop: 2 },
-  itemRight: { alignItems: "flex-end" },
-  itemAmount: { fontSize: 14, fontWeight: "700" },
-  itemActions: { flexDirection: "row", gap: 8, marginTop: 4 },
-  editBtn: { padding: 4 },
-  deleteBtn: { padding: 4 },
-  empty: { alignItems: "center", paddingVertical: 60 },
-  emptyText: { fontSize: 16, fontWeight: "600" },
-  modal: { flex: 1 },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 20,
     paddingVertical: 16,
     borderBottomWidth: 1,
   },
-  modalTitle: { fontSize: 18, fontWeight: "bold" },
-  modalClose: { fontWeight: "600" },
+  itemIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 14,
+  },
+  itemInfo: { flex: 1, paddingRight: 10 },
+  itemTitle: { fontSize: 15, fontWeight: "bold", marginBottom: 2 },
+  itemCategory: { fontSize: 13 },
+  itemRight: { alignItems: "flex-end" },
+  itemAmount: { fontSize: 15, fontWeight: "bold", marginBottom: 2 },
+  itemActions: { flexDirection: "row", gap: 12, marginTop: 6 },
+  actionIcon: { padding: 4 },
+
+  // Botão Flutuante (FAB)
+  fab: {
+    position: "absolute",
+    bottom: 24,
+    alignSelf: "center",
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+
+  empty: { alignItems: "center", paddingVertical: 60 },
+  emptyText: { fontSize: 16, fontWeight: "600" },
   filterBtn: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     borderWidth: 1,
     padding: 12,
-    borderRadius: 8,
+    borderRadius: 12,
     gap: 8,
   },
-  filterBtnText: { fontSize: 14 },
+  filterBtnText: { fontSize: 14, fontWeight: "600" },
   clearBtn: { justifyContent: "center", padding: 8 },
+
+  // Calendário
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -634,7 +600,7 @@ const s = StyleSheet.create({
   },
   calendarContainer: {
     width: 320,
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 20,
     elevation: 5,
   },
@@ -668,16 +634,12 @@ const s = StyleSheet.create({
     alignItems: "center",
     borderRadius: 19,
   },
-  calendarDayText: { fontSize: 14 },
+  calendarDayText: { fontSize: 14, fontWeight: "500" },
   closeCalendarBtn: {
-    padding: 12,
-    borderRadius: 8,
+    padding: 14,
+    borderRadius: 12,
     alignItems: "center",
-    marginTop: 16,
+    marginTop: 20,
   },
-  endText: {
-    textAlign: "center",
-    fontSize: 12,
-    paddingVertical: 16,
-  },
+  endText: { textAlign: "center", fontSize: 12, paddingVertical: 16 },
 });

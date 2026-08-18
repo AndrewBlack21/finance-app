@@ -60,7 +60,7 @@ function getMonthName(ref: string) {
 }
 
 export default function CreditCardsScreen() {
-  const { colors } = useAppTheme();
+  const { colors, isDark } = useAppTheme();
   const insets = useSafeAreaInsets();
 
   const {
@@ -110,54 +110,20 @@ export default function CreditCardsScreen() {
     fetchInvoices();
   }, [creditAccountsOnly.map((a) => a.id).join(",")]);
 
+  // 👇 LÓGICA BLINDADA E SIMPLIFICADA PARA EVITAR ZERAR OS VALORES
   const invoiceGroups = useMemo(() => {
-    const currentMonthRef = new Date().toISOString().slice(0, 7);
+    const currentMonthIso = new Date().toISOString().slice(0, 7);
+    const nextMonthDate = new Date();
+    nextMonthDate.setMonth(nextMonthDate.getMonth() + 1);
+    const nextMonthIso = nextMonthDate.toISOString().slice(0, 7);
 
     return creditAccountsOnly.map((acc) => {
       const accInstallments = installments.filter(
         (i) => i.account_id === acc.id,
       );
-
       const allActive = accInstallments.filter(
         (i) => Number(i.paid_installments) < Number(i.total_installments),
       );
-
-      const accInvoices = invoicesByAccount[acc.id] ?? {};
-      const allInvoices = Object.values(accInvoices).sort((a: any, b: any) =>
-        a.reference.localeCompare(b.reference),
-      );
-      const unpaidInvoices = allInvoices.filter(
-        (inv: any) => inv.status !== "paga",
-      );
-
-      let currentRef = currentMonthRef;
-      let currentInvoice = null;
-
-      if (unpaidInvoices.length > 0) {
-        if (
-          unpaidInvoices[0].reference > currentMonthRef &&
-          accInvoices[currentMonthRef]
-        ) {
-          currentRef = currentMonthRef;
-          currentInvoice = accInvoices[currentMonthRef];
-        } else {
-          currentRef = unpaidInvoices[0].reference;
-          currentInvoice = unpaidInvoices[0];
-        }
-      } else {
-        const currentMonthInv = allInvoices.find(
-          (g: any) => g.reference === currentMonthRef,
-        );
-        currentRef = currentMonthInv
-          ? currentMonthRef
-          : allInvoices.length > 0
-            ? allInvoices[allInvoices.length - 1].reference
-            : currentMonthRef;
-        currentInvoice = accInvoices[currentRef] || null;
-      }
-
-      const nextRef = addMonthsToReference(currentRef, 1);
-      const nextInvoice = accInvoices[nextRef] || null;
 
       const currentInstallments: Installment[] = [];
       const nextInstallments: Installment[] = [];
@@ -166,10 +132,20 @@ export default function CreditCardsScreen() {
         const paidInst = Number(item.paid_installments) || 0;
         const totalInst = Number(item.total_installments) || 1;
 
-        let isCurrent = false;
-        let isNext = false;
+        // Matemática direta baseada na data da compra
+        const dateStr = item.start_date
+          ? item.start_date.split("T")[0]
+          : item.created_at
+            ? item.created_at.split("T")[0]
+            : new Date().toISOString().split("T")[0];
+        const [y, m] = dateStr.split("-").map(Number);
+        const totalMonths = y * 12 + (m - 1) + paidInst;
+        const refY = Math.floor(totalMonths / 12);
+        const refM = (totalMonths % 12) + 1;
+        const itemRef = `${refY}-${String(refM).padStart(2, "0")}`;
 
-        // 👇 LÓGICA BLINDADA: Exatamente a mesma usada no ecrã accounts.tsx
+        let isCurrent = false;
+
         if (
           item.invoice?.status === "aberta" ||
           item.invoice?.status === "fechada"
@@ -178,36 +154,23 @@ export default function CreditCardsScreen() {
         } else if (item.invoice?.status === "paga") {
           isCurrent = false;
         } else {
-          // Plano B Matemático: Calcula o mês baseado na data original de compra
-          const dateStr = item.start_date
-            ? item.start_date.split("T")[0]
-            : item.created_at
-              ? item.created_at.split("T")[0]
-              : new Date().toISOString().split("T")[0];
-          const [y, m] = dateStr.split("-").map(Number);
-          const totalMonths = y * 12 + (m - 1) + paidInst;
-          const refY = Math.floor(totalMonths / 12);
-          const refM = (totalMonths % 12) + 1;
-          const itemRef = `${refY}-${String(refM).padStart(2, "0")}`;
-
-          isCurrent = itemRef <= currentRef;
-          isNext = itemRef === nextRef;
+          isCurrent = itemRef <= currentMonthIso;
         }
 
         if (isCurrent) {
           currentInstallments.push(item);
-
-          // Se esta parcela for cobrada agora, a próxima será no próximo mês!
           if (paidInst + 1 < totalInst) {
-            nextInstallments.push({
-              ...item,
-              paid_installments: paidInst + 1,
-            });
+            nextInstallments.push({ ...item, paid_installments: paidInst + 1 });
           }
-        } else if (isNext) {
+        } else if (itemRef === nextMonthIso) {
           nextInstallments.push(item);
         }
       });
+
+      const currentInvoice =
+        currentInstallments.find((i) => i.invoice)?.invoice ?? null;
+      const isInvoicePaid =
+        currentInstallments.length === 0 && allActive.length > 0;
 
       const invoiceTotal = currentInstallments.reduce(
         (sum, i) => sum + Number(i.installment_amount),
@@ -221,16 +184,16 @@ export default function CreditCardsScreen() {
       return {
         account: acc,
         invoice: currentInvoice,
-        currentRef,
-        nextRef,
+        currentRef: currentInvoice ? currentInvoice.reference : currentMonthIso,
+        nextRef: nextMonthIso,
         currentInstallments,
         nextInstallments,
         invoiceTotal,
         nextInvoiceTotal,
-        isInvoicePaid: currentInvoice?.status === "paga",
+        isInvoicePaid,
       };
     });
-  }, [creditAccountsOnly, installments, invoicesByAccount]);
+  }, [creditAccountsOnly, installments]);
 
   const handleOpenPayModal = (group: any) => {
     if (!group.invoice) return;
@@ -458,14 +421,25 @@ export default function CreditCardsScreen() {
         },
       ]}
     >
+      <View style={s.headerContainer}>
+        <Text style={[s.headerTitle, { color: colors.text }]}>
+          Cartões de Crédito
+        </Text>
+        <Text style={[s.headerSubtitle, { color: colors.subText }]}>
+          Acompanhe faturas e compras parceladas
+        </Text>
+      </View>
+
       <FlatList
         data={invoiceGroups}
         keyExtractor={(item) => item.account.id}
-        contentContainerStyle={{ paddingBottom: 100 }}
+        contentContainerStyle={s.listContent}
+        showsVerticalScrollIndicator={false}
         renderItem={({ item: group }) => (
           <InvoiceCard
             group={group}
             colors={colors}
+            isDark={isDark}
             onPayInvoice={() => handleOpenPayModal(group)}
             onCancelPayment={() => handleCancelPayment(group)}
             onEdit={handleOpenEdit}
@@ -478,7 +452,7 @@ export default function CreditCardsScreen() {
         style={[s.fab, { backgroundColor: colors.primary }]}
         onPress={handleOpenCreate}
       >
-        <Ionicons name="add" size={24} color="#fff" />
+        <Ionicons name="add" size={32} color="#fff" />
       </TouchableOpacity>
 
       <Modal visible={payModalVisible} transparent animationType="fade">
@@ -492,65 +466,60 @@ export default function CreditCardsScreen() {
             <Text style={[s.modalTitle, { color: colors.text }]}>
               Pagar Fatura
             </Text>
-            <Text style={{ color: colors.subText, marginBottom: 16 }}>
+            <Text style={{ color: colors.subText, marginBottom: 20 }}>
               Pagar a fatura de{" "}
               <Text style={{ fontWeight: "bold", color: colors.text }}>
                 {payingGroup?.account?.name}
               </Text>{" "}
               no valor de{" "}
-              <Text style={{ fontWeight: "bold", color: "#dc2626" }}>
+              <Text style={{ fontWeight: "bold", color: "#10b981" }}>
                 {formatCurrency(payingGroup?.invoiceTotal || 0, "BRL")}
               </Text>
             </Text>
 
             <Text style={[s.label, { color: colors.subText }]}>
-              De qual Conta Corrente sai o dinheiro?
+              Origem do pagamento (Conta Corrente):
             </Text>
-
             {checkingAccounts.length === 0 ? (
               <Text
                 style={{
-                  color: "#dc2626",
+                  color: "#ef4444",
                   fontStyle: "italic",
                   marginBottom: 24,
                   marginTop: 8,
                 }}
               >
-                Você não possui Contas Correntes cadastradas para realizar este
-                pagamento.
+                Nenhuma Conta Corrente cadastrada.
               </Text>
             ) : (
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
-                style={{ marginBottom: 24, maxHeight: 40 }}
+                style={{ marginBottom: 24, maxHeight: 44 }}
               >
                 {checkingAccounts.map((acc) => (
                   <TouchableOpacity
                     key={acc.id}
-                    style={{
-                      paddingHorizontal: 16,
-                      paddingVertical: 8,
-                      borderRadius: 20,
-                      borderWidth: 1,
-                      marginRight: 8,
-                      borderColor:
-                        sourceAccountId === acc.id
-                          ? colors.primary
-                          : colors.border,
-                      backgroundColor:
-                        sourceAccountId === acc.id
-                          ? colors.primary
-                          : colors.inputBg,
-                    }}
+                    style={[
+                      s.accBtn,
+                      {
+                        borderColor: colors.border,
+                        backgroundColor:
+                          sourceAccountId === acc.id
+                            ? colors.primary
+                            : colors.inputBg,
+                      },
+                    ]}
                     onPress={() => setSourceAccountId(acc.id)}
                   >
                     <Text
-                      style={{
-                        fontWeight: "600",
-                        color:
-                          sourceAccountId === acc.id ? "#fff" : colors.text,
-                      }}
+                      style={[
+                        s.accBtnText,
+                        {
+                          color:
+                            sourceAccountId === acc.id ? "#fff" : colors.text,
+                        },
+                      ]}
                     >
                       {acc.name}
                     </Text>
@@ -559,9 +528,16 @@ export default function CreditCardsScreen() {
               </ScrollView>
             )}
 
-            <View style={{ flexDirection: "row", gap: 10 }}>
+            <View style={{ flexDirection: "row", gap: 12 }}>
               <TouchableOpacity
-                style={[s.btn, { backgroundColor: colors.border }]}
+                style={[
+                  s.btn,
+                  {
+                    backgroundColor: colors.inputBg,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                  },
+                ]}
                 onPress={() => {
                   setPayModalVisible(false);
                   setSourceAccountId("");
@@ -586,7 +562,7 @@ export default function CreditCardsScreen() {
                 disabled={!sourceAccountId || checkingAccounts.length === 0}
               >
                 <Text style={{ color: "#fff", fontWeight: "bold" }}>
-                  Confirmar
+                  Pagar Fatura
                 </Text>
               </TouchableOpacity>
             </View>
@@ -602,11 +578,8 @@ export default function CreditCardsScreen() {
           accounts={creditAccountsOnly}
           colors={colors}
           onSave={async (payload: any) => {
-            if (editingItem) {
-              await update(editingItem.id, payload);
-            } else {
-              await create(payload);
-            }
+            if (editingItem) await update(editingItem.id, payload);
+            else await create(payload);
             setModalVisible(false);
           }}
         />
@@ -622,6 +595,7 @@ function InvoiceCard({
   onEdit,
   onDelete,
   colors,
+  isDark,
 }: any) {
   const [expanded, setExpanded] = useState(false);
   const [showNext, setShowNext] = useState(false);
@@ -645,76 +619,133 @@ function InvoiceCard({
   const nextMonthName = getMonthName(nextRef);
 
   return (
-    <View
-      style={[
-        s.card,
-        {
-          backgroundColor: colors.card,
-          borderColor: colors.border,
-          borderLeftWidth: 4,
-          borderLeftColor: account.color || colors.primary,
-        },
-      ]}
-    >
-      <TouchableOpacity onPress={() => setExpanded(!expanded)}>
-        <Text style={[s.cardTitle, { color: colors.text }]}>
-          {account.name}
-        </Text>
-        <Text style={[s.cardSub, { color: colors.subText }]}>
-          {invoice
-            ? `Vence dia ${account.due_day ?? "10"} de ${currentMonthName}`
-            : "Nenhuma fatura pendente"}
-        </Text>
-        <Text style={[s.amount, { color: colors.text }]}>
-          {formatCurrency(displayTotal, account.currency)}
-        </Text>
+    <View style={s.cardWrapper}>
+      <TouchableOpacity
+        activeOpacity={0.9}
+        onPress={() => setExpanded(!expanded)}
+        style={[
+          s.physicalCard,
+          { backgroundColor: account.color || colors.primary, zIndex: 2 },
+        ]}
+      >
+        <View style={s.ccTopRow}>
+          <View style={s.ccChip}>
+            <View style={s.ccChipLine} />
+            <View style={s.ccChipLine} />
+            <View style={s.ccChipLine} />
+          </View>
+          <Text style={s.ccBankName}>{account.name.toUpperCase()}</Text>
+        </View>
+
+        <View style={s.ccAmountArea}>
+          <Text style={s.ccAmountLabel}>
+            {showNext
+              ? `Previsto: ${nextMonthName}`
+              : `Fatura: ${currentMonthName}`}
+          </Text>
+          <Text style={s.ccAmountValue}>
+            {formatCurrency(displayTotal, account.currency)}
+          </Text>
+        </View>
+
+        <View style={s.ccBottomRow}>
+          <View
+            style={[
+              s.ccStatusBadge,
+              {
+                backgroundColor: isInvoicePaid
+                  ? "#10b981"
+                  : "rgba(255,255,255,0.2)",
+              },
+            ]}
+          >
+            <Text style={s.ccStatusText}>
+              {isInvoicePaid
+                ? "Pago"
+                : invoice
+                  ? "Fechada/Pendente"
+                  : "Em Aberto"}
+            </Text>
+          </View>
+          <Ionicons
+            name={expanded ? "chevron-up-circle" : "chevron-down-circle"}
+            size={28}
+            color="rgba(255,255,255,0.6)"
+          />
+        </View>
       </TouchableOpacity>
 
-      {!showNext && invoice && !isInvoicePaid && (
-        <TouchableOpacity
-          style={[s.payBtn, { backgroundColor: "#10b981" }]}
-          onPress={onPayInvoice}
-        >
-          <Ionicons name="checkmark-done-circle" size={18} color="#fff" />
-          <Text style={s.payBtnText}> Pagar Fatura Completa</Text>
-        </TouchableOpacity>
-      )}
-      {!showNext && isInvoicePaid && (
-        <View>
-          <Text style={{ color: "#22c55e", fontWeight: "bold", marginTop: 10 }}>
-            Fatura Paga! 🎉
-          </Text>
-          <TouchableOpacity
-            style={[s.payBtn, { backgroundColor: "#dc2626", marginTop: 8 }]}
-            onPress={onCancelPayment}
-          >
-            <Ionicons name="arrow-undo" size={18} color="#fff" />
-            <Text style={s.payBtnText}> Cancelar Pagamento</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
       {expanded && (
-        <View style={s.expandedArea}>
+        <View
+          style={[
+            s.expandedCard,
+            {
+              backgroundColor: colors.card,
+              borderColor: colors.border,
+              zIndex: 1,
+            },
+          ]}
+        >
+          {!showNext && invoice && !isInvoicePaid && (
+            <TouchableOpacity
+              style={[s.payBtn, { backgroundColor: "#10b981" }]}
+              onPress={onPayInvoice}
+            >
+              <Ionicons name="checkmark-done-circle" size={20} color="#fff" />
+              <Text style={s.payBtnText}>Pagar Fatura Completa</Text>
+            </TouchableOpacity>
+          )}
+          {!showNext && isInvoicePaid && (
+            <View style={{ marginBottom: 16 }}>
+              <Text
+                style={{
+                  color: "#10b981",
+                  fontWeight: "bold",
+                  textAlign: "center",
+                  marginBottom: 12,
+                }}
+              >
+                Fatura Paga com Sucesso! 🎉
+              </Text>
+              <TouchableOpacity
+                style={[
+                  s.payBtn,
+                  {
+                    backgroundColor: colors.inputBg,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                  },
+                ]}
+                onPress={onCancelPayment}
+              >
+                <Ionicons name="arrow-undo" size={20} color="#ef4444" />
+                <Text style={[s.payBtnText, { color: "#ef4444" }]}>
+                  Desfazer Pagamento
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           <TouchableOpacity
             style={[
               s.nextInvoiceBox,
-              { backgroundColor: colors.inputBg },
-              showNext && { borderColor: colors.primary, borderWidth: 1 },
+              {
+                backgroundColor: colors.inputBg,
+                borderColor: showNext ? colors.primary : colors.border,
+              },
             ]}
             onPress={() => setShowNext(!showNext)}
           >
             <Ionicons
               name="calendar-outline"
-              size={18}
+              size={20}
               color={colors.primary}
-              style={{ marginTop: 2 }}
             />
-            <View style={{ marginLeft: 8, flex: 1 }}>
+            <View style={{ marginLeft: 12, flex: 1 }}>
               {showNext ? (
                 <>
-                  <Text style={{ color: colors.text }}>
-                    Previsão para o mês atual:{" "}
+                  <Text style={{ color: colors.text, fontSize: 13 }}>
+                    Total do Mês Atual:{" "}
                     <Text style={{ fontWeight: "bold" }}>
                       {formatCurrency(invoiceTotal, account.currency)}
                     </Text>
@@ -722,17 +753,18 @@ function InvoiceCard({
                   <Text
                     style={{
                       color: colors.primary,
-                      fontSize: 12,
-                      marginTop: 2,
+                      fontSize: 11,
+                      marginTop: 4,
+                      fontWeight: "600",
                     }}
                   >
-                    ↑ Voltar para a fatura atual
+                    ↑ Ver Fatura Atual
                   </Text>
                 </>
               ) : (
                 <>
-                  <Text style={{ color: colors.text }}>
-                    Previsão para o próximo mês:{" "}
+                  <Text style={{ color: colors.text, fontSize: 13 }}>
+                    Previsão Próximo Mês:{" "}
                     <Text style={{ fontWeight: "bold" }}>
                       {formatCurrency(nextInvoiceTotal, account.currency)}
                     </Text>
@@ -740,11 +772,12 @@ function InvoiceCard({
                   <Text
                     style={{
                       color: colors.primary,
-                      fontSize: 12,
-                      marginTop: 2,
+                      fontSize: 11,
+                      marginTop: 4,
+                      fontWeight: "600",
                     }}
                   >
-                    ↓ Clique para ver as compras do próximo mês
+                    ↓ Ver Próximas Compras
                   </Text>
                 </>
               )}
@@ -755,65 +788,81 @@ function InvoiceCard({
             style={{
               color: colors.text,
               fontWeight: "bold",
-              marginTop: 16,
+              marginTop: 8,
               marginBottom: 8,
-              fontSize: 13,
+              fontSize: 14,
             }}
           >
             {showNext
-              ? `Compras da Próxima Fatura (${nextMonthName}):`
-              : `Compras Desta Fatura (${currentMonthName}):`}
+              ? `Detalhes de ${nextMonthName}:`
+              : `Detalhes de ${currentMonthName}:`}
           </Text>
 
           {displayList.length === 0 && (
-            <Text style={{ color: colors.subText, fontStyle: "italic" }}>
+            <Text
+              style={{
+                color: colors.subText,
+                fontStyle: "italic",
+                textAlign: "center",
+                paddingVertical: 20,
+              }}
+            >
               Nenhuma compra para exibir.
             </Text>
           )}
 
-          {displayList.map((item: Installment) => {
-            const currentParcela = item.paid_installments + 1;
-            const remainingCount =
-              item.total_installments - item.paid_installments;
-            const remainingAmount = remainingCount * item.installment_amount;
-
+          {displayList.map((item: Installment, idx: number) => {
+            const currentParcela = Number(item.paid_installments) + 1;
             return (
-              <View key={item.id} style={s.itemRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[s.itemTitle, { color: colors.text }]}>
+              <View
+                key={item.id}
+                style={[
+                  s.itemRow,
+                  {
+                    borderBottomColor: colors.border,
+                    borderBottomWidth: idx === displayList.length - 1 ? 0 : 1,
+                  },
+                ]}
+              >
+                <View style={[s.itemIcon, { backgroundColor: colors.inputBg }]}>
+                  <Ionicons
+                    name="card-outline"
+                    size={18}
+                    color={colors.primary}
+                  />
+                </View>
+                <View style={s.itemInfo}>
+                  <Text
+                    style={[s.itemTitle, { color: colors.text }]}
+                    numberOfLines={1}
+                  >
                     {item.title}
                   </Text>
                   <Text style={[s.itemSub, { color: colors.subText }]}>
                     Parcela {currentParcela} de {item.total_installments}
                   </Text>
-                  {remainingCount > 0 && (
-                    <Text
-                      style={[
-                        s.itemSub,
-                        {
-                          color: colors.primary,
-                          fontWeight: "600",
-                          marginTop: 2,
-                        },
-                      ]}
-                    >
-                      Restam {remainingCount}x (Falta pagar:{" "}
-                      {formatCurrency(remainingAmount, account.currency)})
-                    </Text>
-                  )}
                 </View>
-                <Text style={[s.itemValue, { color: colors.text }]}>
-                  {formatCurrency(item.installment_amount, account.currency)}
-                </Text>
-                <TouchableOpacity onPress={() => onEdit(item)}>
-                  <Ionicons name="pencil" size={18} color={colors.subText} />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => onDelete(item.id)}
-                  style={{ marginLeft: 12 }}
-                >
-                  <Ionicons name="trash" size={18} color="#dc2626" />
-                </TouchableOpacity>
+                <View style={s.itemRight}>
+                  <Text style={[s.itemValue, { color: colors.text }]}>
+                    {formatCurrency(item.installment_amount, account.currency)}
+                  </Text>
+                  <View style={s.itemActions}>
+                    <TouchableOpacity onPress={() => onEdit(item)}>
+                      <Ionicons
+                        name="create-outline"
+                        size={18}
+                        color={colors.subText}
+                      />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => onDelete(item.id)}>
+                      <Ionicons
+                        name="trash-outline"
+                        size={18}
+                        color="#ef4444"
+                      />
+                    </TouchableOpacity>
+                  </View>
+                </View>
               </View>
             );
           })}
@@ -831,6 +880,7 @@ function InstallmentFormModal({
   colors,
   onSave,
 }: any) {
+  const [mode, setMode] = useState<"A" | "B">("A");
   const [title, setTitle] = useState(initialData?.title ?? "");
   const [totalAmount, setTotalAmount] = useState(
     initialData?.total_amount?.toString() ?? "",
@@ -869,10 +919,8 @@ function InstallmentFormModal({
     const [year, month, day] = purchaseDate.split("-").map(Number);
     let finalStartDate = new Date(year, month - 1, day);
 
-    if (day >= closingDay) {
+    if (day >= closingDay)
       finalStartDate.setMonth(finalStartDate.getMonth() + 1);
-    }
-
     const finalStartDateString = finalStartDate.toISOString().split("T")[0];
 
     await onSave({
@@ -903,31 +951,38 @@ function InstallmentFormModal({
               {initialData ? "Editar Compra" : "Nova Compra no Cartão"}
             </Text>
 
+            <View style={s.alertContainer}>
+              <Ionicons name="information-circle" size={18} color="#1e40af" />
+              <Text style={s.alertText}>
+                Apenas cartões de crédito são exibidos aqui.
+              </Text>
+            </View>
+
             <Text style={[s.label, { color: colors.subText }]}>
-              Cartão de Crédito
+              Selecione o Cartão
             </Text>
             <View style={{ flexDirection: "row", marginBottom: 16 }}>
               {accounts.map((acc: any) => (
                 <TouchableOpacity
                   key={acc.id}
-                  style={{
-                    paddingHorizontal: 16,
-                    paddingVertical: 8,
-                    borderRadius: 20,
-                    borderWidth: 1,
-                    marginRight: 8,
-                    borderColor:
-                      accountId === acc.id ? colors.primary : colors.border,
-                    backgroundColor:
-                      accountId === acc.id ? colors.primary : colors.inputBg,
-                  }}
+                  style={[
+                    s.accBtn,
+                    {
+                      borderColor: colors.border,
+                      backgroundColor: colors.inputBg,
+                    },
+                    accountId === acc.id && {
+                      backgroundColor: colors.primary,
+                      borderColor: colors.primary,
+                    },
+                  ]}
                   onPress={() => setAccountId(acc.id)}
                 >
                   <Text
-                    style={{
-                      fontWeight: "600",
-                      color: accountId === acc.id ? "#fff" : colors.text,
-                    }}
+                    style={[
+                      s.accBtnText,
+                      { color: accountId === acc.id ? "#fff" : colors.text },
+                    ]}
                   >
                     {acc.name}
                   </Text>
@@ -941,7 +996,7 @@ function InstallmentFormModal({
             {Platform.OS === "web" ? (
               <TextInput
                 style={[
-                  s.input,
+                  s.inputModal,
                   {
                     backgroundColor: colors.inputBg,
                     color: colors.text,
@@ -956,7 +1011,7 @@ function InstallmentFormModal({
               <>
                 <TouchableOpacity
                   style={[
-                    s.input,
+                    s.inputModal,
                     {
                       backgroundColor: colors.inputBg,
                       borderColor: colors.border,
@@ -997,11 +1052,11 @@ function InstallmentFormModal({
             )}
 
             <Text style={[s.label, { color: colors.subText }]}>
-              Nome da Compra
+              O que comprou?
             </Text>
             <TextInput
               style={[
-                s.input,
+                s.inputModal,
                 {
                   backgroundColor: colors.inputBg,
                   color: colors.text,
@@ -1021,7 +1076,7 @@ function InstallmentFormModal({
                 </Text>
                 <TextInput
                   style={[
-                    s.input,
+                    s.inputModal,
                     {
                       backgroundColor: colors.inputBg,
                       color: colors.text,
@@ -1031,15 +1086,16 @@ function InstallmentFormModal({
                   value={totalAmount}
                   onChangeText={setTotalAmount}
                   keyboardType="decimal-pad"
+                  placeholderTextColor={colors.subText}
                 />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[s.label, { color: colors.subText }]}>
-                  Parcelas
+                  Nº de Parcelas
                 </Text>
                 <TextInput
                   style={[
-                    s.input,
+                    s.inputModal,
                     {
                       backgroundColor: colors.inputBg,
                       color: colors.text,
@@ -1049,13 +1105,21 @@ function InstallmentFormModal({
                   value={installmentsCount}
                   onChangeText={setInstallmentsCount}
                   keyboardType="decimal-pad"
+                  placeholderTextColor={colors.subText}
                 />
               </View>
             </View>
 
             <View style={{ flexDirection: "row", gap: 10, marginTop: 24 }}>
               <TouchableOpacity
-                style={[s.btn, { backgroundColor: colors.border }]}
+                style={[
+                  s.btn,
+                  {
+                    backgroundColor: colors.inputBg,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                  },
+                ]}
                 onPress={onClose}
               >
                 <Text style={{ color: colors.text, fontWeight: "bold" }}>
@@ -1065,9 +1129,10 @@ function InstallmentFormModal({
               <TouchableOpacity
                 style={[s.btn, { backgroundColor: colors.primary }]}
                 onPress={handleSave}
+                disabled={accounts.length === 0}
               >
                 <Text style={{ color: "#fff", fontWeight: "bold" }}>
-                  Salvar Compra
+                  Salvar
                 </Text>
               </TouchableOpacity>
             </View>
@@ -1079,56 +1144,170 @@ function InstallmentFormModal({
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, paddingHorizontal: 16 },
-  card: { padding: 16, borderRadius: 12, borderWidth: 1, marginBottom: 12 },
-  cardTitle: { fontSize: 18, fontWeight: "bold" },
-  cardSub: { fontSize: 12, marginTop: 4, marginBottom: 12 },
-  amount: { fontSize: 24, fontWeight: "800" },
-  expandedArea: { marginTop: 12 },
+  container: { flex: 1 },
+  headerContainer: { paddingHorizontal: 24, paddingTop: 10, paddingBottom: 20 },
+  headerTitle: { fontSize: 28, fontWeight: "bold" },
+  headerSubtitle: { fontSize: 14, marginTop: 4 },
+
+  listContent: { paddingHorizontal: 20, paddingBottom: 120 },
+
+  cardWrapper: { marginBottom: 20 },
+  physicalCard: {
+    borderRadius: 20,
+    padding: 24,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  ccTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  ccChip: {
+    width: 38,
+    height: 26,
+    backgroundColor: "#fcd34d",
+    borderRadius: 6,
+    justifyContent: "space-evenly",
+    padding: 4,
+  },
+  ccChipLine: { height: 1.5, backgroundColor: "rgba(0,0,0,0.2)" },
+  ccBankName: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "900",
+    letterSpacing: 1,
+  },
+  ccAmountArea: { marginTop: 28 },
+  ccAmountLabel: {
+    color: "rgba(255,255,255,0.8)",
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  ccAmountValue: { color: "#fff", fontSize: 32, fontWeight: "bold" },
+  ccBottomRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 20,
+  },
+  ccStatusBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  ccStatusText: { color: "#fff", fontSize: 12, fontWeight: "bold" },
+
+  expandedCard: {
+    marginTop: -20,
+    paddingTop: 36,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderTopWidth: 0,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+  },
   nextInvoiceBox: {
     flexDirection: "row",
-    alignItems: "flex-start",
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 12,
+    alignItems: "center",
+    padding: 14,
+    borderRadius: 16,
+    marginBottom: 16,
+    borderWidth: 1,
   },
   payBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    padding: 12,
-    borderRadius: 8,
-    marginTop: 12,
+    paddingVertical: 14,
+    borderRadius: 16,
+    marginBottom: 16,
   },
-  payBtnText: { color: "#fff", fontWeight: "bold" },
-  itemRow: { flexDirection: "row", alignItems: "center", marginTop: 12 },
-  itemTitle: { fontSize: 14, fontWeight: "600" },
-  itemSub: { fontSize: 12 },
-  itemValue: { fontSize: 14, fontWeight: "700", marginRight: 16 },
+  payBtnText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "bold",
+    marginLeft: 8,
+  },
+
+  itemRow: { flexDirection: "row", alignItems: "center", paddingVertical: 16 },
+  itemIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 14,
+  },
+  itemInfo: { flex: 1, paddingRight: 8 },
+  itemTitle: { fontSize: 15, fontWeight: "bold", marginBottom: 2 },
+  itemSub: { fontSize: 13 },
+  itemRight: { alignItems: "flex-end" },
+  itemValue: { fontSize: 15, fontWeight: "bold" },
+  itemActions: { flexDirection: "row", gap: 16, marginTop: 6 },
+
   fab: {
     position: "absolute",
     bottom: 24,
-    right: 24,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    alignSelf: "center",
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     justifyContent: "center",
     alignItems: "center",
-    elevation: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
+
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "flex-end",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
   },
   modalCard: {
+    width: "100%",
+    maxWidth: 400,
+    borderRadius: 24,
     padding: 24,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
     borderWidth: 1,
   },
-  modalTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 16 },
-  label: { fontSize: 12, fontWeight: "bold", marginBottom: 6, marginTop: 12 },
-  input: { padding: 12, borderRadius: 8, borderWidth: 1, fontSize: 16 },
-  btn: { flex: 1, padding: 14, borderRadius: 8, alignItems: "center" },
+  modalTitle: { fontSize: 20, fontWeight: "bold", marginBottom: 8 },
+  label: { fontSize: 13, fontWeight: "bold", marginBottom: 6, marginTop: 12 },
+  inputModal: { padding: 14, borderRadius: 12, borderWidth: 1, fontSize: 16 },
+  btn: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: "center" },
+  accBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 20,
+    borderWidth: 1,
+    marginRight: 8,
+  },
+  accBtnText: { fontWeight: "600", fontSize: 13 },
+  modeToggle: {
+    flexDirection: "row",
+    borderRadius: 10,
+    padding: 4,
+    marginBottom: 8,
+  },
+  modeBtn: { flex: 1, padding: 12, alignItems: "center", borderRadius: 8 },
+  modeBtnActive: {},
+  modeText: { fontWeight: "bold" },
+  alertContainer: {
+    flexDirection: "row",
+    backgroundColor: "#dbeafe",
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 16,
+    alignItems: "center",
+    gap: 8,
+  },
+  alertText: { color: "#1e40af", fontSize: 12, fontWeight: "600", flex: 1 },
 });

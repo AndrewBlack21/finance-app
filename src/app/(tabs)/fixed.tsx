@@ -12,8 +12,12 @@ import {
   Platform,
   TextInput,
   RefreshControl,
+  KeyboardAvoidingView,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import { useForm, Controller } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -24,7 +28,8 @@ import { fixedExpenseService, transactionService } from "@/services";
 import { Input, Button } from "@/components/ui";
 import { formatCurrency } from "@/utils";
 import { useAuth } from "@/hooks/useAuth";
-import { useAppTheme } from "@/hooks/useTheme"; // 👈 Motor de temas global
+import { useAppTheme } from "@/hooks/useTheme";
+import { Ionicons } from "@expo/vector-icons";
 import type { FixedExpense } from "@/types";
 
 const schema = z.object({
@@ -53,7 +58,8 @@ const SUGGESTIONS = [
 
 export default function FixedExpensesScreen() {
   const { profile } = useAuth();
-  const { colors, isDark } = useAppTheme(); // 👈 Cores dinâmicas ativas
+  const { colors, isDark } = useAppTheme();
+  const insets = useSafeAreaInsets();
 
   const {
     expenses,
@@ -324,66 +330,72 @@ export default function FixedExpensesScreen() {
   );
 
   return (
-    <SafeAreaView style={[s.safe, { backgroundColor: colors.bg }]}>
-      <View style={s.header}>
-        <Text style={[s.title, { color: colors.text }]}>Contas Fixas</Text>
-        <TouchableOpacity
-          style={[s.addBtn, { backgroundColor: colors.primary }]}
-          onPress={() => setModalVisible(true)}
-        >
-          <Text style={s.addBtnText}>+ Nova</Text>
-        </TouchableOpacity>
+    <View
+      style={[
+        s.container,
+        {
+          backgroundColor: colors.bg,
+          paddingTop: Math.max(insets.top, 20) + 10,
+        },
+      ]}
+    >
+      {/* 👇 DESIGN ATUALIZADO: Cabeçalho Limpo */}
+      <View style={s.headerContainer}>
+        <Text style={[s.headerTitle, { color: colors.text }]}>
+          Contas Fixas
+        </Text>
+        <Text style={[s.headerSubtitle, { color: colors.subText }]}>
+          Gerencie os seus compromissos mensais
+        </Text>
       </View>
 
-      <View
-        style={[
-          s.summaryCard,
-          {
-            backgroundColor: colors.card,
-            borderColor: colors.border,
-            borderWidth: 1,
-          },
-        ]}
-      >
-        <View style={s.summaryRow}>
-          <View style={s.summaryItem}>
-            <Text style={[s.summaryLabel, { color: colors.subText }]}>
-              Total mês
-            </Text>
-            <Text style={[s.summaryValue, { color: colors.text }]}>
-              {formatCurrency(totalMonth, profile?.currency)}
-            </Text>
-          </View>
+      {/* 👇 DESIGN ATUALIZADO: Resumo Financeiro (Semelhante a Transactions) */}
+      <View style={s.summaryRow}>
+        <View
+          style={[
+            s.summaryCard,
+            { backgroundColor: colors.card, borderLeftColor: colors.primary },
+          ]}
+        >
+          <Text style={[s.summaryLabel, { color: colors.subText }]}>
+            Total do Mês
+          </Text>
+          <Text style={[s.summaryValue, { color: colors.text }]}>
+            {formatCurrency(totalMonth, profile?.currency)}
+          </Text>
+        </View>
+        <View
+          style={[
+            s.summaryCard,
+            { backgroundColor: colors.card, borderLeftColor: "#10b981" },
+          ]}
+        >
+          <Text style={[s.summaryLabel, { color: colors.subText }]}>
+            Já Pago
+          </Text>
+          <Text style={[s.summaryValue, { color: "#10b981" }]}>
+            {formatCurrency(totalPaid, profile?.currency)}
+          </Text>
+        </View>
+      </View>
+
+      {pendingCount > 0 && (
+        <View style={{ paddingHorizontal: 20, marginBottom: 16 }}>
           <View
-            style={[s.summaryDivider, { backgroundColor: colors.border }]}
-          />
-          <View style={s.summaryItem}>
-            <Text style={[s.summaryLabel, { color: colors.subText }]}>
-              Pago
-            </Text>
-            <Text style={[s.summaryValue, { color: "#16a34a" }]}>
-              {formatCurrency(totalPaid, profile?.currency)}
-            </Text>
-          </View>
-          <View
-            style={[s.summaryDivider, { backgroundColor: colors.border }]}
-          />
-          <View style={s.summaryItem}>
-            <Text style={[s.summaryLabel, { color: colors.subText }]}>
-              Pendente
-            </Text>
-            <Text style={[s.summaryValue, { color: "#dc2626" }]}>
-              {formatCurrency(totalPending, profile?.currency)}
+            style={[
+              s.pendingAlertBox,
+              { backgroundColor: "rgba(239, 68, 68, 0.1)" },
+            ]}
+          >
+            <Ionicons name="alert-circle" size={20} color="#ef4444" />
+            <Text style={s.pendingAlertText}>
+              Atenção: Tem {pendingCount} conta{pendingCount > 1 ? "s" : ""}{" "}
+              pendente{pendingCount > 1 ? "s" : ""} a pagar. (
+              {formatCurrency(totalPending, profile?.currency)})
             </Text>
           </View>
         </View>
-        {pendingCount > 0 && (
-          <Text style={s.pendingAlert}>
-            ⚠️ {pendingCount} conta{pendingCount > 1 ? "s" : ""} pendente
-            {pendingCount > 1 ? "s" : ""}
-          </Text>
-        )}
-      </View>
+      )}
 
       {isLoading ? (
         <ActivityIndicator color={colors.primary} style={{ marginTop: 32 }} />
@@ -392,6 +404,7 @@ export default function FixedExpensesScreen() {
           data={sorted}
           keyExtractor={(e) => e.id}
           contentContainerStyle={s.list}
+          showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -408,7 +421,7 @@ export default function FixedExpensesScreen() {
                 Nenhuma conta fixa cadastrada
               </Text>
               <Text style={[s.emptySubtext, { color: colors.subText }]}>
-                Toque em "+ Nova" para adicionar
+                Toque no botão "+" para adicionar
               </Text>
             </View>
           }
@@ -425,12 +438,21 @@ export default function FixedExpensesScreen() {
         />
       )}
 
+      {/* 👇 DESIGN ATUALIZADO: FAB Gigante */}
+      <TouchableOpacity
+        style={[s.fab, { backgroundColor: colors.primary }]}
+        onPress={() => setModalVisible(true)}
+      >
+        <Ionicons name="add" size={32} color="#fff" />
+      </TouchableOpacity>
+
+      {/* 👇 DESIGN ATUALIZADO: Modal Limpo */}
       <Modal
         visible={modalVisible}
         animationType="slide"
         presentationStyle="pageSheet"
       >
-        <SafeAreaView style={[s.modal, { backgroundColor: colors.bg }]}>
+        <View style={{ flex: 1, backgroundColor: colors.bg }}>
           <View
             style={[
               s.modalHeader,
@@ -450,394 +472,361 @@ export default function FixedExpensesScreen() {
             </TouchableOpacity>
           </View>
 
-          <ScrollView contentContainerStyle={s.form}>
-            <Text style={[s.label, { color: colors.subText }]}>Sugestões</Text>
+          <KeyboardAvoidingView
+            style={{ flex: 1 }}
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+          >
             <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={{ marginBottom: 8 }}
+              contentContainerStyle={s.form}
+              showsVerticalScrollIndicator={false}
             >
-              <View style={s.optionRow}>
-                {SUGGESTIONS.map((sug) => (
-                  <TouchableOpacity
-                    key={sug}
-                    style={[
-                      s.suggestionBtn,
-                      { backgroundColor: isDark ? "#312e81" : "#ede9fe" },
-                    ]}
-                    onPress={() => setValue("title", sug)}
-                  >
-                    <Text style={[s.suggestionText, { color: colors.primary }]}>
-                      {sug}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </ScrollView>
-
-            <Controller
-              name="title"
-              control={control}
-              render={({ field: { onChange, value } }) => (
-                <Input
-                  label="Nome da conta"
-                  placeholder="Ex: Conta de Luz"
-                  onChangeText={onChange}
-                  value={value}
-                  error={errors.title?.message}
-                />
-              )}
-            />
-
-            <View style={{ flexDirection: "row", gap: 12 }}>
-              <View style={{ flex: 2 }}>
-                <Controller
-                  name="amount"
-                  control={control}
-                  render={({ field: { onChange, value } }) => (
-                    <Input
-                      label="Valor"
-                      placeholder="0,00"
-                      keyboardType="decimal-pad"
-                      onChangeText={onChange}
-                      value={value}
-                      error={errors.amount?.message}
-                    />
-                  )}
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Controller
-                  name="due_day"
-                  control={control}
-                  render={({ field: { onChange, value } }) => (
-                    <Input
-                      label="Dia venc."
-                      placeholder="15"
-                      keyboardType="decimal-pad"
-                      onChangeText={onChange}
-                      value={value}
-                      error={errors.due_day?.message}
-                    />
-                  )}
-                />
-              </View>
-            </View>
-
-            <Text style={[s.label, { color: colors.subText }]}>Moeda</Text>
-            <Controller
-              name="currency"
-              control={control}
-              render={({ field: { onChange, value } }) => (
+              <Text style={[s.label, { color: colors.subText }]}>
+                Sugestões rápidas
+              </Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={{ marginBottom: 20, maxHeight: 40 }}
+              >
                 <View style={s.optionRow}>
-                  {CURRENCIES.map((c) => (
+                  {SUGGESTIONS.map((sug) => (
                     <TouchableOpacity
-                      key={c}
+                      key={sug}
                       style={[
-                        s.optionBtn,
-                        {
-                          backgroundColor: colors.card,
-                          borderColor: colors.border,
-                        },
-                        value === c && [
-                          s.optionBtnActive,
-                          {
-                            backgroundColor: colors.primary,
-                            borderColor: colors.primary,
-                          },
-                        ],
+                        s.suggestionBtn,
+                        { backgroundColor: isDark ? "#1e1b4b" : "#eef2ff" },
                       ]}
-                      onPress={() => onChange(c)}
+                      onPress={() => setValue("title", sug)}
                     >
                       <Text
-                        style={[
-                          s.optionText,
-                          { color: colors.subText },
-                          value === c && { color: "#fff" },
-                        ]}
+                        style={[s.suggestionText, { color: colors.primary }]}
                       >
-                        {c}
+                        {sug}
                       </Text>
                     </TouchableOpacity>
                   ))}
                 </View>
-              )}
-            />
+              </ScrollView>
 
-            {accounts.length >= 0 && (
-              <>
-                <Text style={[s.label, { color: colors.subText }]}>
-                  Debitar da conta (opcional)
-                </Text>
-                <Controller
-                  name="account_id"
-                  control={control}
-                  render={({ field: { onChange, value } }) => (
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                    >
-                      <View style={s.optionRow}>
-                        <TouchableOpacity
-                          style={[
-                            s.optionBtn,
-                            {
-                              backgroundColor: isDark ? "#1e1b4b" : "#eef2ff",
-                              borderColor: colors.border,
-                            },
-                          ]}
-                          onPress={() => setAccountModalVisible(true)}
-                        >
-                          <Text
-                            style={{
-                              color: colors.primary,
-                              fontWeight: "bold",
-                            }}
+              <Controller
+                name="title"
+                control={control}
+                render={({ field: { onChange, value } }) => (
+                  <Input
+                    label="Nome da Conta"
+                    placeholder="Ex: Conta de Luz"
+                    onChangeText={onChange}
+                    value={value}
+                    error={errors.title?.message}
+                  />
+                )}
+              />
+
+              <View style={{ flexDirection: "row", gap: 12 }}>
+                <View style={{ flex: 2 }}>
+                  <Controller
+                    name="amount"
+                    control={control}
+                    render={({ field: { onChange, value } }) => (
+                      <Input
+                        label="Valor (R$)"
+                        placeholder="0,00"
+                        keyboardType="decimal-pad"
+                        onChangeText={onChange}
+                        value={value}
+                        error={errors.amount?.message}
+                      />
+                    )}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Controller
+                    name="due_day"
+                    control={control}
+                    render={({ field: { onChange, value } }) => (
+                      <Input
+                        label="Dia de Venc."
+                        placeholder="Ex: 15"
+                        keyboardType="decimal-pad"
+                        onChangeText={onChange}
+                        value={value}
+                        error={errors.due_day?.message}
+                      />
+                    )}
+                  />
+                </View>
+              </View>
+
+              {accounts.length > 0 && (
+                <View style={{ marginTop: 8 }}>
+                  <Text style={[s.label, { color: colors.subText }]}>
+                    Conta de Origem (Automático)
+                  </Text>
+                  <Controller
+                    name="account_id"
+                    control={control}
+                    render={({ field: { onChange, value } }) => (
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                      >
+                        <View style={s.optionRow}>
+                          <TouchableOpacity
+                            style={[
+                              s.optionBtn,
+                              {
+                                backgroundColor: isDark ? "#1e1b4b" : "#eef2ff",
+                                borderColor: colors.border,
+                              },
+                            ]}
+                            onPress={() => setAccountModalVisible(true)}
                           >
-                            + Nova
-                          </Text>
-                        </TouchableOpacity>
+                            <Text
+                              style={{
+                                color: colors.primary,
+                                fontWeight: "bold",
+                              }}
+                            >
+                              + Nova
+                            </Text>
+                          </TouchableOpacity>
 
-                        {accounts
-                          .filter((a) => a.type !== "credit")
-                          .map((a) => (
+                          {accounts
+                            .filter((a) => a.type !== "credit")
+                            .map((a) => (
+                              <TouchableOpacity
+                                key={a.id}
+                                style={[
+                                  s.optionBtn,
+                                  {
+                                    backgroundColor: colors.card,
+                                    borderColor: colors.border,
+                                  },
+                                  value === a.id && {
+                                    backgroundColor: a.color,
+                                    borderColor: a.color,
+                                  },
+                                ]}
+                                onPress={() => onChange(a.id)}
+                              >
+                                <Text
+                                  style={[
+                                    s.optionText,
+                                    { color: colors.subText },
+                                    value === a.id && { color: "#fff" },
+                                  ]}
+                                >
+                                  {a.name}
+                                </Text>
+                              </TouchableOpacity>
+                            ))}
+                        </View>
+                      </ScrollView>
+                    )}
+                  />
+                </View>
+              )}
+
+              {expenseCategories.length > 0 && (
+                <View style={{ marginTop: 24, marginBottom: 12 }}>
+                  <Text style={[s.label, { color: colors.subText }]}>
+                    Categoria (Opcional)
+                  </Text>
+                  <Controller
+                    name="category_id"
+                    control={control}
+                    render={({ field: { onChange, value } }) => (
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                      >
+                        <View style={s.optionRow}>
+                          {expenseCategories.map((c) => (
                             <TouchableOpacity
-                              key={a.id}
+                              key={c.id}
                               style={[
                                 s.optionBtn,
                                 {
                                   backgroundColor: colors.card,
                                   borderColor: colors.border,
                                 },
-                                value === a.id && {
-                                  backgroundColor: a.color,
-                                  borderColor: a.color,
+                                value === c.id && {
+                                  backgroundColor: c.color,
+                                  borderColor: c.color,
                                 },
                               ]}
-                              onPress={() => onChange(a.id)}
+                              onPress={() => onChange(c.id)}
                             >
                               <Text
                                 style={[
                                   s.optionText,
                                   { color: colors.subText },
-                                  value === a.id && { color: "#fff" },
+                                  value === c.id && { color: "#fff" },
                                 ]}
                               >
-                                {a.name}
+                                {c.name}
                               </Text>
                             </TouchableOpacity>
                           ))}
-                      </View>
-
-                      <Modal
-                        visible={accountModalVisible}
-                        animationType="fade"
-                        transparent={true}
-                      >
-                        <View
-                          style={{
-                            flex: 1,
-                            backgroundColor: "rgba(0,0,0,0.5)",
-                            justifyContent: "center",
-                            padding: 20,
-                          }}
-                        >
-                          <View
-                            style={{
-                              backgroundColor: colors.card,
-                              padding: 20,
-                              borderRadius: 16,
-                            }}
-                          >
-                            <Text
-                              style={{
-                                fontSize: 18,
-                                fontWeight: "bold",
-                                marginBottom: 16,
-                                color: colors.text,
-                              }}
-                            >
-                              Nova Conta
-                            </Text>
-
-                            <TextInput
-                              style={{
-                                borderWidth: 1,
-                                borderColor: colors.border,
-                                backgroundColor: colors.inputBg,
-                                color: colors.text,
-                                padding: 12,
-                                borderRadius: 8,
-                                marginBottom: 16,
-                                fontSize: 16,
-                              }}
-                              placeholder="Nome do Banco (Ex: Nubank)"
-                              placeholderTextColor={colors.subText}
-                              value={newBankName}
-                              onChangeText={setNewBankName}
-                            />
-
-                            <Text
-                              style={{
-                                marginBottom: 8,
-                                fontWeight: "600",
-                                color: colors.subText,
-                              }}
-                            >
-                              Cor:
-                            </Text>
-                            <View
-                              style={{
-                                flexDirection: "row",
-                                gap: 10,
-                                marginBottom: 20,
-                                flexWrap: "wrap",
-                              }}
-                            >
-                              {[
-                                "#830ad1",
-                                "#ec7000",
-                                "#ff7a00",
-                                "#1d823b",
-                                "#e11d48",
-                                "#2563eb",
-                                "#16a34a",
-                                "#475569",
-                              ].map((color) => (
-                                <TouchableOpacity
-                                  key={color}
-                                  onPress={() => setNewBankColor(color)}
-                                  style={{
-                                    width: 35,
-                                    height: 35,
-                                    borderRadius: 20,
-                                    backgroundColor: color,
-                                    borderWidth: newBankColor === color ? 3 : 0,
-                                    borderColor: colors.text,
-                                  }}
-                                />
-                              ))}
-                            </View>
-
-                            <View style={{ flexDirection: "row", gap: 10 }}>
-                              <TouchableOpacity
-                                style={{
-                                  flex: 1,
-                                  padding: 12,
-                                  backgroundColor: colors.border,
-                                  borderRadius: 8,
-                                  alignItems: "center",
-                                }}
-                                onPress={() => setAccountModalVisible(false)}
-                              >
-                                <Text
-                                  style={{
-                                    fontWeight: "bold",
-                                    color: colors.text,
-                                  }}
-                                >
-                                  Cancelar
-                                </Text>
-                              </TouchableOpacity>
-
-                              <TouchableOpacity
-                                style={{
-                                  flex: 1,
-                                  padding: 12,
-                                  backgroundColor: newBankColor,
-                                  borderRadius: 8,
-                                  alignItems: "center",
-                                }}
-                                onPress={async () => {
-                                  if (!newBankName) return;
-                                  await createAccount({
-                                    name: newBankName,
-                                    color: newBankColor,
-                                    type: "checking",
-                                    balance: 0,
-                                    currency: "BRL",
-                                    due_day: null,
-                                  });
-                                  setNewBankName("");
-                                  setAccountModalVisible(false);
-                                }}
-                              >
-                                <Text
-                                  style={{ fontWeight: "bold", color: "#fff" }}
-                                >
-                                  Salvar
-                                </Text>
-                              </TouchableOpacity>
-                            </View>
-                          </View>
                         </View>
-                      </Modal>
-                    </ScrollView>
-                  )}
-                />
-              </>
-            )}
+                      </ScrollView>
+                    )}
+                  />
+                </View>
+              )}
 
-            {expenseCategories.length > 0 && (
-              <>
-                <Text style={[s.label, { color: colors.subText }]}>
-                  Categoria (opcional)
+              <TouchableOpacity
+                style={[s.submitBtn, { backgroundColor: colors.primary }]}
+                onPress={handleSubmit(onSubmit)}
+              >
+                <Text style={s.submitBtnText}>
+                  {editing ? "Salvar Alterações" : "Criar Conta Fixa"}
                 </Text>
-                <Controller
-                  name="category_id"
-                  control={control}
-                  render={({ field: { onChange, value } }) => (
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                    >
-                      <View style={s.optionRow}>
-                        {expenseCategories.map((c) => (
-                          <TouchableOpacity
-                            key={c.id}
-                            style={[
-                              s.optionBtn,
-                              {
-                                backgroundColor: colors.card,
-                                borderColor: colors.border,
-                              },
-                              value === c.id && {
-                                backgroundColor: c.color,
-                                borderColor: c.color,
-                              },
-                            ]}
-                            onPress={() => onChange(c.id)}
-                          >
-                            <Text
-                              style={[
-                                s.optionText,
-                                { color: colors.subText },
-                                value === c.id && { color: "#fff" },
-                              ]}
-                            >
-                              {c.name}
-                            </Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    </ScrollView>
-                  )}
-                />
-              </>
-            )}
-
-            <Button
-              label={editing ? "Salvar alterações" : "Salvar conta fixa"}
-              loading={isLoading}
-              onPress={handleSubmit(onSubmit)}
-            />
-          </ScrollView>
-        </SafeAreaView>
+              </TouchableOpacity>
+              <View style={{ height: 40 }} />
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </View>
       </Modal>
-    </SafeAreaView>
+
+      {/* Modal de Nova Conta Bancária (Mantido intacto visualmente/logicamente do anterior) */}
+      <Modal
+        visible={accountModalVisible}
+        animationType="fade"
+        transparent={true}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(0,0,0,0.5)",
+            justifyContent: "center",
+            padding: 20,
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: colors.card,
+              padding: 24,
+              borderRadius: 20,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 18,
+                fontWeight: "bold",
+                marginBottom: 16,
+                color: colors.text,
+              }}
+            >
+              Nova Conta
+            </Text>
+            <TextInput
+              style={{
+                borderWidth: 1,
+                borderColor: colors.border,
+                backgroundColor: colors.inputBg,
+                color: colors.text,
+                padding: 14,
+                borderRadius: 12,
+                marginBottom: 16,
+                fontSize: 16,
+              }}
+              placeholder="Nome do Banco (Ex: Nubank)"
+              placeholderTextColor={colors.subText}
+              value={newBankName}
+              onChangeText={setNewBankName}
+            />
+            <Text
+              style={{
+                marginBottom: 8,
+                fontWeight: "600",
+                color: colors.subText,
+              }}
+            >
+              Cor:
+            </Text>
+            <View
+              style={{
+                flexDirection: "row",
+                gap: 10,
+                marginBottom: 24,
+                flexWrap: "wrap",
+              }}
+            >
+              {[
+                "#830ad1",
+                "#ec7000",
+                "#ff7a00",
+                "#1d823b",
+                "#e11d48",
+                "#2563eb",
+                "#16a34a",
+                "#475569",
+              ].map((color) => (
+                <TouchableOpacity
+                  key={color}
+                  onPress={() => setNewBankColor(color)}
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 18,
+                    backgroundColor: color,
+                    borderWidth: newBankColor === color ? 3 : 0,
+                    borderColor: colors.text,
+                  }}
+                />
+              ))}
+            </View>
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <TouchableOpacity
+                style={{
+                  flex: 1,
+                  padding: 14,
+                  backgroundColor: colors.border,
+                  borderRadius: 12,
+                  alignItems: "center",
+                }}
+                onPress={() => setAccountModalVisible(false)}
+              >
+                <Text style={{ fontWeight: "bold", color: colors.text }}>
+                  Cancelar
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{
+                  flex: 1,
+                  padding: 14,
+                  backgroundColor: newBankColor,
+                  borderRadius: 12,
+                  alignItems: "center",
+                }}
+                onPress={async () => {
+                  if (!newBankName) return;
+                  await createAccount({
+                    name: newBankName,
+                    color: newBankColor,
+                    type: "checking",
+                    balance: 0,
+                    currency: "BRL",
+                    due_day: null,
+                  });
+                  setNewBankName("");
+                  setAccountModalVisible(false);
+                }}
+              >
+                <Text style={{ fontWeight: "bold", color: "#fff" }}>
+                  Salvar
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </View>
   );
 }
 
+// 👇 DESIGN ATUALIZADO: Cartões da Lista
 function FixedExpenseCard({
   item,
   colors,
@@ -845,14 +834,7 @@ function FixedExpenseCard({
   onPay,
   onEdit,
   onDelete,
-}: {
-  item: FixedExpense;
-  colors: any;
-  isDark: boolean;
-  onPay: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
-}) {
+}: any) {
   const daysUntilDue = item.due_day - new Date().getDate();
   const isOverdue = !item.is_paid && daysUntilDue < 0;
   const isDueSoon = !item.is_paid && daysUntilDue >= 0 && daysUntilDue <= 3;
@@ -861,62 +843,106 @@ function FixedExpenseCard({
     <View
       style={[
         cs.card,
-        { backgroundColor: colors.card },
-        item.is_paid && cs.cardPaid,
+        { backgroundColor: colors.card, borderColor: colors.border },
       ]}
     >
-      <View style={cs.cardLeft}>
-        <View
-          style={[
-            cs.dot,
-            item.is_paid
-              ? { backgroundColor: "#16a34a" }
+      {/* Ícone à Esquerda */}
+      <View
+        style={[
+          cs.iconBox,
+          {
+            backgroundColor: item.is_paid
+              ? "#dcfce7"
               : isOverdue
-                ? { backgroundColor: "#dc2626" }
-                : isDueSoon
-                  ? { backgroundColor: "#f59e0b" }
-                  : { backgroundColor: colors.primary },
-          ]}
+                ? "#fee2e2"
+                : colors.inputBg,
+          },
+        ]}
+      >
+        <Ionicons
+          name="document-text"
+          size={22}
+          color={
+            item.is_paid ? "#16a34a" : isOverdue ? "#ef4444" : colors.primary
+          }
         />
       </View>
+
+      {/* Informações Centrais */}
       <View style={cs.cardInfo}>
-        <Text style={[cs.cardTitle, { color: colors.text }]}>{item.title}</Text>
-        <Text style={[cs.cardSub, { color: colors.subText }]}>
+        <Text style={[cs.cardTitle, { color: colors.text }]} numberOfLines={1}>
+          {item.title}
+        </Text>
+
+        <Text
+          style={[
+            cs.cardSub,
+            {
+              color: item.is_paid
+                ? "#16a34a"
+                : isOverdue
+                  ? "#ef4444"
+                  : isDueSoon
+                    ? "#f59e0b"
+                    : colors.subText,
+            },
+          ]}
+        >
           {item.is_paid
-            ? `✓ Pago em ${item.paid_at}`
+            ? `✓ Pago`
             : isOverdue
-              ? `⚠️ Venceu dia ${item.due_day}`
+              ? `Atrasada (Dia ${item.due_day})`
               : isDueSoon
-                ? `⏰ Vence em ${daysUntilDue} dia${daysUntilDue !== 1 ? "s" : ""}`
+                ? `Vence em ${daysUntilDue} dia${daysUntilDue !== 1 ? "s" : ""}`
                 : `Vence dia ${item.due_day}`}
         </Text>
+
         {item.account && (
           <Text style={[cs.cardAccount, { color: colors.subText }]}>
             {item.account.name}
           </Text>
         )}
       </View>
+
+      {/* Valor e Ações à Direita */}
       <View style={cs.cardRight}>
-        <Text style={[cs.cardAmount, { color: colors.text }]}>
+        <Text
+          style={[
+            cs.cardAmount,
+            {
+              color: colors.text,
+              textDecorationLine: item.is_paid ? "line-through" : "none",
+            },
+          ]}
+        >
           {formatCurrency(item.amount, item.currency)}
         </Text>
+
         <View style={cs.cardActions}>
-          <TouchableOpacity onPress={onPay}>
+          <TouchableOpacity onPress={onEdit} style={cs.actionIcon}>
+            <Ionicons name="create-outline" size={16} color={colors.subText} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={onDelete} style={cs.actionIcon}>
+            <Ionicons name="trash-outline" size={16} color="#ef4444" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              cs.payBtn,
+              {
+                backgroundColor: item.is_paid ? colors.inputBg : colors.primary,
+              },
+            ]}
+            onPress={onPay}
+          >
             <Text
               style={[
                 cs.payText,
-                { color: colors.primary },
-                item.is_paid && { color: colors.subText },
+                { color: item.is_paid ? colors.subText : "#fff" },
               ]}
             >
               {item.is_paid ? "Desfazer" : "Pagar"}
             </Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={onEdit}>
-            <Text style={[cs.editText, { color: "#f59e0b" }]}>Editar</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={onDelete}>
-            <Text style={[cs.deleteText, { color: "#ef4444" }]}>Remover</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -925,51 +951,57 @@ function FixedExpenseCard({
 }
 
 const s = StyleSheet.create({
-  safe: {
-    flex: 1,
-    ...(Platform.OS === "web" ? { overflow: "hidden", maxWidth: "100%" } : {}),
-  },
-  header: {
+  container: { flex: 1 },
+  headerContainer: { paddingHorizontal: 24, paddingTop: 10, paddingBottom: 20 },
+  headerTitle: { fontSize: 28, fontWeight: "bold" },
+  headerSubtitle: { fontSize: 14, marginTop: 4 },
+
+  summaryRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
     paddingHorizontal: 20,
-    paddingVertical: 16,
-  },
-  title: { fontSize: 22, fontWeight: "bold" },
-  addBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  addBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
-  summaryCard: {
-    marginHorizontal: 20,
+    gap: 12,
     marginBottom: 16,
-    borderRadius: 16,
-    padding: 20,
   },
-  summaryRow: { flexDirection: "row", alignItems: "center" },
-  summaryItem: { flex: 1, alignItems: "center" },
-  summaryLabel: { fontSize: 12, marginBottom: 4 },
-  summaryValue: { fontSize: 15, fontWeight: "700" },
-  summaryDivider: {
-    width: 1,
-    height: 32,
-    marginHorizontal: 8,
+  summaryCard: { flex: 1, borderRadius: 16, padding: 16, borderLeftWidth: 4 },
+  summaryLabel: { fontSize: 12, marginBottom: 4, fontWeight: "600" },
+  summaryValue: { fontSize: 18, fontWeight: "bold" },
+
+  pendingAlertBox: {
+    padding: 12,
+    borderRadius: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
-  pendingAlert: {
-    marginTop: 12,
+  pendingAlertText: {
+    color: "#ef4444",
     fontSize: 13,
-    color: "#dc2626",
     fontWeight: "600",
-    textAlign: "center",
+    flex: 1,
   },
-  list: { paddingHorizontal: 20, paddingBottom: 32 },
+
+  list: { paddingHorizontal: 20, paddingBottom: 100 }, // Espaço para o FAB
+
+  fab: {
+    position: "absolute",
+    bottom: 24,
+    alignSelf: "center",
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+
   empty: { alignItems: "center", paddingVertical: 60 },
   emptyText: { fontSize: 16, fontWeight: "600" },
   emptySubtext: { fontSize: 13, marginTop: 6 },
-  modal: { flex: 1 },
+
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -980,45 +1012,73 @@ const s = StyleSheet.create({
   },
   modalTitle: { fontSize: 18, fontWeight: "bold" },
   modalClose: { fontWeight: "600" },
-  form: { padding: 20, gap: 16 },
-  label: { fontSize: 13, fontWeight: "600", marginBottom: 2 },
-  optionRow: { flexDirection: "row", gap: 8 },
+  form: { padding: 20 },
+  label: { fontSize: 13, fontWeight: "600", marginBottom: 6 },
+
+  optionRow: { flexDirection: "row", gap: 8, paddingVertical: 4 },
   optionBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     borderRadius: 20,
     borderWidth: 1,
   },
-  optionBtnActive: {},
-  optionText: { fontSize: 13, fontWeight: "500" },
+  optionText: { fontSize: 13, fontWeight: "600" },
+
   suggestionBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 20,
     marginRight: 8,
   },
-  suggestionText: { fontSize: 12, fontWeight: "600" },
+  suggestionText: { fontSize: 13, fontWeight: "600" },
+
+  submitBtn: {
+    paddingVertical: 18,
+    borderRadius: 100,
+    alignItems: "center",
+    marginTop: 16,
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+  },
+  submitBtnText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
 });
 
 const cs = StyleSheet.create({
   card: {
     flexDirection: "row",
     alignItems: "center",
-    borderRadius: 14,
+    borderRadius: 20,
     padding: 16,
-    marginBottom: 10,
+    marginBottom: 12,
+    borderWidth: 1,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  cardPaid: { opacity: 0.6 },
-  cardLeft: { marginRight: 12 },
-  dot: { width: 12, height: 12, borderRadius: 6 },
-  cardInfo: { flex: 1 },
-  cardTitle: { fontSize: 15, fontWeight: "700" },
-  cardSub: { fontSize: 12, marginTop: 3 },
-  cardAccount: { fontSize: 11, marginTop: 2 },
+  iconBox: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 14,
+  },
+  cardInfo: { flex: 1, paddingRight: 8 },
+  cardTitle: { fontSize: 15, fontWeight: "bold", marginBottom: 2 },
+  cardSub: { fontSize: 12, fontWeight: "600" },
+  cardAccount: { fontSize: 11, marginTop: 4 },
+
   cardRight: { alignItems: "flex-end" },
-  cardAmount: { fontSize: 15, fontWeight: "700" },
-  cardActions: { flexDirection: "row", gap: 10, marginTop: 6 },
-  payText: { fontSize: 12, fontWeight: "700" },
-  editText: { fontSize: 12, fontWeight: "700" },
-  deleteText: { fontSize: 12 },
+  cardAmount: { fontSize: 16, fontWeight: "bold", marginBottom: 8 },
+
+  cardActions: { flexDirection: "row", alignItems: "center", gap: 10 },
+  actionIcon: { padding: 4 },
+
+  payBtn: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 10 },
+  payText: { fontSize: 12, fontWeight: "bold" },
 });

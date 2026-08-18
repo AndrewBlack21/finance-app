@@ -9,7 +9,10 @@ import {
   Platform,
   useWindowDimensions,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import Svg, {
   Path,
   Circle,
@@ -28,19 +31,47 @@ import { useAuth } from "@/hooks/useAuth";
 import { useAppTheme } from "@/hooks/useTheme";
 
 const PALETTE = [
-  "#6366f1",
-  "#ec4899",
-  "#f97316",
-  "#22c55e",
   "#3b82f6",
-  "#eab308",
-  "#ef4444",
+  "#f97316",
   "#8b5cf6",
+  "#ec4899",
+  "#eab308",
   "#06b6d4",
   "#14b8a6",
   "#f43f5e",
+  "#6366f1",
   "#84cc16",
 ];
+
+// 👇 FUNÇÃO AUXILIAR: Para detetar ícones da lista Top Despesas
+const getCategoryIcon = (name: string): keyof typeof Ionicons.glyphMap => {
+  const n = name.toLowerCase();
+  if (n.includes("aliment") || n.includes("mercado") || n.includes("comida"))
+    return "cart";
+  if (n.includes("morad") || n.includes("casa") || n.includes("aluguel"))
+    return "home";
+  if (n.includes("transport") || n.includes("carro") || n.includes("gasolina"))
+    return "car";
+  if (n.includes("educa") || n.includes("faculdade") || n.includes("curso"))
+    return "school";
+  if (
+    n.includes("saúde") ||
+    n.includes("farmácia") ||
+    n.includes("médico") ||
+    n.includes("exame")
+  )
+    return "medkit";
+  if (n.includes("assinatura") || n.includes("netflix") || n.includes("tv"))
+    return "tv";
+  if (n.includes("lazer") || n.includes("festa") || n.includes("presente"))
+    return "gift";
+  if (n.includes("roupa") || n.includes("vestuário")) return "shirt";
+  if (n.includes("serviço")) return "build";
+  if (n.includes("luz") || n.includes("energia")) return "flash";
+  if (n.includes("internet") || n.includes("telefone")) return "wifi";
+  if (n.includes("cartão") || n.includes("fatura")) return "card";
+  return "pricetag";
+};
 
 function getLast6Months() {
   const months = [];
@@ -79,18 +110,16 @@ function slicePath(
   return `M${cx},${cy} L${s.x},${s.y} A${r},${r} 0 ${large} 1 ${e.x},${e.y} Z`;
 }
 
-// 👇 1. MÁQUINA DO TEMPO: Descobre se uma compra a crédito estava ativa num mês específico do passado/futuro
 function isInstallmentActiveInMonth(inst: any, year: number, month: number) {
   const dateStr = inst.start_date
     ? inst.start_date.split("T")[0]
     : inst.created_at.split("T")[0];
   const [sYear, sMonth] = dateStr.split("-").map(Number);
-  const startM = sMonth - 1; // Ajuste porque em Javascript os meses vão de 0 a 11
+  const startM = sMonth - 1;
   const monthsDiff = (year - sYear) * 12 + (month - startM);
   return monthsDiff >= 0 && monthsDiff < inst.total_installments;
 }
 
-// 👇 2. MÁQUINA DO TEMPO: Descobre se uma conta fixa já existia num mês específico do passado/futuro
 function isFixedActiveInMonth(f: any, year: number, month: number) {
   if (!f.created_at) return true;
   const dateStr = f.created_at.split("T")[0];
@@ -104,9 +133,10 @@ export default function ChartsScreen() {
   const router = useRouter();
   const { profile } = useAuth();
   const { colors, isDark } = useAppTheme();
+  const insets = useSafeAreaInsets();
 
   const { width: SW } = useWindowDimensions();
-  const CHART_W = SW - 80;
+  const CHART_W = SW - 48; // Padding ajustado
 
   const { expenses: fixedList } = useFixedExpenses();
   const { installments } = useInstallments();
@@ -143,56 +173,64 @@ export default function ChartsScreen() {
     }
   }, [hasMore, isLoading, isLoadingMore, fetchMore]);
 
-  // 👇 LÓGICA DO GRÁFICO DE PIZZA CORRIGIDA
-  const pieData = useMemo(() => {
-    const today = new Date();
-    const currentYear = today.getFullYear();
-    const currentMonth = today.getMonth();
-    const currentMonthFrom = new Date(currentYear, currentMonth, 1)
-      .toISOString()
-      .split("T")[0];
-    const currentMonthTo = new Date(currentYear, currentMonth + 1, 0)
-      .toISOString()
-      .split("T")[0];
+  // VARIÁVEIS DO MÊS ATUAL (Mantêm a lógica exata de cálculo)
+  const today = new Date();
+  const currentYear = today.getFullYear();
+  const currentMonth = today.getMonth();
+  const currentMonthFrom = new Date(currentYear, currentMonth, 1)
+    .toISOString()
+    .split("T")[0];
+  const currentMonthTo = new Date(currentYear, currentMonth + 1, 0)
+    .toISOString()
+    .split("T")[0];
 
+  const currentMonthIncome = useMemo(() => {
+    return transactions
+      .filter(
+        (t) =>
+          t.type === "income" &&
+          t.date >= currentMonthFrom &&
+          t.date <= currentMonthTo &&
+          !t.title?.includes("Fatura"),
+      )
+      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+  }, [transactions, currentMonthFrom, currentMonthTo]);
+
+  const pieData = useMemo(() => {
     const map: Record<string, { label: string; value: number; color: string }> =
       {};
 
-    // 1. Transações Normais (Excluindo pagamentos de Fatura!)
     transactions
       .filter(
         (t) =>
           t.type === "expense" &&
           t.date >= currentMonthFrom &&
           t.date <= currentMonthTo &&
-          !t.title?.includes("Fatura"), // 👈 O segredo para não contar 2x
+          !t.title?.includes("Fatura"),
       )
       .forEach((t) => {
         const amt = Number(t.amount) || 0;
-        const key = t.category?.name ?? "Outros (Sem Categoria / Cartão)";
+        const key = t.category?.name ?? "Outros";
         const color = t.category?.color ?? "#9ca3af";
         if (!map[key]) map[key] = { label: key, value: 0, color };
         map[key].value += amt;
       });
 
-    // 2. Compras no Cartão de Crédito
     installments.forEach((i) => {
       if (isInstallmentActiveInMonth(i, currentYear, currentMonth)) {
         const amt = Number(i.installment_amount) || 0;
-        const key =
-          (i as any).category?.name ?? "Outros (Sem Categoria / Cartão)";
-        const color = (i as any).category?.color ?? "#9ca3af";
+        const key = (i as any).category?.name ?? "Cartão de Crédito";
+        const color = (i as any).category?.color ?? "#f97316";
         if (!map[key]) map[key] = { label: key, value: 0, color };
         map[key].value += amt;
       }
     });
 
-    // 3. Contas Fixas
     fixedList.forEach((f) => {
       if (isFixedActiveInMonth(f, currentYear, currentMonth)) {
         const amt = Number(f.amount) || 0;
-        const key = f.category?.name ?? "Contas Fixas";
-        const color = f.category?.color ?? "#f59e0b";
+        const key = f.title ?? f.category?.name ?? "Contas Fixas"; // Puxamos o título para separar as contas fixas visualmente
+        const color = f.category?.color ?? "#ef4444";
         if (!map[key]) map[key] = { label: key, value: 0, color };
         map[key].value += amt;
       }
@@ -203,17 +241,32 @@ export default function ChartsScreen() {
 
     return arr.map((d, i) => ({
       ...d,
-      color: d.color ?? PALETTE[i % PALETTE.length],
+      color:
+        d.color !== "#9ca3af" && d.color !== "#f97316" && d.color !== "#ef4444"
+          ? PALETTE[i % PALETTE.length]
+          : d.color,
       pct: total > 0 ? (d.value / total) * 100 : 0,
       deg: total > 0 ? (d.value / total) * 360 : 0,
     }));
-  }, [transactions, fixedList, installments]);
+  }, [
+    transactions,
+    fixedList,
+    installments,
+    currentMonthFrom,
+    currentMonthTo,
+    currentYear,
+    currentMonth,
+  ]);
 
   const pieTotal = pieData.reduce((s, d) => s + d.value, 0);
+  const currentMonthBalance = currentMonthIncome - pieTotal;
+  const poupancaPct =
+    currentMonthIncome > 0
+      ? Math.max(0, (currentMonthBalance / currentMonthIncome) * 100)
+      : 0;
 
   const months = useMemo(() => getLast6Months(), []);
 
-  // 👇 LÓGICA DO GRÁFICO DE BARRAS CORRIGIDA
   const barData = useMemo(() => {
     return months.map((m) => {
       const mDate = new Date(m.from + "T00:00:00");
@@ -223,7 +276,6 @@ export default function ChartsScreen() {
       let income = 0;
       let expense = 0;
 
-      // 1. Transações (Excluindo as faturas para não baralhar as receitas e despesas)
       transactions.forEach((t) => {
         if (
           t.date >= m.from &&
@@ -236,31 +288,21 @@ export default function ChartsScreen() {
         }
       });
 
-      // 2. Adicionando o Cartão de Crédito ao histórico de Barras
       installments.forEach((inst) => {
-        if (isInstallmentActiveInMonth(inst, y, mo)) {
+        if (isInstallmentActiveInMonth(inst, y, mo))
           expense += Number(inst.installment_amount) || 0;
-        }
       });
 
-      // 3. Adicionando as Contas Fixas ao histórico de Barras
       fixedList.forEach((f) => {
-        if (isFixedActiveInMonth(f, y, mo)) {
-          expense += Number(f.amount) || 0;
-        }
+        if (isFixedActiveInMonth(f, y, mo)) expense += Number(f.amount) || 0;
       });
 
-      return {
-        label: m.label,
-        income,
-        expense,
-      };
+      return { label: m.label, income, expense };
     });
   }, [transactions, installments, fixedList, months]);
 
   const barMax = Math.max(...barData.flatMap((d) => [d.income, d.expense]), 1);
 
-  // 👇 LÓGICA DO GRÁFICO ANUAL CORRIGIDA
   const annualData = useMemo(() => {
     const year = new Date().getFullYear();
     return Array.from({ length: 12 }).map((_, mo) => {
@@ -276,7 +318,6 @@ export default function ChartsScreen() {
       let income = 0;
       let expense = 0;
 
-      // 1. Transações sem faturas
       transactions.forEach((t) => {
         if (t.date >= mFrom && t.date <= mTo && !t.title?.includes("Fatura")) {
           const amt = Number(t.amount) || 0;
@@ -285,18 +326,13 @@ export default function ChartsScreen() {
         }
       });
 
-      // 2. Cartões de Crédito Anual
       installments.forEach((inst) => {
-        if (isInstallmentActiveInMonth(inst, year, mo)) {
+        if (isInstallmentActiveInMonth(inst, year, mo))
           expense += Number(inst.installment_amount) || 0;
-        }
       });
 
-      // 3. Contas Fixas Anual
       fixedList.forEach((f) => {
-        if (isFixedActiveInMonth(f, year, mo)) {
-          expense += Number(f.amount) || 0;
-        }
+        if (isFixedActiveInMonth(f, year, mo)) expense += Number(f.amount) || 0;
       });
 
       return {
@@ -315,133 +351,199 @@ export default function ChartsScreen() {
     1,
   );
 
+  // 👇 RENDERIZAÇÃO: MÊS ATUAL (Pizza Lado a Lado + Top Despesas Embaixo)
   function renderPie() {
-    const PIE_R = Math.min(110, CHART_W / 2 - 10);
-    const HOLE_R = PIE_R * 0.6;
-    const CX = CHART_W / 2;
-    const CY = PIE_R + 25;
-    const SVG_H = PIE_R * 2 + 50;
+    const PIE_R = Math.min(75, CHART_W / 4); // Gráfico menor para caber legenda ao lado
+    const HOLE_R = PIE_R * 0.65;
+    const CX = PIE_R;
+    const CY = PIE_R;
 
     let startAngle = 0;
 
     return (
       <View>
-        <Svg width={CHART_W} height={SVG_H}>
-          <G>
-            {pieData.map((d, i) => {
-              const end = startAngle + d.deg;
-              const path = slicePath(CX, CY, PIE_R, startAngle, end);
-              const isSelected = selected === i;
-              startAngle = end;
-              return (
-                <Path
-                  key={i}
-                  d={path}
-                  fill={d.color}
-                  opacity={selected === null || isSelected ? 1 : 0.4}
-                  onPress={() => setSelected(isSelected ? null : i)}
-                  strokeWidth={isSelected ? 2 : 0}
-                  stroke={colors.card}
-                />
-              );
-            })}
-            <Circle cx={CX} cy={CY} r={HOLE_R} fill={colors.card} />
-            <SvgText
-              x={CX}
-              y={CY - 12}
-              textAnchor="middle"
-              fontSize="11"
-              fill={colors.subText}
-            >
-              {selected !== null ? pieData[selected].label : "Total"}
-            </SvgText>
-            <SvgText
-              x={CX}
-              y={CY + 10}
-              textAnchor="middle"
-              fontSize="15"
-              fontWeight="bold"
-              fill={colors.text}
-            >
-              {selected !== null
-                ? `${pieData[selected].pct.toFixed(1)}%`
-                : formatCurrency(pieTotal, currency)}
-            </SvgText>
-            {selected !== null && (
-              <SvgText
-                x={CX}
-                y={CY + 28}
-                textAnchor="middle"
-                fontSize="11"
-                fill={colors.subText}
-              >
-                {formatCurrency(pieData[selected].value, currency)}
-              </SvgText>
-            )}
-          </G>
-        </Svg>
+        <View
+          style={[
+            s.modernChartCard,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
+        >
+          <Text style={[s.chartCardTitle, { color: colors.text }]}>
+            Despesas por Categoria
+          </Text>
 
-        <View style={s.legend}>
-          {pieData.map((d, i) => (
-            <TouchableOpacity
-              key={i}
-              style={[
-                s.legendItem,
-                selected === i && {
-                  backgroundColor: isDark ? "#312e81" : "#f5f3ff",
-                },
-              ]}
-              onPress={() => setSelected(selected === i ? null : i)}
-            >
-              <View style={[s.legendDot, { backgroundColor: d.color }]} />
-              <View style={{ flex: 1 }}>
-                <Text
-                  style={[s.legendLabel, { color: colors.text }]}
-                  numberOfLines={1}
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            <View style={{ width: PIE_R * 2, height: PIE_R * 2 }}>
+              <Svg width={PIE_R * 2} height={PIE_R * 2}>
+                <G>
+                  {pieData.map((d, i) => {
+                    const end = startAngle + d.deg;
+                    const path = slicePath(CX, CY, PIE_R, startAngle, end);
+                    const isSelected = selected === i;
+                    startAngle = end;
+                    return (
+                      <Path
+                        key={i}
+                        d={path}
+                        fill={d.color}
+                        opacity={selected === null || isSelected ? 1 : 0.3}
+                        onPress={() => setSelected(isSelected ? null : i)}
+                        strokeWidth={isSelected ? 3 : 1.5}
+                        stroke={colors.card}
+                      />
+                    );
+                  })}
+                  <Circle cx={CX} cy={CY} r={HOLE_R} fill={colors.card} />
+                  <SvgText
+                    x={CX}
+                    y={CY + 5}
+                    textAnchor="middle"
+                    fontSize="14"
+                    fontWeight="bold"
+                    fill={colors.text}
+                  >
+                    {selected !== null
+                      ? `${pieData[selected].pct.toFixed(0)}%`
+                      : "100%"}
+                  </SvgText>
+                </G>
+              </Svg>
+            </View>
+
+            {/* Legenda Lateral (Estilo Imagem 2) */}
+            <View style={{ flex: 1, paddingLeft: 20 }}>
+              {pieData.slice(0, 4).map((d, i) => (
+                <View
+                  key={i}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    marginBottom: 10,
+                    justifyContent: "space-between",
+                  }}
                 >
-                  {d.label}
-                </Text>
-                <Text style={[s.legendValue, { color: colors.subText }]}>
-                  {d.pct.toFixed(1)}%
-                </Text>
-              </View>
-              <Text style={[s.legendAmount, { color: colors.text }]}>
-                {formatCurrency(d.value, currency)}
-              </Text>
-            </TouchableOpacity>
-          ))}
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      flex: 1,
+                    }}
+                  >
+                    <View
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: 4,
+                        backgroundColor: d.color,
+                        marginRight: 8,
+                      }}
+                    />
+                    <Text
+                      style={{
+                        color: colors.text,
+                        fontSize: 12,
+                        fontWeight: "500",
+                      }}
+                      numberOfLines={1}
+                    >
+                      {d.label}
+                    </Text>
+                  </View>
+                  <Text
+                    style={{ color: d.color, fontSize: 12, fontWeight: "bold" }}
+                  >
+                    {formatCurrency(d.value, currency)}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </View>
         </View>
+
+        {/* 👇 DESIGN ATUALIZADO: Lista Top Despesas Inspirada na Imagem */}
+        {pieData.length > 0 && (
+          <View
+            style={[
+              s.modernChartCard,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <Text style={[s.chartCardTitle, { color: colors.text }]}>
+              Top Despesas
+            </Text>
+
+            {pieData.slice(0, 6).map((d, i) => (
+              <View key={i} style={s.topDespesaItem}>
+                <View style={s.topDespesaRow}>
+                  <View style={s.topDespesaLeft}>
+                    <Ionicons
+                      name={getCategoryIcon(d.label)}
+                      size={18}
+                      color={colors.subText}
+                      style={{ marginRight: 10 }}
+                    />
+                    <Text
+                      style={[s.topDespesaLabel, { color: colors.text }]}
+                      numberOfLines={1}
+                    >
+                      {d.label}
+                    </Text>
+                  </View>
+                  {/* Cor Vermelha no valor, exatamente como na imagem */}
+                  <Text style={[s.topDespesaValue, { color: "#ef4444" }]}>
+                    {formatCurrency(d.value, currency)}
+                  </Text>
+                </View>
+
+                <View
+                  style={[
+                    s.topDespesaBarBg,
+                    { backgroundColor: colors.inputBg },
+                  ]}
+                >
+                  <View
+                    style={[
+                      s.topDespesaBarFill,
+                      { width: `${d.pct}%`, backgroundColor: d.color },
+                    ]}
+                  />
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
       </View>
     );
   }
 
+  // 👇 RENDERIZAÇÃO: BARRAS SEMESTRAIS
   function renderBar() {
     const BAR_H = 200;
-    const PADDING = 16;
+    const PADDING = 20;
 
     const availW = CHART_W - PADDING * 2;
-    const BAR_W = Math.min(20, availW / (barData.length * 3));
+    const BAR_W = Math.min(14, availW / (barData.length * 3));
     const GAP = (availW - barData.length * BAR_W * 2) / (barData.length + 1);
 
     return (
-      <View>
-        <View style={s.barLegend}>
-          <View style={s.barLegendItem}>
-            <View style={[s.barLegendDot, { backgroundColor: "#22c55e" }]} />
-            <Text style={[s.barLegendText, { color: colors.subText }]}>
-              Receitas
-            </Text>
-          </View>
-          <View style={s.barLegendItem}>
-            <View style={[s.barLegendDot, { backgroundColor: "#ef4444" }]} />
-            <Text style={[s.barLegendText, { color: colors.subText }]}>
-              Despesas
-            </Text>
-          </View>
-        </View>
+      <View
+        style={[
+          s.modernChartCard,
+          { backgroundColor: colors.card, borderColor: colors.border },
+        ]}
+      >
+        <Text style={[s.chartCardTitle, { color: colors.text }]}>
+          Gastos vs Entradas (6 meses)
+        </Text>
 
         <Svg width={CHART_W} height={BAR_H + 40}>
-          {[0, 0.25, 0.5, 0.75, 1].map((pct, i) => {
+          {[0, 0.5, 1].map((pct, i) => {
             const y = PADDING + (BAR_H - PADDING * 2) * (1 - pct);
             return (
               <G key={i}>
@@ -452,11 +554,12 @@ export default function ChartsScreen() {
                   y2={y}
                   stroke={colors.border}
                   strokeWidth={1}
+                  strokeDasharray="4 4"
                 />
                 <SvgText
                   x={PADDING}
-                  y={y - 3}
-                  fontSize="9"
+                  y={y - 6}
+                  fontSize="10"
                   fill={colors.subText}
                 >
                   {formatCurrency(barMax * pct, currency, true)}
@@ -480,23 +583,24 @@ export default function ChartsScreen() {
                   y={PADDING + availH - incH}
                   width={BAR_W}
                   height={incH}
-                  fill="#22c55e"
-                  rx={4}
+                  fill="#10b981"
+                  rx={BAR_W / 2}
                 />
                 <Rect
-                  x={x + BAR_W + 2}
+                  x={x + BAR_W + 4}
                   y={PADDING + availH - expH}
                   width={BAR_W}
                   height={expH}
                   fill="#ef4444"
-                  rx={4}
+                  rx={BAR_W / 2}
                 />
                 <SvgText
-                  x={x + BAR_W}
-                  y={BAR_H + 20}
+                  x={x + BAR_W + 2}
+                  y={BAR_H + 16}
                   textAnchor="middle"
-                  fontSize="10"
+                  fontSize="11"
                   fill={colors.subText}
+                  fontWeight="500"
                 >
                   {d.label}
                 </SvgText>
@@ -505,36 +609,25 @@ export default function ChartsScreen() {
           })}
         </Svg>
 
-        <View style={s.monthSummary}>
-          {barData.map((d, i) => (
-            <View
-              key={i}
-              style={[s.monthCard, { backgroundColor: colors.inputBg }]}
-            >
-              <Text style={[s.monthCardLabel, { color: colors.subText }]}>
-                {d.label}
-              </Text>
-              <Text style={[s.monthCardValue, { color: "#22c55e" }]}>
-                +{formatCurrency(d.income, currency)}
-              </Text>
-              <Text style={[s.monthCardValue, { color: "#ef4444" }]}>
-                -{formatCurrency(d.expense, currency)}
-              </Text>
-              <Text
-                style={[
-                  s.monthCardBalance,
-                  { color: d.income - d.expense >= 0 ? "#22c55e" : "#ef4444" },
-                ]}
-              >
-                {formatCurrency(d.income - d.expense, currency)}
-              </Text>
-            </View>
-          ))}
+        <View style={s.barLegendContainer}>
+          <View style={s.barLegendItem}>
+            <View style={[s.barLegendDot, { backgroundColor: "#10b981" }]} />
+            <Text style={[s.barLegendText, { color: colors.subText }]}>
+              Receitas
+            </Text>
+          </View>
+          <View style={s.barLegendItem}>
+            <View style={[s.barLegendDot, { backgroundColor: "#ef4444" }]} />
+            <Text style={[s.barLegendText, { color: colors.subText }]}>
+              Despesas
+            </Text>
+          </View>
         </View>
       </View>
     );
   }
 
+  // 👇 RENDERIZAÇÃO: ANUAL (FLUXO MENSAL)
   function renderAnnual() {
     const PADDING = 20;
     const availW = CHART_W - PADDING * 2;
@@ -551,12 +644,41 @@ export default function ChartsScreen() {
       .join(" ");
 
     return (
-      <View>
-        <Text style={[s.annualChartTitle, { color: colors.text }]}>
-          Panorama Anual
-        </Text>
+      <View
+        style={[
+          s.modernChartCard,
+          { backgroundColor: colors.card, borderColor: colors.border },
+        ]}
+      >
+        {/* Título com a Badge de Ano estilo Imagem 1 */}
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 24,
+          }}
+        >
+          <Text
+            style={[s.chartCardTitle, { color: colors.text, marginBottom: 0 }]}
+          >
+            Fluxo Mensal
+          </Text>
+          <View
+            style={{
+              backgroundColor: "rgba(16, 185, 129, 0.15)",
+              paddingHorizontal: 12,
+              paddingVertical: 4,
+              borderRadius: 12,
+            }}
+          >
+            <Text style={{ color: "#10b981", fontWeight: "bold" }}>
+              {new Date().getFullYear()}
+            </Text>
+          </View>
+        </View>
 
-        <Svg width={CHART_W} height={200}>
+        <Svg width={CHART_W} height={210}>
           {[0, 0.5, 1].map((pct, i) => {
             const y = PADDING + availH * (1 - pct);
             return (
@@ -568,11 +690,12 @@ export default function ChartsScreen() {
                   y2={y}
                   stroke={colors.border}
                   strokeWidth={1}
+                  strokeDasharray="4 4"
                 />
                 <SvgText
                   x={PADDING}
-                  y={y - 5}
-                  fontSize="9"
+                  y={y - 6}
+                  fontSize="10"
                   fill={colors.subText}
                 >
                   {formatCurrency(annualMax * pct, currency, true)}
@@ -583,31 +706,43 @@ export default function ChartsScreen() {
 
           <Path
             d={incomePath}
-            stroke="#22c55e"
-            strokeWidth="2.5"
+            stroke="#10b981"
+            strokeWidth="3"
             fill="none"
-            opacity={0.7}
+            strokeLinejoin="round"
           />
           <Path
             d={expensePath}
             stroke="#ef4444"
-            strokeWidth="2.5"
+            strokeWidth="3"
             fill="none"
-            opacity={0.7}
+            strokeLinejoin="round"
           />
 
           {annualData.map((d, i) => (
             <G key={`points-${i}`}>
-              <Circle cx={getX(i)} cy={getY(d.income)} r="3" fill="#22c55e" />
-              <Circle cx={getX(i)} cy={getY(d.expense)} r="3" fill="#ef4444" />
+              <Circle
+                cx={getX(i)}
+                cy={getY(d.income)}
+                r="4.5"
+                fill="#10b981"
+                stroke={colors.card}
+                strokeWidth={2}
+              />
+              <Circle
+                cx={getX(i)}
+                cy={getY(d.expense)}
+                r="4.5"
+                fill="#ef4444"
+                stroke={colors.card}
+                strokeWidth={2}
+              />
               <SvgText
                 x={getX(i)}
-                y={200 - 4}
+                y={210 - 4}
                 textAnchor="middle"
-                fontSize="9"
+                fontSize="10"
                 fill={colors.subText}
-                rotation={-45}
-                origin={`${getX(i)}, ${200 - 4}`}
               >
                 {d.shortLabel}
               </SvgText>
@@ -615,75 +750,19 @@ export default function ChartsScreen() {
           ))}
         </Svg>
 
-        <View style={s.barLegend}>
+        <View style={[s.barLegendContainer, { marginBottom: 0 }]}>
           <View style={s.barLegendItem}>
-            <View style={[s.barLegendDot, { backgroundColor: "#22c55e" }]} />
+            <View style={[s.barLegendDot, { backgroundColor: "#10b981" }]} />
             <Text style={[s.barLegendText, { color: colors.subText }]}>
-              Entradas
+              Receitas
             </Text>
           </View>
           <View style={s.barLegendItem}>
             <View style={[s.barLegendDot, { backgroundColor: "#ef4444" }]} />
             <Text style={[s.barLegendText, { color: colors.subText }]}>
-              Gastos
+              Despesas
             </Text>
           </View>
-        </View>
-
-        <View style={[s.tableContainer, { borderColor: colors.border }]}>
-          <View
-            style={[
-              s.tableHeaderRow,
-              {
-                backgroundColor: colors.inputBg,
-                borderBottomColor: colors.border,
-              },
-            ]}
-          >
-            <Text style={[s.th, { flex: 1.5, color: colors.text }]}>Mês</Text>
-            <Text style={[s.th, { color: colors.text }]}>Gastos</Text>
-            <Text style={[s.th, { color: colors.text }]}>Entradas</Text>
-            <Text style={[s.th, { textAlign: "right", color: colors.text }]}>
-              Diferença
-            </Text>
-          </View>
-          {annualData.map((d, i) => (
-            <View
-              key={d.monthIndex}
-              style={[
-                s.tableRow,
-                { borderBottomColor: colors.border },
-                i % 2 !== 0 && { backgroundColor: colors.inputBg },
-              ]}
-            >
-              <Text
-                style={[
-                  s.td,
-                  { flex: 1.5, fontWeight: "600", color: colors.text },
-                ]}
-              >
-                {d.label}
-              </Text>
-              <Text style={[s.td, { color: colors.subText }]}>
-                {formatCurrency(d.expense, currency)}
-              </Text>
-              <Text style={[s.td, { color: colors.subText }]}>
-                {formatCurrency(d.income, currency)}
-              </Text>
-              <Text
-                style={[
-                  s.td,
-                  {
-                    textAlign: "right",
-                    fontWeight: "bold",
-                    color: d.diff >= 0 ? "#22c55e" : "#ef4444",
-                  },
-                ]}
-              >
-                {formatCurrency(d.diff, currency)}
-              </Text>
-            </View>
-          ))}
         </View>
       </View>
     );
@@ -691,157 +770,204 @@ export default function ChartsScreen() {
 
   return (
     <SafeAreaView style={[s.safe, { backgroundColor: colors.bg }]}>
+      {/* 👇 CABEÇALHO LIMPO E MODERNO */}
       <View
-        style={[
-          s.header,
-          { backgroundColor: colors.card, borderBottomColor: colors.border },
-        ]}
+        style={[s.headerContainer, { paddingTop: Math.max(insets.top, 10) }]}
       >
-        <TouchableOpacity
-          onPress={() => router.back()}
-          style={[s.backBtn, { backgroundColor: colors.inputBg }]}
-        >
-          <Ionicons name="arrow-back" size={22} color={colors.text} />
-        </TouchableOpacity>
-        <Text style={[s.title, { color: colors.text }]}>
-          Análise Financeira
-        </Text>
-        <View style={{ width: 38 }} />
+        <View style={{ marginTop: 16 }}>
+          <Text style={[s.headerTitle, { color: colors.text }]}>
+            Estatísticas
+          </Text>
+          <Text style={[s.headerSubtitle, { color: colors.subText }]}>
+            Análise financeira detalhada
+          </Text>
+        </View>
       </View>
 
-      <View style={[s.toggle, { backgroundColor: colors.inputBg }]}>
-        <TouchableOpacity
+      {/* 👇 SELETOR TIPO PÍLULA (Design Moderno da Imagem 1) */}
+      <View style={s.toggleWrapper}>
+        <View
           style={[
-            s.toggleBtn,
-            chartType === "pie" && [
-              s.toggleActive,
-              { backgroundColor: colors.primary },
-            ],
+            s.toggleContainer,
+            {
+              backgroundColor: colors.card,
+              borderColor: colors.border,
+              borderWidth: 1,
+            },
           ]}
-          onPress={() => {
-            setChartType("pie");
-            setSelected(null);
-          }}
         >
-          <Ionicons
-            name="pie-chart"
-            size={16}
-            color={chartType === "pie" ? "#fff" : colors.subText}
-          />
-          <Text
+          <TouchableOpacity
             style={[
-              s.toggleText,
-              { color: colors.subText },
-              chartType === "pie" && s.toggleTextActive,
+              s.toggleBtn,
+              chartType === "pie" && {
+                backgroundColor: colors.primary,
+                shadowColor: "#000",
+                elevation: 2,
+              },
             ]}
+            onPress={() => {
+              setChartType("pie");
+              setSelected(null);
+            }}
           >
-            Pizza
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[
-            s.toggleBtn,
-            chartType === "bar" && [
-              s.toggleActive,
-              { backgroundColor: colors.primary },
-            ],
-          ]}
-          onPress={() => {
-            setChartType("bar");
-            setSelected(null);
-          }}
-        >
-          <Ionicons
-            name="bar-chart"
-            size={16}
-            color={chartType === "bar" ? "#fff" : colors.subText}
-          />
-          <Text
+            <Text
+              style={[
+                s.toggleText,
+                { color: colors.subText },
+                chartType === "pie" && { color: "#fff" },
+              ]}
+            >
+              Mês
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             style={[
-              s.toggleText,
-              { color: colors.subText },
-              chartType === "bar" && s.toggleTextActive,
+              s.toggleBtn,
+              chartType === "bar" && {
+                backgroundColor: colors.primary,
+                shadowColor: "#000",
+                elevation: 2,
+              },
             ]}
+            onPress={() => {
+              setChartType("bar");
+              setSelected(null);
+            }}
           >
-            Barras
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[
-            s.toggleBtn,
-            chartType === "annual" && [
-              s.toggleActive,
-              { backgroundColor: colors.primary },
-            ],
-          ]}
-          onPress={() => {
-            setChartType("annual");
-            setSelected(null);
-          }}
-        >
-          <Ionicons
-            name="calendar-outline"
-            size={16}
-            color={chartType === "annual" ? "#fff" : colors.subText}
-          />
-          <Text
+            <Text
+              style={[
+                s.toggleText,
+                { color: colors.subText },
+                chartType === "bar" && { color: "#fff" },
+              ]}
+            >
+              Semestral
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             style={[
-              s.toggleText,
-              { color: colors.subText },
-              chartType === "annual" && s.toggleTextActive,
+              s.toggleBtn,
+              chartType === "annual" && {
+                backgroundColor: colors.primary,
+                shadowColor: "#000",
+                elevation: 2,
+              },
             ]}
+            onPress={() => {
+              setChartType("annual");
+              setSelected(null);
+            }}
           >
-            Anual
-          </Text>
-        </TouchableOpacity>
+            <Text
+              style={[
+                s.toggleText,
+                { color: colors.subText },
+                chartType === "annual" && { color: "#fff" },
+              ]}
+            >
+              Ano
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
         contentContainerStyle={s.scroll}
         showsVerticalScrollIndicator={false}
       >
+        {/* 👇 CARTÕES DE RESUMO SUPERIORES (Imagem 1) */}
+        <View style={s.topSummaryRow}>
+          <View
+            style={[
+              s.topSummaryCard,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <View
+              style={[
+                s.topSummaryIconBox,
+                { backgroundColor: "rgba(16, 185, 129, 0.15)" },
+              ]}
+            >
+              <Ionicons name="arrow-down" size={16} color="#10b981" />
+            </View>
+            <Text style={[s.topSummaryLabel, { color: colors.subText }]}>
+              Receitas
+            </Text>
+            <Text style={[s.topSummaryValue, { color: "#10b981" }]}>
+              {formatCurrency(currentMonthIncome, currency, true)}
+            </Text>
+          </View>
+          <View
+            style={[
+              s.topSummaryCard,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <View
+              style={[
+                s.topSummaryIconBox,
+                { backgroundColor: "rgba(239, 68, 68, 0.15)" },
+              ]}
+            >
+              <Ionicons name="arrow-up" size={16} color="#ef4444" />
+            </View>
+            <Text style={[s.topSummaryLabel, { color: colors.subText }]}>
+              Despesas
+            </Text>
+            <Text style={[s.topSummaryValue, { color: "#ef4444" }]}>
+              {formatCurrency(pieTotal, currency, true)}
+            </Text>
+          </View>
+          <View
+            style={[
+              s.topSummaryCard,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <View
+              style={[
+                s.topSummaryIconBox,
+                { backgroundColor: colors.primary + "20" },
+              ]}
+            >
+              <Ionicons name="wallet" size={16} color={colors.primary} />
+            </View>
+            <Text style={[s.topSummaryLabel, { color: colors.subText }]}>
+              Poupança
+            </Text>
+            <Text style={[s.topSummaryValue, { color: colors.primary }]}>
+              {poupancaPct > 0 ? `${Math.round(poupancaPct)}%` : "0%"}
+            </Text>
+          </View>
+        </View>
+
         {isLoadingMore && (
           <ActivityIndicator
             color={colors.primary}
-            style={{ marginBottom: 10 }}
+            style={{ marginBottom: 16 }}
           />
         )}
 
-        <Text style={[s.subtitle, { color: colors.subText }]}>
-          {chartType === "pie"
-            ? "Toque em uma fatia para ver detalhes do mês"
-            : chartType === "bar"
-              ? "Receitas vs Despesas — últimos 6 meses"
-              : "Panorama geral de Entradas e Saídas do ano"}
-        </Text>
-
-        <View
-          style={[
-            s.chartBox,
-            { backgroundColor: colors.card, borderColor: colors.border },
-          ]}
-        >
-          {chartType === "pie"
-            ? renderPie()
-            : chartType === "bar"
-              ? renderBar()
-              : renderAnnual()}
-        </View>
+        {/* 👇 RENDERIZAÇÃO CONDICIONAL DOS GRÁFICOS */}
+        {chartType === "pie"
+          ? renderPie()
+          : chartType === "bar"
+            ? renderBar()
+            : renderAnnual()}
 
         {pieData.length === 0 && chartType === "pie" && (
           <View style={s.empty}>
             <Ionicons
-              name="bar-chart-outline"
+              name="pie-chart-outline"
               size={48}
-              color={colors.subText}
+              color={colors.border}
             />
             <Text style={[s.emptyText, { color: colors.text }]}>
-              Nenhum dado disponível
+              Nenhum dado neste mês
             </Text>
             <Text style={[s.emptySubtext, { color: colors.subText }]}>
-              Adicione transações para ver os gráficos
+              As suas transações aparecerão aqui.
             </Text>
           </View>
         )}
@@ -855,119 +981,91 @@ const s = StyleSheet.create({
     flex: 1,
     ...(Platform.OS === "web" ? { overflow: "hidden", maxWidth: "100%" } : {}),
   },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-  },
-  backBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  title: { fontSize: 17, fontWeight: "700" },
 
-  toggle: { flexDirection: "row", margin: 20, borderRadius: 12, padding: 4 },
+  headerContainer: { paddingHorizontal: 24, paddingBottom: 16 },
+  headerTitle: { fontSize: 26, fontWeight: "bold" },
+  headerSubtitle: { fontSize: 14, marginTop: 4 },
+
+  toggleWrapper: { paddingHorizontal: 24, marginBottom: 20 },
+  toggleContainer: { flexDirection: "row", borderRadius: 100, padding: 4 },
   toggleBtn: {
     flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
     paddingVertical: 10,
-    borderRadius: 10,
+    alignItems: "center",
+    borderRadius: 100,
   },
-  toggleActive: {},
-  toggleText: { fontSize: 13, fontWeight: "600" },
-  toggleTextActive: { color: "#fff" },
+  toggleText: { fontSize: 13, fontWeight: "bold" },
 
   scroll: { paddingBottom: 40, paddingHorizontal: 24 },
-  subtitle: { fontSize: 12, textAlign: "center", marginBottom: 16 },
 
-  chartBox: {
-    borderRadius: 20,
-    padding: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-
-  legend: { marginTop: 8, gap: 6 },
-  legendItem: {
+  topSummaryRow: {
     flexDirection: "row",
-    alignItems: "center",
+    justifyContent: "space-between",
     gap: 10,
-    padding: 10,
-    borderRadius: 10,
+    marginBottom: 24,
   },
-  legendDot: { width: 12, height: 12, borderRadius: 6 },
-  legendLabel: { fontSize: 13, fontWeight: "600" },
-  legendValue: { fontSize: 11 },
-  legendAmount: { fontSize: 13, fontWeight: "700" },
-
-  barLegend: {
-    flexDirection: "row",
-    gap: 20,
-    justifyContent: "center",
-    marginBottom: 12,
-    marginTop: 12,
-  },
-  barLegendItem: { flexDirection: "row", alignItems: "center", gap: 6 },
-  barLegendDot: { width: 10, height: 10, borderRadius: 5 },
-  barLegendText: { fontSize: 12 },
-
-  monthSummary: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    marginTop: 16,
-  },
-  monthCard: {
+  topSummaryCard: {
     flex: 1,
-    minWidth: 80,
-    borderRadius: 10,
-    padding: 10,
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
     alignItems: "center",
   },
-  monthCardLabel: { fontSize: 11, marginBottom: 4 },
-  monthCardValue: { fontSize: 10, fontWeight: "600" },
-  monthCardBalance: { fontSize: 11, fontWeight: "800", marginTop: 4 },
-
-  empty: { alignItems: "center", paddingVertical: 40, gap: 8 },
-  emptyText: { fontSize: 16, fontWeight: "600" },
-  emptySubtext: { fontSize: 13 },
-
-  annualChartTitle: {
-    fontSize: 18,
-    fontWeight: "800",
-    marginBottom: 16,
-    textAlign: "center",
+  topSummaryIconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 10,
   },
-  tableContainer: {
-    marginTop: 16,
+  topSummaryLabel: { fontSize: 11, fontWeight: "600", marginBottom: 6 },
+  topSummaryValue: { fontSize: 13, fontWeight: "bold" },
+
+  modernChartCard: {
+    borderRadius: 24,
+    padding: 20,
     borderWidth: 1,
-    borderRadius: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    elevation: 2,
+    marginBottom: 20,
+  },
+  chartCardTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 20 },
+
+  // Lista Top Despesas
+  topDespesasWrapper: { marginTop: 16 },
+  topDespesaItem: { marginBottom: 16 },
+  topDespesaRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  topDespesaLeft: { flexDirection: "row", alignItems: "center", flex: 1 },
+  topDespesaLabel: { fontSize: 14, fontWeight: "600", flex: 1 },
+  topDespesaValue: { fontSize: 14, fontWeight: "bold", marginLeft: 10 },
+  topDespesaBarBg: {
+    height: 6,
+    borderRadius: 3,
+    width: "100%",
     overflow: "hidden",
   },
-  tableHeaderRow: {
+  topDespesaBarFill: { height: "100%", borderRadius: 3 },
+
+  barLegendContainer: {
     flexDirection: "row",
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderBottomWidth: 1,
+    justifyContent: "center",
+    gap: 24,
+    marginTop: 24,
   },
-  th: { flex: 1, fontSize: 11, fontWeight: "700" },
-  tableRow: {
-    flexDirection: "row",
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderBottomWidth: 1,
-  },
-  td: { flex: 1, fontSize: 11 },
+  barLegendItem: { flexDirection: "row", alignItems: "center", gap: 8 },
+  barLegendDot: { width: 12, height: 12, borderRadius: 6 },
+  barLegendText: { fontSize: 13, fontWeight: "600" },
+
+  empty: { alignItems: "center", paddingVertical: 60, gap: 12 },
+  emptyText: { fontSize: 16, fontWeight: "bold" },
+  emptySubtext: { fontSize: 14 },
 });
