@@ -407,7 +407,6 @@ export default function AccountDetailScreen() {
     to,
   ]);
 
-  // 👇 LÓGICA E DESIGN BLINDADOS: Isolei todos os cálculos e variáveis do Crédito aqui!
   const creditDetails = useMemo(() => {
     if (currentAccount?.type !== "credit" || isAllAccounts) return null;
 
@@ -420,7 +419,6 @@ export default function AccountDetailScreen() {
         Number(i.paid_installments) < Number(i.total_installments),
     );
 
-    // Cálculo do Limite
     const usedLimit = allActive.reduce(
       (sum, i) =>
         sum +
@@ -433,7 +431,6 @@ export default function AccountDetailScreen() {
     const limitPercentage =
       totalLimit > 0 ? Math.min((usedLimit / totalLimit) * 100, 100) : 0;
 
-    // Cálculo da Fatura
     const pendingCurrent = allActive.filter((item) => {
       if (
         item.invoice?.status === "aberta" ||
@@ -494,11 +491,10 @@ export default function AccountDetailScreen() {
           : "Nenhuma fatura pendente";
     }
 
-    // Cálculo do Vencimento Matemático
     const todayDate = new Date();
     const dueDay = currentAccount.due_day || 10;
     let dueD = new Date(todayDate.getFullYear(), todayDate.getMonth(), dueDay);
-    if (todayDate.getDate() > dueDay) dueD.setMonth(dueD.getMonth() + 1); // Se já passou o dia, atira para o mês seguinte
+    if (todayDate.getDate() > dueDay) dueD.setMonth(dueD.getMonth() + 1);
 
     const diffTime = dueD.getTime() - todayDate.getTime();
     const diffDays = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
@@ -542,7 +538,6 @@ export default function AccountDetailScreen() {
   const headerRadius = isCredit ? 0 : 32;
   const headerElevation = isCredit ? 0 : 5;
 
-  // 👇 O SUPER CABEÇALHO AGORA FICA AQUI DENTRO (Para a lista fazer scroll perfeito sobre tudo)
   const renderTopSection = () => (
     <View style={{ backgroundColor: colors.bg }}>
       <View
@@ -763,7 +758,7 @@ export default function AccountDetailScreen() {
         )}
       </View>
 
-      {/* 👇 Botão Gigante de Pagamento com Valor Corrigido */}
+      {/* Botão Gigante de Pagamento (Exclusivo para Crédito) */}
       {isCredit && creditDetails && (
         <View style={{ paddingHorizontal: 20, paddingTop: 10 }}>
           <TouchableOpacity
@@ -807,7 +802,7 @@ export default function AccountDetailScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
-      {/* 👇 LISTA ENVOLVENDO TUDO PARA UM SCROLL PERFEITO */}
+      {/* LISTA ENVOLVENDO TUDO PARA UM SCROLL PERFEITO */}
       {isLoading ? (
         <>
           {renderTopSection()}
@@ -917,7 +912,305 @@ export default function AccountDetailScreen() {
         />
       )}
 
-      {/* O resto dos modais (Mês, Formulários) permanecem inalterados na lógica */}
+      {/* MODAL DE EDIÇÃO DE CONTA RESTAURADO */}
+      <Modal visible={modalVisible} animationType="slide" transparent={true}>
+        <View style={s.modalOverlay}>
+          <View style={[s.calendarContainer, { backgroundColor: colors.card }]}>
+            <Text style={[s.calendarMonthName, { color: colors.text }]}>
+              {isEditing ? "Editar Conta / Cartão" : "Nova Conta / Cartão"}
+            </Text>
+
+            <View style={{ marginTop: 16 }}>
+              <Text
+                style={{ fontSize: 13, color: colors.subText, marginBottom: 4 }}
+              >
+                Nome
+              </Text>
+              <TextInput
+                style={{
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  backgroundColor: colors.inputBg,
+                  color: colors.text,
+                  borderRadius: 8,
+                  padding: 10,
+                  marginBottom: 12,
+                  fontSize: 16,
+                }}
+                placeholder="Ex: Nubank, Santander"
+                placeholderTextColor={colors.subText}
+                value={newBankName}
+                onChangeText={setNewBankName}
+              />
+
+              <Text
+                style={{ fontSize: 13, color: colors.subText, marginBottom: 4 }}
+              >
+                Saldo Inicial / Limite
+              </Text>
+              <TextInput
+                style={{
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  backgroundColor: colors.inputBg,
+                  color: colors.text,
+                  borderRadius: 8,
+                  padding: 10,
+                  marginBottom: 12,
+                  fontSize: 16,
+                }}
+                placeholder="R$ 0,00"
+                placeholderTextColor={colors.subText}
+                keyboardType="decimal-pad"
+                value={newBankBalance}
+                onChangeText={setNewBankBalance}
+              />
+
+              <Text
+                style={{ fontSize: 13, color: colors.subText, marginBottom: 4 }}
+              >
+                O que está a adicionar?
+              </Text>
+              <View style={{ flexDirection: "row", gap: 10, marginBottom: 12 }}>
+                <View style={s.typeSelectorContainer}>
+                  <TouchableOpacity
+                    style={[
+                      s.typeBtn,
+                      {
+                        backgroundColor: colors.inputBg,
+                        borderColor: colors.border,
+                      },
+                      newBankType === "checking" && {
+                        borderColor: colors.primary,
+                        backgroundColor: colors.primary + "20",
+                      },
+                    ]}
+                    onPress={() => setNewBankType("checking")}
+                  >
+                    <Text style={s.typeIcon}>🏦</Text>
+                    <Text style={[s.typeText, { color: colors.text }]}>
+                      Conta Bancária
+                    </Text>
+                    <Text style={[s.typeSubText, { color: colors.subText }]}>
+                      (Tem Saldo Real)
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      s.typeBtn,
+                      {
+                        backgroundColor: colors.inputBg,
+                        borderColor: colors.border,
+                      },
+                      newBankType === "credit" && {
+                        borderColor: colors.primary,
+                        backgroundColor: colors.primary + "20",
+                      },
+                    ]}
+                    onPress={() => setNewBankType("credit")}
+                  >
+                    <Text style={s.typeIcon}>💳</Text>
+                    <Text style={[s.typeText, { color: colors.text }]}>
+                      Cartão de Crédito
+                    </Text>
+                    <Text style={[s.typeSubText, { color: colors.subText }]}>
+                      (Gera Faturas)
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      s.typeBtn,
+                      {
+                        backgroundColor: colors.inputBg,
+                        borderColor: colors.border,
+                      },
+                      newBankType === "investment" && {
+                        borderColor: colors.primary,
+                        backgroundColor: colors.primary + "20",
+                      },
+                    ]}
+                    onPress={() => setNewBankType("investment")}
+                  >
+                    <Text style={s.typeIcon}>📈</Text>
+                    <Text style={[s.typeText, { color: colors.text }]}>
+                      Investimento
+                    </Text>
+                    <Text style={[s.typeSubText, { color: colors.subText }]}>
+                      (Rende Juros)
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {newBankType === "credit" && (
+                <View
+                  style={{ flexDirection: "row", gap: 10, marginBottom: 12 }}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text
+                      style={{
+                        fontSize: 13,
+                        color: colors.subText,
+                        marginBottom: 4,
+                      }}
+                    >
+                      Dia de Fechamento
+                    </Text>
+                    <TextInput
+                      style={{
+                        borderWidth: 1,
+                        borderColor: colors.border,
+                        backgroundColor: colors.inputBg,
+                        color: colors.text,
+                        borderRadius: 8,
+                        padding: 10,
+                        fontSize: 16,
+                      }}
+                      value={closingDay}
+                      onChangeText={(text) => {
+                        const num = text.replace(/[^0-9]/g, "");
+                        if (Number(num) <= 31) setClosingDay(num);
+                      }}
+                      keyboardType="decimal-pad"
+                      maxLength={2}
+                      placeholder="Ex: 3"
+                      placeholderTextColor={colors.subText}
+                    />
+                  </View>
+
+                  <View style={{ flex: 1 }}>
+                    <Text
+                      style={{
+                        fontSize: 13,
+                        color: colors.subText,
+                        marginBottom: 4,
+                      }}
+                    >
+                      Dia de Vencimento
+                    </Text>
+                    <TextInput
+                      style={{
+                        borderWidth: 1,
+                        borderColor: colors.border,
+                        backgroundColor: colors.inputBg,
+                        color: colors.text,
+                        borderRadius: 8,
+                        padding: 10,
+                        fontSize: 16,
+                      }}
+                      value={dueDay}
+                      onChangeText={(text) => {
+                        const num = text.replace(/[^0-9]/g, "");
+                        if (Number(num) <= 31) setDueDay(num);
+                      }}
+                      keyboardType="decimal-pad"
+                      maxLength={2}
+                      placeholder="Ex: 10"
+                      placeholderTextColor={colors.subText}
+                    />
+                  </View>
+                </View>
+              )}
+
+              <Text
+                style={{ fontSize: 13, color: colors.subText, marginBottom: 6 }}
+              >
+                Cor de Identificação
+              </Text>
+              <View
+                style={{
+                  flexDirection: "row",
+                  gap: 10,
+                  flexWrap: "wrap",
+                  marginBottom: 16,
+                }}
+              >
+                {[
+                  "#6366f1",
+                  "#14b8a6",
+                  "#f97316",
+                  "#ec4899",
+                  "#8A05BE",
+                  "#EC7000",
+                  "#dc2626",
+                  "#111827",
+                ].map((corOpcao) => (
+                  <TouchableOpacity
+                    key={corOpcao}
+                    onPress={() => setNewBankColor(corOpcao)}
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 16,
+                      backgroundColor: corOpcao,
+                      borderWidth: newBankColor === corOpcao ? 3 : 0,
+                      borderColor: colors.text,
+                    }}
+                  />
+                ))}
+              </View>
+            </View>
+
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <TouchableOpacity
+                style={[
+                  s.closeCalendarBtn,
+                  { flex: 1, backgroundColor: colors.border, marginTop: 0 },
+                ]}
+                onPress={() => {
+                  setModalVisible(false);
+                  setIsEditing(false);
+                  setNewBankName("");
+                  setNewBankBalance("");
+                }}
+              >
+                <Text style={{ color: colors.text, fontWeight: "bold" }}>
+                  Cancelar
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  s.closeCalendarBtn,
+                  { flex: 1, backgroundColor: colors.primary, marginTop: 0 },
+                ]}
+                onPress={async () => {
+                  if (!newBankName) return;
+                  const payload = {
+                    name: newBankName,
+                    balance: parseFloat(newBankBalance.replace(",", ".")) || 0,
+                    type: newBankType,
+                    color: newBankColor,
+                    currency: "BRL",
+                    due_day:
+                      newBankType === "credit" ? parseInt(dueDay, 10) : null,
+                    closing_day:
+                      newBankType === "credit"
+                        ? parseInt(closingDay, 10)
+                        : null,
+                  };
+                  if (isEditing) {
+                    await updateAccount(id, payload);
+                  } else {
+                    await createAccount(payload);
+                  }
+                  setModalVisible(false);
+                  setIsEditing(false);
+                  setNewBankName("");
+                  setNewBankBalance("");
+                }}
+              >
+                <Text style={{ color: "#fff", fontWeight: "bold" }}>
+                  Salvar
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <Modal
         visible={monthPickerVisible}
         transparent={true}
@@ -1002,10 +1295,6 @@ export default function AccountDetailScreen() {
             </TouchableOpacity>
           </View>
         </View>
-      </Modal>
-
-      <Modal visible={modalVisible} animationType="slide" transparent={true}>
-        {/* ... Código do modal de edição da conta mantém-se ... */}
       </Modal>
 
       <Modal
@@ -1331,7 +1620,6 @@ function EmptyState({ text, colors }: { text: string; colors: any }) {
   );
 }
 
-// ... (Funções getPeriodRange, toDateKey e isDateInsideRange mantêm-se iguais) ...
 function getPeriodRange(period: Period, baseDate: Date): PeriodRange {
   const start = new Date(baseDate);
   const end = new Date(baseDate);
@@ -1377,7 +1665,6 @@ function isDateInsideRange(date: string, range: PeriodRange) {
   return key >= range.from && key <= range.to;
 }
 
-// ... (Modal de InstallmentForm mantêm-se)
 function InstallmentFormModal({
   visible,
   onClose,
@@ -1699,7 +1986,6 @@ const s = StyleSheet.create({
     ...(Platform.OS === "web" ? { overflow: "hidden", maxWidth: "100%" } : {}),
   },
 
-  // 👇 DESIGN ATUALIZADO: Super Cabeçalho
   superHeader: {
     paddingHorizontal: 20,
     shadowColor: "#000",
@@ -1759,7 +2045,6 @@ const s = StyleSheet.create({
   ieLabel: { color: "rgba(255,255,255,0.7)", fontSize: 11, marginBottom: 2 },
   ieValue: { color: "#fff", fontSize: 14, fontWeight: "bold" },
 
-  // 👇 NOVOS ESTILOS DO CARTÃO DE CRÉDITO E USO DO LIMITE
   physicalCardModern: {
     borderRadius: 24,
     padding: 24,
@@ -1941,7 +2226,6 @@ const s = StyleSheet.create({
   empty: { alignItems: "center", paddingVertical: 56, gap: 8 },
   emptyText: { fontSize: 14, textAlign: "center" },
 
-  // Modais e legados
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",

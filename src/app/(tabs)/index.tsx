@@ -43,7 +43,7 @@ export default function DashboardScreen() {
   const { profile, session, logout } = useAuth();
   const router = useRouter();
   const { colors, isDark } = useAppTheme();
-  const insets = useSafeAreaInsets(); // Para o topo do ecrã
+  const insets = useSafeAreaInsets();
 
   const [balanceView, setBalanceView] = useState<"month" | "week">("month");
   const [refreshing, setRefreshing] = useState(false);
@@ -235,9 +235,12 @@ export default function DashboardScreen() {
 
   const budgetPercentage =
     totalBudget > 0 ? (budgetSpent / totalBudget) * 100 : 0;
+  const valorPoupado = Math.max(0, totals.monthIncome - totals.monthExpense);
+  const percentagemPoupada =
+    metaPoupanca > 0 ? (valorPoupado / metaPoupanca) * 100 : 0;
 
   const creditCardsStatus = useMemo(() => {
-    const currentMonthRef = new Date().toISOString().slice(0, 7);
+    const currentMonthRef = from.slice(0, 7);
     const today = new Date().toISOString().split("T")[0];
     const creditAccounts = accounts.filter((acc) => acc.type === "credit");
 
@@ -247,6 +250,15 @@ export default function DashboardScreen() {
       );
       const allActive = accInstallments.filter(
         (i) => Number(i.paid_installments) < Number(i.total_installments),
+      );
+
+      const paymentTx = transactions.find(
+        (t) =>
+          t.type === "expense" &&
+          t.title?.toLowerCase().includes("fatura") &&
+          t.title?.toLowerCase().includes(acc.name.toLowerCase()) &&
+          t.date >= from &&
+          t.date <= to,
       );
 
       const pendingCurrent = allActive.filter((item) => {
@@ -274,11 +286,38 @@ export default function DashboardScreen() {
 
       const currentInvoice =
         pendingCurrent.find((i) => i.invoice)?.invoice ?? null;
-      const isInvoicePaid = pendingCurrent.length === 0 && allActive.length > 0;
-      const invoiceTotal = pendingCurrent.reduce(
-        (sum, i) => sum + (Number(i.installment_amount) || 0),
-        0,
+
+      const hasPaidInvoice = accInstallments.some(
+        (i) =>
+          i.invoice?.status === "paga" &&
+          i.invoice?.reference === currentMonthRef,
       );
+      const isInvoicePaid =
+        Boolean(paymentTx) ||
+        hasPaidInvoice ||
+        (pendingCurrent.length === 0 && accInstallments.length > 0);
+
+      let invoiceTotal = 0;
+      if (paymentTx) {
+        invoiceTotal = Number(paymentTx.amount) || 0;
+      } else if (hasPaidInvoice) {
+        const paidInv = accInstallments.find(
+          (i) =>
+            i.invoice?.status === "paga" &&
+            i.invoice?.reference === currentMonthRef,
+        )?.invoice;
+        invoiceTotal =
+          Number(paidInv?.paid_amount) ||
+          pendingCurrent.reduce(
+            (sum, i) => sum + (Number(i.installment_amount) || 0),
+            0,
+          );
+      } else {
+        invoiceTotal = pendingCurrent.reduce(
+          (sum, i) => sum + (Number(i.installment_amount) || 0),
+          0,
+        );
+      }
 
       const usedLimit = allActive.reduce(
         (sum, i) =>
@@ -324,9 +363,8 @@ export default function DashboardScreen() {
         limitPercentage,
       };
     });
-  }, [accounts, installments]);
+  }, [accounts, installments, transactions, from, to]);
 
-  // Transações recentes para a nova secção
   const recentTransactions = [...transactions]
     .sort((a, b) => b.date.localeCompare(a.date))
     .slice(0, 4);
@@ -344,7 +382,6 @@ export default function DashboardScreen() {
           />
         }
       >
-        {/* 👇 SUPER CABEÇALHO (Estilo Moderno Roxo) */}
         <View
           style={[
             s.superHeader,
@@ -427,7 +464,6 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        {/* 👇 AÇÕES RÁPIDAS */}
         <View style={s.quickActionsRow}>
           <TouchableOpacity
             style={s.actionBtn}
@@ -448,7 +484,16 @@ export default function DashboardScreen() {
 
           <TouchableOpacity
             style={s.actionBtn}
-            onPress={() => router.push("/(tabs)/accounts")}
+            onPress={() =>
+              router.push({
+                pathname: "/(tabs)/accounts",
+                params: {
+                  id: "all",
+                  name: "Todas as Contas",
+                  color: colors.primary,
+                },
+              })
+            }
           >
             <View
               style={[
@@ -502,7 +547,191 @@ export default function DashboardScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* 👇 NOVO ORÇAMENTO DO MÊS */}
+        {/* MINHAS CONTAS (CORRENTE) RESTAURADO */}
+        <View style={s.section}>
+          <View style={s.sectionHeader}>
+            <Text style={[s.sectionTitle, { color: colors.text }]}>
+              Minhas Contas
+            </Text>
+            <TouchableOpacity
+              onPress={() =>
+                router.push({
+                  pathname: "/(tabs)/accounts",
+                  params: {
+                    id: "all",
+                    name: "Todas as Contas",
+                    color: colors.primary,
+                  },
+                })
+              }
+            >
+              <Text style={[s.seeAll, { color: colors.primary }]}>
+                Ver todas &gt;
+              </Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 20 }}
+          >
+            {checkingAccounts.map((account) => (
+              <TouchableOpacity
+                key={account.id}
+                activeOpacity={0.9}
+                style={[
+                  s.accountCardModern,
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                ]}
+                onPress={() =>
+                  router.push({
+                    pathname: "/(tabs)/accounts",
+                    params: {
+                      id: account.id,
+                      name: account.name,
+                      balance: String(account.balance),
+                      currency: account.currency,
+                      color: account.color,
+                    },
+                  })
+                }
+              >
+                <View
+                  style={[
+                    s.accountCardIconBox,
+                    {
+                      backgroundColor: (account.color || colors.primary) + "20",
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name="wallet"
+                    size={20}
+                    color={account.color || colors.primary}
+                  />
+                </View>
+                <Text
+                  style={[s.accountCardName, { color: colors.text }]}
+                  numberOfLines={1}
+                >
+                  {account.name}
+                </Text>
+                <Text style={[s.accountCardBalance, { color: colors.text }]}>
+                  {formatCurrency(account.balance, account.currency)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity
+              activeOpacity={0.7}
+              style={[
+                s.addAccountCardModern,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+              onPress={() => router.push("/(tabs)/accounts?openModal=1")}
+            >
+              <View
+                style={[
+                  s.accountCardIconBox,
+                  { backgroundColor: colors.inputBg },
+                ]}
+              >
+                <Ionicons name="add" size={20} color={colors.subText} />
+              </View>
+              <Text style={[s.addAccountTextModern, { color: colors.subText }]}>
+                Nova Conta
+              </Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+
+        {/* MEUS INVESTIMENTOS RESTAURADO */}
+        {investmentAccounts.length > 0 && (
+          <View style={s.section}>
+            <View style={s.sectionHeader}>
+              <Text style={[s.sectionTitle, { color: colors.text }]}>
+                Meus Investimentos
+              </Text>
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: 20 }}
+            >
+              {investmentAccounts.map((account) => (
+                <TouchableOpacity
+                  key={account.id}
+                  activeOpacity={0.9}
+                  style={[
+                    s.accountCardModern,
+                    {
+                      backgroundColor: colors.card,
+                      borderColor: colors.border,
+                    },
+                  ]}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/(tabs)/accounts",
+                      params: {
+                        id: account.id,
+                        name: account.name,
+                        balance: String(account.balance),
+                        currency: account.currency,
+                        color: account.color,
+                      },
+                    })
+                  }
+                >
+                  <View
+                    style={[
+                      s.accountCardIconBox,
+                      {
+                        backgroundColor: (account.color || "#8b5cf6") + "20",
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      name="trending-up"
+                      size={20}
+                      color={account.color || "#8b5cf6"}
+                    />
+                  </View>
+                  <Text
+                    style={[s.accountCardName, { color: colors.text }]}
+                    numberOfLines={1}
+                  >
+                    {account.name}
+                  </Text>
+                  <Text style={[s.accountCardBalance, { color: colors.text }]}>
+                    {formatCurrency(account.balance, account.currency)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+              <TouchableOpacity
+                activeOpacity={0.7}
+                style={[
+                  s.addAccountCardModern,
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                ]}
+                onPress={() => router.push("/(tabs)/accounts?openModal=1")}
+              >
+                <View
+                  style={[
+                    s.accountCardIconBox,
+                    { backgroundColor: colors.inputBg },
+                  ]}
+                >
+                  <Ionicons name="add" size={20} color={colors.subText} />
+                </View>
+                <Text
+                  style={[s.addAccountTextModern, { color: colors.subText }]}
+                >
+                  Novo Invest.
+                </Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        )}
+
         {totalBudget > 0 && (
           <View style={s.section}>
             <TouchableOpacity
@@ -565,7 +794,6 @@ export default function DashboardScreen() {
           </View>
         )}
 
-        {/* 👇 ALERTA DE CONTAS FIXAS (Design Moderno) */}
         {upcomingBills.length > 0 && (
           <View style={s.section}>
             <Text style={[s.sectionTitle, { color: colors.text }]}>
@@ -635,7 +863,6 @@ export default function DashboardScreen() {
           </View>
         )}
 
-        {/* 👇 MEUS CARTÕES */}
         {creditCardsStatus.length > 0 && (
           <View style={s.section}>
             <View style={s.sectionHeader}>
@@ -715,7 +942,6 @@ export default function DashboardScreen() {
           </View>
         )}
 
-        {/* 👇 TRANSAÇÕES RECENTES (Novo Bloco) */}
         <View style={s.section}>
           <View style={s.sectionHeader}>
             <Text style={[s.sectionTitle, { color: colors.text }]}>
@@ -809,42 +1035,295 @@ export default function DashboardScreen() {
         </View>
       </ScrollView>
 
-      {/* Menus e Modais permanecem intocados... */}
-      <Modal visible={isMenuVisible} transparent animationType="fade">
-        <View style={s.menuOverlay}>
-          <TouchableOpacity
-            style={s.menuCloseArea}
-            activeOpacity={1}
-            onPress={() => setIsMenuVisible(false)}
-          />
-          <View style={[s.menuContent, { backgroundColor: colors.card }]}>
-            <Text
-              style={[s.menuTitle, { color: colors.text, marginBottom: 20 }]}
-            >
-              Menu
-            </Text>
-            {/* ... conteúdo do menu abreviado para focar no design principal */}
-            <TouchableOpacity
-              onPress={() => setIsMenuVisible(false)}
-              style={{
-                padding: 16,
-                backgroundColor: colors.inputBg,
-                borderRadius: 8,
-                alignItems: "center",
-              }}
-            >
-              <Text style={{ color: colors.text, fontWeight: "bold" }}>
-                Fechar Menu
-              </Text>
-            </TouchableOpacity>
+      {/* MENU LATERAL RESTAURADO INTEGRALMENTE */}
+      <Modal
+        visible={isMenuVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+      >
+        <View style={{ flex: 1, backgroundColor: colors.bg }}>
+          <View
+            style={[
+              s.menuHeaderNew,
+              {
+                backgroundColor: colors.primary,
+                paddingTop: Math.max(insets.top, 20) + 20,
+              },
+            ]}
+          >
+            <View style={s.menuHeaderTop}>
+              <View style={s.menuProfile}>
+                <View style={s.menuAvatar}>
+                  <Text style={s.menuAvatarText}>
+                    {firstName.substring(0, 2).toUpperCase()}
+                  </Text>
+                </View>
+                <View>
+                  <Text style={s.menuName}>{profile?.name || "Usuário"}</Text>
+                  <Text style={s.menuEmail}>
+                    {profile?.email || "usuario@email.com"}
+                  </Text>
+                  <View style={s.menuBadge}>
+                    <Text style={s.menuBadgeText}>✨ Plano Premium</Text>
+                  </View>
+                </View>
+              </View>
+              <TouchableOpacity
+                onPress={() => setIsMenuVisible(false)}
+                style={s.menuCloseBtn}
+              >
+                <Ionicons name="close" size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
           </View>
+
+          <View style={s.menuStatsRow}>
+            <View
+              style={[
+                s.menuStatCard,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+            >
+              <View
+                style={[
+                  s.menuStatIcon,
+                  { backgroundColor: "rgba(16, 185, 129, 0.15)" },
+                ]}
+              >
+                <Ionicons name="trending-up" size={18} color="#10b981" />
+              </View>
+              <View>
+                <Text style={[s.menuStatLabel, { color: colors.subText }]}>
+                  Poupança
+                </Text>
+                <Text style={[s.menuStatValue, { color: "#10b981" }]}>
+                  {Math.round(percentagemPoupada)}%
+                </Text>
+              </View>
+            </View>
+            <View
+              style={[
+                s.menuStatCard,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+            >
+              <View
+                style={[
+                  s.menuStatIcon,
+                  { backgroundColor: "rgba(59, 130, 246, 0.15)" },
+                ]}
+              >
+                <Ionicons name="receipt" size={18} color="#3b82f6" />
+              </View>
+              <View>
+                <Text style={[s.menuStatLabel, { color: colors.subText }]}>
+                  Transações
+                </Text>
+                <Text style={[s.menuStatValue, { color: "#3b82f6" }]}>
+                  {transactions.length} este mês
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          <ScrollView
+            contentContainerStyle={s.menuScroll}
+            showsVerticalScrollIndicator={false}
+          >
+            <Text style={[s.menuSectionTitle, { color: colors.subText }]}>
+              NAVEGAÇÃO
+            </Text>
+            <View
+              style={[
+                s.menuSection,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+            >
+              <MenuOption
+                icon="pie-chart"
+                color="#10b981"
+                title="Análise Gráfica"
+                subtitle="Relatórios detalhados"
+                onPress={() => {
+                  setIsMenuVisible(false);
+                  router.push("/(tabs)/charts");
+                }}
+              />
+              <View
+                style={[s.menuDivider, { backgroundColor: colors.border }]}
+              />
+              <MenuOption
+                icon="flag"
+                color="#f59e0b"
+                title="Metas de Gastos"
+                subtitle="Controle o seu orçamento"
+                onPress={() => {
+                  setIsMenuVisible(false);
+                  router.push("/(tabs)/budget");
+                }}
+              />
+              <View
+                style={[s.menuDivider, { backgroundColor: colors.border }]}
+              />
+              <MenuOption
+                icon="trending-up"
+                color="#3b82f6"
+                title="Meus Investimentos"
+                subtitle="Acompanhe rendimentos"
+                onPress={() => {
+                  setIsMenuVisible(false);
+                  router.push("/(tabs)/investments" as any);
+                }}
+              />
+            </View>
+
+            <Text style={[s.menuSectionTitle, { color: colors.subText }]}>
+              PREFERÊNCIAS
+            </Text>
+            <View
+              style={[
+                s.menuSection,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+            >
+              <MenuOption
+                icon="settings"
+                color={colors.subText}
+                title="Configurações"
+                subtitle="Ajustes da aplicação"
+                onPress={() => {
+                  setIsMenuVisible(false);
+                  router.push("/(tabs)/settings");
+                }}
+              />
+              <View
+                style={[s.menuDivider, { backgroundColor: colors.border }]}
+              />
+              <MenuOption
+                icon="help-circle"
+                color="#8b5cf6"
+                title="Ajuda e Tutorial"
+                subtitle="Aprenda a usar a app"
+                onPress={() => {
+                  setIsMenuVisible(false);
+                  setShowHelpModal(true);
+                }}
+              />
+            </View>
+
+            <Text style={[s.menuSectionTitle, { color: colors.subText }]}>
+              SEGURANÇA
+            </Text>
+            <View
+              style={[
+                s.menuSection,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+            >
+              <MenuOption
+                icon="log-out"
+                color="#ef4444"
+                title="Sair da Conta"
+                subtitle="Encerrar sessão atual"
+                onPress={() => {
+                  setIsMenuVisible(false);
+                  Alert.alert("Sair", "Deseja realmente sair?", [
+                    { text: "Cancelar", style: "cancel" },
+                    {
+                      text: "Sair",
+                      style: "destructive",
+                      onPress: async () => {
+                        await logout();
+                        router.replace("/");
+                      },
+                    },
+                  ]);
+                }}
+                hideArrow
+              />
+            </View>
+          </ScrollView>
         </View>
       </Modal>
 
+      {/* SELETOR DE MÊS RESTAURADO INTEGRALMENTE */}
       <Modal visible={showMonthPicker} transparent animationType="fade">
-        {/* Conteúdo do MonthPicker mantido */}
+        <TouchableOpacity
+          style={s.monthPickerOverlay}
+          activeOpacity={1}
+          onPress={() => setShowMonthPicker(false)}
+        >
+          <View
+            style={[
+              s.monthPickerContent,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <Text style={[s.monthPickerTitle, { color: colors.text }]}>
+              Selecionar mês
+            </Text>
+            {Array.from({ length: 12 }, (_, i) => i - 11).map((offset) => {
+              const { fullLabel: fl } = getMonthRange(offset);
+              const active = offset === monthOffset;
+              return (
+                <TouchableOpacity
+                  key={offset}
+                  style={[
+                    s.monthPickerItem,
+                    active && {
+                      backgroundColor: isDark ? "#1f2937" : "#e0e7ff",
+                    },
+                  ]}
+                  onPress={() => {
+                    setMonthOffset(offset);
+                    setShowMonthPicker(false);
+                  }}
+                >
+                  <Text
+                    style={[
+                      s.monthPickerItemText,
+                      { color: colors.text },
+                      active && { fontWeight: "700", color: colors.primary },
+                    ]}
+                  >
+                    {fl.charAt(0).toUpperCase() + fl.slice(1)}
+                  </Text>
+                  {active && (
+                    <Ionicons
+                      name="checkmark"
+                      size={16}
+                      color={colors.primary}
+                    />
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </TouchableOpacity>
       </Modal>
     </SafeAreaView>
+  );
+}
+
+function MenuOption({ icon, color, title, subtitle, onPress, hideArrow }: any) {
+  const { colors } = useAppTheme();
+  return (
+    <TouchableOpacity style={s.menuOptionRow} onPress={onPress}>
+      <View style={[s.menuOptionIcon, { backgroundColor: color + "15" }]}>
+        <Ionicons name={icon} size={20} color={color} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={[s.menuOptionTitle, { color: colors.text }]}>{title}</Text>
+        {subtitle && (
+          <Text style={[s.menuOptionSubtitle, { color: colors.subText }]}>
+            {subtitle}
+          </Text>
+        )}
+      </View>
+      {!hideArrow && (
+        <Ionicons name="chevron-forward" size={20} color={colors.subText} />
+      )}
+    </TouchableOpacity>
   );
 }
 
@@ -852,7 +1331,6 @@ const s = StyleSheet.create({
   safe: { flex: 1 },
   scroll: { paddingBottom: 40 },
 
-  // 👇 NOVOS ESTILOS DO SUPER CABEÇALHO
   superHeader: {
     paddingHorizontal: 20,
     paddingBottom: 30,
@@ -930,7 +1408,6 @@ const s = StyleSheet.create({
   ieLabel: { color: "rgba(255,255,255,0.7)", fontSize: 11, marginBottom: 2 },
   ieValue: { color: "#fff", fontSize: 14, fontWeight: "bold" },
 
-  // 👇 NOVAS AÇÕES RÁPIDAS
   quickActionsRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -954,7 +1431,6 @@ const s = StyleSheet.create({
   },
   actionLabel: { fontSize: 12, fontWeight: "600" },
 
-  // 👇 ESTILOS REAPROVEITÁVEIS E MODERNIZADOS
   section: { marginTop: 24 },
   sectionHeader: {
     flexDirection: "row",
@@ -965,6 +1441,37 @@ const s = StyleSheet.create({
   },
   sectionTitle: { fontSize: 16, fontWeight: "bold" },
   seeAll: { fontSize: 13, fontWeight: "600" },
+
+  // 👇 ESTILOS DOS CARTÕES DE CONTA (Restaurados e Modernos)
+  accountCardModern: {
+    width: 140,
+    padding: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    marginRight: 12,
+  },
+  accountCardIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  accountCardName: { fontSize: 13, fontWeight: "600", marginBottom: 4 },
+  accountCardBalance: { fontSize: 15, fontWeight: "bold" },
+
+  addAccountCardModern: {
+    width: 140,
+    padding: 16,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderStyle: "dashed",
+    marginRight: 12,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  addAccountTextModern: { fontSize: 13, fontWeight: "600" },
 
   cleanCard: {
     marginHorizontal: 20,
@@ -978,7 +1485,6 @@ const s = StyleSheet.create({
     elevation: 1,
   },
 
-  // 👇 ORÇAMENTO
   budgetHeaderNew: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -997,7 +1503,6 @@ const s = StyleSheet.create({
   budgetFooterNew: { flexDirection: "row", justifyContent: "space-between" },
   budgetFooterText: { fontSize: 12 },
 
-  // 👇 CONTAS A PAGAR MODERNAS
   upcomingCardNew: {
     flexDirection: "row",
     alignItems: "center",
@@ -1026,7 +1531,6 @@ const s = StyleSheet.create({
   },
   upcomingBtnTextNew: { color: "#fff", fontSize: 11, fontWeight: "bold" },
 
-  // 👇 CARTÕES FÍSICOS (Aprimorados)
   creditCardPhysical: {
     width: 300,
     height: 180,
@@ -1091,7 +1595,6 @@ const s = StyleSheet.create({
     marginTop: 6,
   },
 
-  // 👇 TRANSAÇÕES RECENTES
   recentTxRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -1111,13 +1614,127 @@ const s = StyleSheet.create({
   recentTxAmount: { fontSize: 15, fontWeight: "bold", marginBottom: 2 },
   recentTxDate: { fontSize: 11 },
 
-  // Modais e legados mínimos para não quebrar
-  menuOverlay: {
+  menuHeaderNew: {
+    paddingHorizontal: 24,
+    paddingBottom: 40,
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32,
+  },
+  menuHeaderTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+  },
+  menuProfile: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 16,
+  },
+  menuAvatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  menuAvatarText: { fontSize: 20, fontWeight: "bold", color: "#fff" },
+  menuName: { fontSize: 20, fontWeight: "bold", color: "#fff" },
+  menuEmail: { fontSize: 13, color: "rgba(255,255,255,0.8)" },
+  menuBadge: {
+    backgroundColor: "rgba(255,255,255,0.2)",
+    alignSelf: "flex-start",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    marginTop: 6,
+  },
+  menuBadgeText: { fontSize: 10, color: "#fff", fontWeight: "bold" },
+  menuCloseBtn: {
+    backgroundColor: "rgba(255,255,255,0.2)",
+    padding: 8,
+    borderRadius: 16,
+  },
+  menuStatsRow: {
+    flexDirection: "row",
+    paddingHorizontal: 24,
+    gap: 12,
+    marginTop: -24,
+    marginBottom: 16,
+  },
+  menuStatCard: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    gap: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  menuStatIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  menuStatLabel: { fontSize: 12, marginBottom: 2 },
+  menuStatValue: { fontSize: 16, fontWeight: "bold" },
+  menuScroll: { padding: 24, paddingBottom: 60 },
+  menuSectionTitle: {
+    fontSize: 11,
+    fontWeight: "bold",
+    letterSpacing: 1,
+    marginBottom: 12,
+    marginLeft: 4,
+  },
+  menuSection: {
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    marginBottom: 24,
+  },
+  menuDivider: { height: 1, width: "100%" },
+  menuOptionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 16,
+  },
+  menuOptionIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 16,
+  },
+  menuOptionTitle: { fontSize: 15, fontWeight: "600" },
+  menuOptionSubtitle: { fontSize: 12, marginTop: 2 },
+
+  monthPickerOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.6)",
-    justifyContent: "center",
-    padding: 20,
+    justifyContent: "flex-end",
   },
-  menuContent: { padding: 24, borderRadius: 16 },
-  menuTitle: { fontSize: 20, fontWeight: "bold" },
+  monthPickerContent: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    borderWidth: 1,
+  },
+  monthPickerTitle: { fontSize: 16, fontWeight: "700", marginBottom: 12 },
+  monthPickerItem: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+  },
+  monthPickerItemText: { fontSize: 14 },
 });
