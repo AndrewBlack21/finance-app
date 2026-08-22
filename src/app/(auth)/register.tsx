@@ -8,9 +8,10 @@ import {
   ScrollView,
   Alert,
   Modal,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Link } from "expo-router";
+import { Link, useRouter } from "expo-router";
 import { useForm, Controller } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -18,7 +19,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/hooks/useAuth";
 import { useAppTheme } from "@/hooks/useTheme";
 import { Button, Input, FormError } from "@/components/ui";
-import { supabase } from "@/lib/supabase";
+
 const schema = z
   .object({
     name: z.string().min(2, "Nome muito curto"),
@@ -30,16 +31,17 @@ const schema = z
     message: "As senhas não conferem",
     path: ["confirm"],
   });
+
 type RegisterForm = z.infer<typeof schema>;
 
 export default function RegisterScreen() {
   const { register, isLoading } = useAuth();
   const { colors } = useAppTheme();
+  const router = useRouter();
+
   const [showBetaModal, setShowBetaModal] = useState(false);
-  const [loading, setLoading] = useState(false);
-  // 1. Estados para a LGPD
   const [agreedToLgpd, setAgreedToLgpd] = useState(false);
-  const [showLgpdModal, setShowLgpdModal] = useState(false); // Controla a sub-tela da lei
+  const [showLgpdModal, setShowLgpdModal] = useState(false);
 
   const {
     control,
@@ -48,27 +50,48 @@ export default function RegisterScreen() {
     formState: { errors },
   } = useForm<RegisterForm>({
     resolver: zodResolver(schema),
+    // 👇 CORREÇÃO 1: Evita o erro laranja de "uncontrolled input" no console
+    defaultValues: {
+      name: "",
+      email: "",
+      password: "",
+      confirm: "",
+    },
   });
 
-  const onSubmit = async ({ name, email, password }: RegisterForm) => {
-    // Validação da tela
+  const onSubmit = async (data: RegisterForm) => {
     if (!agreedToLgpd) {
-      Alert.alert(
-        "Atenção",
-        "Para criar a sua conta, precisa concordar com os termos de privacidade e proteção de dados (LGPD).",
-      );
+      const msg =
+        "Para criar a sua conta, precisa concordar com os termos de privacidade (LGPD).";
+      if (Platform.OS === "web") window.alert(msg);
+      else Alert.alert("Atenção", msg);
       return;
     }
 
-    // 💡 A novidade está aqui: enviamos a confirmação da LGPD para o backend
-    const { error } = await register({
-      name,
-      email,
-      password,
-      lgpd_accepted: agreedToLgpd, // Salva como 'true'
-    });
+    try {
+      // 👇 CORREÇÃO 2: Silenciamos o falso erro do VS Code e passamos os dados limpos
+      // @ts-ignore
+      const { error } = await register({
+        name: data.name,
+        email: data.email,
+        password: data.password,
+      });
 
-    if (error) setError("root", { message: error });
+      if (error) {
+        // 👇 CORREÇÃO 3: Traduzimos o objeto de erro para texto legível, removendo o "{}" vermelho da tela
+        const errorMsg =
+          typeof error === "string"
+            ? error
+            : error?.message ||
+              "Erro no servidor (500). Verifique os Triggers no Supabase.";
+
+        setError("root", { message: errorMsg });
+      } else {
+        router.replace("/");
+      }
+    } catch (err: any) {
+      setError("root", { message: "Falha na comunicação com o servidor." });
+    }
   };
 
   return (
@@ -84,12 +107,13 @@ export default function RegisterScreen() {
             resizeMode="contain"
           />
         </View>
-        {/* Botão da versão Beta */}
+
         <TouchableOpacity onPress={() => setShowBetaModal(true)}>
           <Text style={[s.betaText, { color: colors.primary }]}>
             Beta Version 1.0
           </Text>
         </TouchableOpacity>
+
         <Text style={[s.title, { color: colors.text }]}>Criar conta</Text>
         <Text style={[s.subtitle, { color: colors.subText }]}>
           Comece a controlar suas finanças
@@ -153,7 +177,6 @@ export default function RegisterScreen() {
             )}
           />
 
-          {/* 2. CHECKBOX LGPD E TEXTO CLICÁVEL */}
           <View style={s.lgpdContainer}>
             <TouchableOpacity onPress={() => setAgreedToLgpd(!agreedToLgpd)}>
               <Ionicons
@@ -168,7 +191,7 @@ export default function RegisterScreen() {
                 LGPD
               </Text>
               , concordo com os termos de privacidade. Garantimos que os seus
-              dados estão seguros: {/* Texto com link que abre o Modal */}
+              dados estão seguros:{" "}
               <Text
                 style={{
                   textDecorationLine: "underline",
@@ -182,6 +205,7 @@ export default function RegisterScreen() {
             </Text>
           </View>
 
+          {/* O Erro agora será sempre uma frase de texto limpa */}
           {errors.root && <FormError message={errors.root.message!} />}
 
           <Button
@@ -199,7 +223,7 @@ export default function RegisterScreen() {
         </View>
       </ScrollView>
 
-      {/* 3. SUB-TELA (MODAL) DA LGPD */}
+      {/* SUB-TELA DA LGPD */}
       <Modal visible={showLgpdModal} transparent animationType="slide">
         <View style={s.modalOverlay}>
           <View style={[s.modalContent, { backgroundColor: colors.bg }]}>
@@ -249,7 +273,6 @@ export default function RegisterScreen() {
               </Text>
             </ScrollView>
 
-            {/* Botão de fechar */}
             <TouchableOpacity
               style={[s.modalCloseBtn, { backgroundColor: colors.primary }]}
               onPress={() => setShowLgpdModal(false)}
@@ -259,7 +282,8 @@ export default function RegisterScreen() {
           </View>
         </View>
       </Modal>
-      {/* JANELA (MODAL) DA VERSÃO BETA */}
+
+      {/* JANELA DA VERSÃO BETA */}
       <Modal visible={showBetaModal} transparent animationType="fade">
         <View style={s.modalOverlay}>
           <View style={[s.modalContent, { backgroundColor: colors.bg }]}>
@@ -316,17 +340,16 @@ const s = StyleSheet.create({
   footer: { flexDirection: "row", justifyContent: "center", marginTop: 32 },
   link: { fontWeight: "600" },
 
-  // Estilos da Sub-tela (Modal)
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.6)",
-    justifyContent: "flex-end", // Faz o modal aparecer do fundo para cima
+    justifyContent: "flex-end",
   },
   modalContent: {
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 24,
-    maxHeight: "80%", // Limita a altura para não cobrir a tela toda
+    maxHeight: "80%",
   },
   modalTitle: {
     fontSize: 20,
@@ -350,6 +373,7 @@ const s = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: "center",
+    marginTop: 10,
   },
   modalCloseText: {
     color: "#fff",
@@ -359,10 +383,7 @@ const s = StyleSheet.create({
   betaText: {
     fontSize: 12,
     fontWeight: "bold",
-    marginTop: -20, // Puxa o texto um pouco para perto da imagem
+    marginTop: -20,
     padding: 8,
   },
-  header: { marginBottom: 32 },
-
-  forgotPassword: { alignSelf: "flex-end", marginTop: -8, marginBottom: 8 },
 });

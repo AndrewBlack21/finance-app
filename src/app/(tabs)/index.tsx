@@ -50,6 +50,8 @@ export default function DashboardScreen() {
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const [monthOffset, setMonthOffset] = useState(0);
   const [showMonthPicker, setShowMonthPicker] = useState(false);
+
+  // 👇 A variável de estado do modal de ajuda já existia
   const [showHelpModal, setShowHelpModal] = useState(false);
 
   const [ignoredBills, setIgnoredBills] =
@@ -547,7 +549,6 @@ export default function DashboardScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* MINHAS CONTAS (CORRENTE) RESTAURADO */}
         <View style={s.section}>
           <View style={s.sectionHeader}>
             <Text style={[s.sectionTitle, { color: colors.text }]}>
@@ -644,7 +645,6 @@ export default function DashboardScreen() {
           </ScrollView>
         </View>
 
-        {/* MEUS INVESTIMENTOS RESTAURADO */}
         {investmentAccounts.length > 0 && (
           <View style={s.section}>
             <View style={s.sectionHeader}>
@@ -1035,7 +1035,7 @@ export default function DashboardScreen() {
         </View>
       </ScrollView>
 
-      {/* MENU LATERAL RESTAURADO INTEGRALMENTE */}
+      {/* MENU LATERAL RESTAURADO */}
       <Modal
         visible={isMenuVisible}
         animationType="slide"
@@ -1061,7 +1061,7 @@ export default function DashboardScreen() {
                 <View>
                   <Text style={s.menuName}>{profile?.name || "Usuário"}</Text>
                   <Text style={s.menuEmail}>
-                    {profile?.email || "usuario@email.com"}
+                    {session?.user?.email || "usuario@email.com"}
                   </Text>
                   <View style={s.menuBadge}>
                     <Text style={s.menuBadgeText}>✨ Plano Premium</Text>
@@ -1227,17 +1227,31 @@ export default function DashboardScreen() {
                 subtitle="Encerrar sessão atual"
                 onPress={() => {
                   setIsMenuVisible(false);
-                  Alert.alert("Sair", "Deseja realmente sair?", [
-                    { text: "Cancelar", style: "cancel" },
-                    {
-                      text: "Sair",
-                      style: "destructive",
-                      onPress: async () => {
-                        await logout();
-                        router.replace("/");
+                  const executeLogout = async () => {
+                    try {
+                      await logout();
+                      router.replace("/");
+                    } catch (error) {
+                      if (Platform.OS === "web")
+                        window.alert("Não foi possível sair.");
+                      else Alert.alert("Erro", "Não foi possível sair.");
+                    }
+                  };
+
+                  if (Platform.OS === "web") {
+                    if (window.confirm("Deseja realmente sair?")) {
+                      executeLogout();
+                    }
+                  } else {
+                    Alert.alert("Sair", "Deseja realmente sair?", [
+                      { text: "Cancelar", style: "cancel" },
+                      {
+                        text: "Sair",
+                        style: "destructive",
+                        onPress: executeLogout,
                       },
-                    },
-                  ]);
+                    ]);
+                  }
                 }}
                 hideArrow
               />
@@ -1246,7 +1260,124 @@ export default function DashboardScreen() {
         </View>
       </Modal>
 
-      {/* SELETOR DE MÊS RESTAURADO INTEGRALMENTE */}
+      {/* MODAL DE AJUDA E TUTORIAL (PWA) ADICIONADO AQUI */}
+      <Modal visible={showHelpModal} transparent animationType="fade">
+        <View style={s.modalOverlayCenter}>
+          <View
+            style={[
+              s.modalCardCenter,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <View style={{ alignItems: "center", marginBottom: 16 }}>
+              <View
+                style={{
+                  width: 50,
+                  height: 50,
+                  borderRadius: 25,
+                  backgroundColor: "rgba(139, 92, 246, 0.15)",
+                  justifyContent: "center",
+                  alignItems: "center",
+                  marginBottom: 12,
+                }}
+              >
+                <Ionicons
+                  name="phone-portrait-outline"
+                  size={24}
+                  color="#8b5cf6"
+                />
+              </View>
+              <Text
+                style={[
+                  s.modalTitleCenter,
+                  { color: colors.text, marginBottom: 4, textAlign: "center" },
+                ]}
+              >
+                Instalar a Aplicação
+              </Text>
+              <Text
+                style={{
+                  color: colors.subText,
+                  textAlign: "center",
+                  fontSize: 13,
+                }}
+              >
+                Tenha acesso rápido direto da sua tela inicial (PWA).
+              </Text>
+            </View>
+
+            <ScrollView
+              style={{ maxHeight: 300 }}
+              showsVerticalScrollIndicator={false}
+            >
+              <Text
+                style={{
+                  color: colors.text,
+                  fontWeight: "bold",
+                  marginBottom: 8,
+                  marginTop: 10,
+                }}
+              >
+                🍎 Para utilizadores iOS (Safari):
+              </Text>
+              <Text
+                style={{ color: colors.subText, fontSize: 13, marginBottom: 4 }}
+              >
+                1. Toque no ícone de "Compartilhar" (quadrado com seta para
+                cima) na barra inferior.
+              </Text>
+              <Text
+                style={{
+                  color: colors.subText,
+                  fontSize: 13,
+                  marginBottom: 16,
+                }}
+              >
+                2. Role para baixo e selecione "Adicionar à Tela de Início".
+              </Text>
+
+              <Text
+                style={{
+                  color: colors.text,
+                  fontWeight: "bold",
+                  marginBottom: 8,
+                }}
+              >
+                🤖 Para utilizadores Android (Chrome):
+              </Text>
+              <Text
+                style={{ color: colors.subText, fontSize: 13, marginBottom: 4 }}
+              >
+                1. Toque no ícone de "Menu" (três pontos) no canto superior
+                direito.
+              </Text>
+              <Text
+                style={{
+                  color: colors.subText,
+                  fontSize: 13,
+                  marginBottom: 16,
+                }}
+              >
+                2. Selecione "Instalar Aplicação" ou "Adicionar à Tela Inicial".
+              </Text>
+            </ScrollView>
+
+            <TouchableOpacity
+              style={[
+                s.btn,
+                { backgroundColor: colors.primary, marginTop: 16 },
+              ]}
+              onPress={() => setShowHelpModal(false)}
+            >
+              <Text style={{ color: "#fff", fontWeight: "bold" }}>
+                Entendi, fechar
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* SELETOR DE MÊS RESTAURADO */}
       <Modal visible={showMonthPicker} transparent animationType="fade">
         <TouchableOpacity
           style={s.monthPickerOverlay}
@@ -1442,7 +1573,6 @@ const s = StyleSheet.create({
   sectionTitle: { fontSize: 16, fontWeight: "bold" },
   seeAll: { fontSize: 13, fontWeight: "600" },
 
-  // 👇 ESTILOS DOS CARTÕES DE CONTA (Restaurados e Modernos)
   accountCardModern: {
     width: 140,
     padding: 16,
@@ -1471,7 +1601,7 @@ const s = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  addAccountTextModern: { fontSize: 13, fontWeight: "600" },
+  addAccountTextModern: { fontSize: 13, fontWeight: "600", marginTop: 8 },
 
   cleanCard: {
     marginHorizontal: 20,
@@ -1737,4 +1867,22 @@ const s = StyleSheet.create({
     borderRadius: 10,
   },
   monthPickerItemText: { fontSize: 14 },
+
+  // Estilos da Ajuda (PWA)
+  modalOverlayCenter: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  modalCardCenter: {
+    width: "100%",
+    maxWidth: 400,
+    borderRadius: 24,
+    padding: 24,
+    borderWidth: 1,
+  },
+  modalTitleCenter: { fontSize: 20, fontWeight: "bold" },
+  btn: { paddingVertical: 14, borderRadius: 12, alignItems: "center" },
 });
