@@ -11,6 +11,7 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
+  useWindowDimensions,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useInstallments } from "@/hooks/useInstallments";
@@ -906,7 +907,8 @@ function InstallmentFormModal({
       setPurchaseDate(selectedDate.toISOString().split("T")[0]);
     }
   };
-
+  const { width } = useWindowDimensions();
+  const isDesktop = width >= 768;
   const handleSave = async () => {
     const amount = parseFloat(totalAmount.replace(",", "."));
     const count = parseInt(installmentsCount, 10);
@@ -961,34 +963,85 @@ function InstallmentFormModal({
             <Text style={[s.label, { color: colors.subText }]}>
               Selecione o Cartão
             </Text>
-            <View style={{ flexDirection: "row", marginBottom: 16 }}>
-              {accounts.map((acc: any) => (
-                <TouchableOpacity
-                  key={acc.id}
-                  style={[
-                    s.accBtn,
-                    {
-                      borderColor: colors.border,
-                      backgroundColor: colors.inputBg,
-                    },
-                    accountId === acc.id && {
-                      backgroundColor: colors.primary,
-                      borderColor: colors.primary,
-                    },
-                  ]}
-                  onPress={() => setAccountId(acc.id)}
-                >
-                  <Text
+
+            {/* 👇 Condição atualizada: Verifica a largura da tela em vez do sistema */}
+            {isDesktop ? (
+              /* 💻 VERSÃO COMPUTADOR E ECRÃS GRANDES: Usa View com quebra de linha (wrap) */
+              <View
+                style={{
+                  flexDirection: "row",
+                  flexWrap: "wrap",
+                  gap: 8,
+                  marginTop: 8,
+                }}
+              >
+                {accounts.map((acc: any) => (
+                  <TouchableOpacity
+                    key={acc.id}
                     style={[
-                      s.accBtnText,
-                      { color: accountId === acc.id ? "#fff" : colors.text },
+                      s.accBtn,
+                      {
+                        borderColor: colors.border,
+                        backgroundColor: colors.inputBg,
+                      },
+                      accountId === acc.id && {
+                        backgroundColor: colors.primary,
+                        borderColor: colors.primary,
+                      },
                     ]}
+                    onPress={() => setAccountId(acc.id)}
                   >
-                    {acc.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+                    <Text
+                      style={[
+                        s.accBtnText,
+                        { color: accountId === acc.id ? "#fff" : colors.text },
+                      ]}
+                    >
+                      {acc.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : (
+              /* 📱 VERSÃO TELEMÓVEL: Usa ScrollView horizontal com rolagem suave */
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{
+                  flexDirection: "row",
+                  gap: 8,
+                  marginTop: 8,
+                  paddingRight: 16,
+                }}
+              >
+                {accounts.map((acc: any) => (
+                  <TouchableOpacity
+                    key={acc.id}
+                    style={[
+                      s.accBtn,
+                      {
+                        borderColor: colors.border,
+                        backgroundColor: colors.inputBg,
+                      },
+                      accountId === acc.id && {
+                        backgroundColor: colors.primary,
+                        borderColor: colors.primary,
+                      },
+                    ]}
+                    onPress={() => setAccountId(acc.id)}
+                  >
+                    <Text
+                      style={[
+                        s.accBtnText,
+                        { color: accountId === acc.id ? "#fff" : colors.text },
+                      ]}
+                    >
+                      {acc.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
 
             <Text style={[s.label, { color: colors.subText }]}>
               Data da Compra
