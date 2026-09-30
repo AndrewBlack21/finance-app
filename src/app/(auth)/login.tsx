@@ -6,49 +6,43 @@ import {
   Image,
   TouchableOpacity,
   ScrollView,
-  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Link, useRouter } from "expo-router";
-import { Input, Button } from "@/components/ui";
+import { Input, Button, FormError } from "@/components/ui";
 import { useAppTheme } from "@/hooks/useTheme";
-import { supabase } from "@/lib/supabase"; // 👈 Importa o seu cliente do Supabase (ajuste o caminho se necessário)
+import { useAuth } from "@/hooks/useAuth";
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { colors, isDark } = useAppTheme();
+  const { colors } = useAppTheme();
+  const { login, isLoading } = useAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false); // 👈 Estado para controlar o carregamento
+  const [error, setError] = useState("");
 
   const handleLogin = async () => {
-    if (!email || !password) {
-      Alert.alert("Atenção", "Preencha o e-mail e a senha.");
+    setError("");
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (!normalizedEmail || !password) {
+      setError("Preencha o e-mail e a senha.");
       return;
     }
 
-    try {
-      setLoading(true);
+    const { error: loginError } = await login({
+      email: normalizedEmail,
+      password,
+    });
 
-      // Autenticação real com o Supabase
-      const { error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password: password,
-      });
-
-      if (error) {
-        Alert.alert("Erro ao entrar", "E-mail ou senha incorretos.");
-        setLoading(false);
-        return;
-      }
-
-      // Se der certo, redireciona para a tela principal das abas
-      router.replace("/(tabs)");
-    } catch (err) {
-      Alert.alert("Erro", "Ocorreu um erro inesperado.");
-      setLoading(false);
+    if (loginError) {
+      setError(loginError);
+      return;
     }
+
+    router.replace("/(tabs)");
   };
 
   return (
@@ -56,6 +50,7 @@ export default function LoginScreen() {
       <ScrollView
         contentContainerStyle={s.scrollContainer}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
         <View style={s.logoContainer}>
           <Image
@@ -67,9 +62,7 @@ export default function LoginScreen() {
 
         <View style={s.header}>
           <Text style={[s.title, { color: colors.text }]}>Entrar</Text>
-          <Text style={[s.subtitle, { color: colors.subText }]}>
-            Acesse sua conta para continuar
-          </Text>
+          <Text style={[s.subtitle, { color: colors.subText }]}>Acesse sua conta para continuar</Text>
         </View>
 
         <View style={s.form}>
@@ -77,39 +70,47 @@ export default function LoginScreen() {
             label="E-mail"
             placeholder="voce@email.com"
             value={email}
-            onChangeText={setEmail}
+            onChangeText={(value) => {
+              setEmail(value);
+              if (error) setError("");
+            }}
             keyboardType="email-address"
             autoCapitalize="none"
+            autoCorrect={false}
+            autoComplete="email"
+            textContentType="emailAddress"
           />
+
           <Input
             label="Senha"
             placeholder="••••••••"
             value={password}
-            onChangeText={setPassword}
+            onChangeText={(value) => {
+              setPassword(value);
+              if (error) setError("");
+            }}
             secureTextEntry
+            autoComplete="password"
+            textContentType="password"
+            error={error}
           />
 
-          <TouchableOpacity style={s.forgotPassword}>
+          <TouchableOpacity
+            style={s.forgotPassword}
+            onPress={() => router.push("/(auth)/forgot-password")}
+            disabled={isLoading}
+          >
             <Text style={{ color: colors.primary, fontSize: 13 }}>
               Esqueci minha senha
             </Text>
           </TouchableOpacity>
 
-          {/* O botão agora respeita o estado de carregamento */}
-          <Button label="Entrar" loading={loading} onPress={handleLogin} />
+          <Button label="Entrar" loading={isLoading} onPress={handleLogin} />
 
           <View style={s.footer}>
-            <Text style={{ color: colors.subText, fontSize: 14 }}>
-              Não tem conta?{" "}
-            </Text>
+            <Text style={{ color: colors.subText, fontSize: 14 }}>Não tem conta? </Text>
             <Link href="/(auth)/register">
-              <Text
-                style={{
-                  color: colors.primary,
-                  fontSize: 14,
-                  fontWeight: "600",
-                }}
-              >
+              <Text style={{ color: colors.primary, fontSize: 14, fontWeight: "600" }}>
                 Criar conta
               </Text>
             </Link>
