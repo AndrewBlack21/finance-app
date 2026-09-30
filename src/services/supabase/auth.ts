@@ -18,6 +18,27 @@ const getPasswordResetRedirectUrl = () => {
   return "financeapp://reset-password";
 };
 
+const getLoginErrorMessage = (message?: string | null) => {
+  const normalized = (message ?? "").toLowerCase();
+
+  if (
+    normalized.includes("invalid login credentials") ||
+    normalized.includes("invalid credentials")
+  ) {
+    return "E-mail ou senha incorretos. Verifique os dados e tente novamente.";
+  }
+
+  if (normalized.includes("email not confirmed")) {
+    return "Seu e-mail ainda não foi confirmado. Verifique sua caixa de entrada.";
+  }
+
+  if (normalized.includes("too many requests")) {
+    return "Muitas tentativas. Aguarde alguns minutos e tente novamente.";
+  }
+
+  return message ?? "Não foi possível entrar. Tente novamente.";
+};
+
 export const authService = {
   register: async ({
     email,
@@ -44,7 +65,7 @@ export const authService = {
       email,
       password,
     });
-    return { data: data.session, error: error?.message ?? null };
+    return { data: data.session, error: getLoginErrorMessage(error?.message) === "Não foi possível entrar. Tente novamente." && !error ? null : error ? getLoginErrorMessage(error.message) : null };
   },
 
   logout: async (): Promise<ServiceResponse<null>> => {
