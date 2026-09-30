@@ -1,3 +1,4 @@
+import { Platform } from "react-native";
 import { isSupabaseConfigured, supabase } from "./client";
 import type {
   AuthCredentials,
@@ -6,16 +7,18 @@ import type {
 } from "../../types/index";
 import type { Session, User } from "@supabase/supabase-js";
 
-// ============================================================
-// Padrão: toda função retorna ServiceResponse<T>
-// O caller decide o que fazer com error — sem try/catch espalhado
-// ============================================================
-
 const missingConfigError =
   "Configure EXPO_PUBLIC_SUPABASE_URL e EXPO_PUBLIC_SUPABASE_ANON_KEY no arquivo .env.";
 
+const getPasswordResetRedirectUrl = () => {
+  if (Platform.OS === "web" && typeof window !== "undefined") {
+    return `${window.location.origin}/reset-password`;
+  }
+
+  return "financeapp://reset-password";
+};
+
 export const authService = {
-  // Registro com email/senha — profile criado automaticamente via trigger
   register: async ({
     email,
     password,
@@ -26,12 +29,11 @@ export const authService = {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { name, full_name: name } }, // capturado pelo trigger handle_new_user
+      options: { data: { name, full_name: name } },
     });
     return { data: data.user, error: error?.message ?? null };
   },
 
-  // Login com email/senha
   login: async ({
     email,
     password,
@@ -45,21 +47,21 @@ export const authService = {
     return { data: data.session, error: error?.message ?? null };
   },
 
-  // Logout
   logout: async (): Promise<ServiceResponse<null>> => {
     const { error } = await supabase.auth.signOut();
     return { data: null, error: error?.message ?? null };
   },
 
-  // Recuperação de senha — envia email
   forgotPassword: async (email: string): Promise<ServiceResponse<null>> => {
     if (!isSupabaseConfigured) return { data: null, error: missingConfigError };
 
-    const { error } = await supabase.auth.resetPasswordForEmail(email);
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: getPasswordResetRedirectUrl(),
+    });
+
     return { data: null, error: error?.message ?? null };
   },
 
-  // Sessão atual
   getSession: async (): Promise<ServiceResponse<Session>> => {
     if (!isSupabaseConfigured) return { data: null, error: null };
 
@@ -67,8 +69,6 @@ export const authService = {
     return { data: data.session, error: error?.message ?? null };
   },
 
-  // Escuta mudanças de sessão (login, logout, refresh)
-  // Padrão: chame no Provider global da aplicação
   onAuthChange: (callback: (session: Session | null) => void) => {
     if (!isSupabaseConfigured) {
       callback(null);
@@ -78,6 +78,6 @@ export const authService = {
     const { data } = supabase.auth.onAuthStateChange((_event, session) =>
       callback(session),
     );
-    return data.subscription; // retorna para poder chamar .unsubscribe()
+    return data.subscription;
   },
 };
