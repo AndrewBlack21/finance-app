@@ -65,7 +65,7 @@ export const authService = {
       email,
       password,
     });
-    return { data: data.session, error: getLoginErrorMessage(error?.message) === "Não foi possível entrar. Tente novamente." && !error ? null : error ? getLoginErrorMessage(error.message) : null };
+    return { data: data.session, error: error ? getLoginErrorMessage(error.message) : null };
   },
 
   logout: async (): Promise<ServiceResponse<null>> => {
