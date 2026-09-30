@@ -10,9 +10,26 @@ import type { Session, User } from "@supabase/supabase-js";
 const missingConfigError =
   "Configure EXPO_PUBLIC_SUPABASE_URL e EXPO_PUBLIC_SUPABASE_ANON_KEY no arquivo .env.";
 
+const PRODUCTION_WEB_URL = "https://secontrolaai.vercel.app";
+
 const getPasswordResetRedirectUrl = () => {
-  if (Platform.OS === "web" && typeof window !== "undefined") {
-    return `${window.location.origin}/reset-password`;
+  if (Platform.OS === "web") {
+    const configuredWebUrl = process.env.EXPO_PUBLIC_WEB_URL?.trim();
+
+    if (configuredWebUrl) {
+      return `${configuredWebUrl.replace(/\/$/, "")}/reset-password`;
+    }
+
+    if (typeof window !== "undefined") {
+      const hostname = window.location.hostname;
+      const isLocalhost = hostname === "localhost" || hostname === "127.0.0.1";
+
+      return isLocalhost
+        ? `${window.location.origin}/reset-password`
+        : `${PRODUCTION_WEB_URL}/reset-password`;
+    }
+
+    return `${PRODUCTION_WEB_URL}/reset-password`;
   }
 
   return "financeapp://reset-password";
@@ -65,7 +82,10 @@ export const authService = {
       email,
       password,
     });
-    return { data: data.session, error: error ? getLoginErrorMessage(error.message) : null };
+    return {
+      data: data.session,
+      error: error ? getLoginErrorMessage(error.message) : null,
+    };
   },
 
   logout: async (): Promise<ServiceResponse<null>> => {
@@ -76,8 +96,11 @@ export const authService = {
   forgotPassword: async (email: string): Promise<ServiceResponse<null>> => {
     if (!isSupabaseConfigured) return { data: null, error: missingConfigError };
 
+    const redirectTo = getPasswordResetRedirectUrl();
+    console.log("Link de recuperação configurado para:", redirectTo);
+
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: getPasswordResetRedirectUrl(),
+      redirectTo,
     });
 
     return { data: null, error: error?.message ?? null };
