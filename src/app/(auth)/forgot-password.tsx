@@ -1,65 +1,55 @@
+import { useState } from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Link } from "expo-router";
+import { Link, useRouter } from "expo-router";
 import { useForm, Controller } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useAuth } from "@/hooks/useAuth";
 import { Button, Input, FormError } from "@/components/ui";
+import { useAppTheme } from "@/hooks/useTheme";
 
-const schema = z
-  .object({
-    name: z.string().min(2, "Nome muito curto"),
-    email: z.string().email("E-mail inválido"),
-    password: z.string().min(6, "Mínimo 6 caracteres"),
-    confirm: z.string(),
-  })
-  .refine((d) => d.password === d.confirm, {
-    message: "As senhas não conferem",
-    path: ["confirm"],
-  });
-type RegisterForm = z.infer<typeof schema>;
+const schema = z.object({
+  email: z.string().trim().email("Digite um e-mail válido"),
+});
+type ForgotForm = z.infer<typeof schema>;
 
-export default function RegisterScreen() {
-  const { register, isLoading } = useAuth();
+export default function ForgotPasswordScreen() {
+  const router = useRouter();
+  const { colors } = useAppTheme();
+  const { forgotPassword, isLoading } = useAuth();
+  const [success, setSuccess] = useState(false);
+  const [serverError, setServerError] = useState("");
+
   const {
     control,
     handleSubmit,
-    setError,
     formState: { errors },
-  } = useForm<RegisterForm>({
+  } = useForm<ForgotForm>({
     resolver: zodResolver(schema),
+    defaultValues: { email: "" },
   });
 
-  const onSubmit = async ({ name, email, password }: RegisterForm) => {
-    const { error } = await register({
-      name,
-      email,
-      password,
-      lgpd_accepted: true,
-    });
-    if (error) setError("root", { message: error });
+  const onSubmit = async ({ email }: ForgotForm) => {
+    setServerError("");
+    setSuccess(false);
+
+    const { error } = await forgotPassword(email.toLowerCase());
+
+    if (error) {
+      setServerError(error);
+      return;
+    }
+
+    setSuccess(true);
   };
 
   return (
-    <SafeAreaView style={s.container}>
-      <Text style={s.title}>Criar conta</Text>
-      <Text style={s.subtitle}>Comece a controlar suas finanças</Text>
+    <SafeAreaView style={[s.container, { backgroundColor: colors.bg }]}>
+      <Text style={[s.title, { color: colors.text }]}>Recuperar senha</Text>
+      <Text style={[s.subtitle, { color: colors.subText }]}>Digite seu e-mail e enviaremos um link para criar uma nova senha.</Text>
 
       <View style={s.form}>
-        <Controller
-          name="name"
-          control={control}
-          render={({ field: { onChange, value } }) => (
-            <Input
-              label="Nome"
-              placeholder="Seu nome completo"
-              onChangeText={onChange}
-              value={value}
-              error={errors.name?.message}
-            />
-          )}
-        />
         <Controller
           name="email"
           control={control}
@@ -69,54 +59,29 @@ export default function RegisterScreen() {
               placeholder="voce@email.com"
               keyboardType="email-address"
               autoCapitalize="none"
-              onChangeText={onChange}
+              autoCorrect={false}
               value={value}
+              onChangeText={onChange}
               error={errors.email?.message}
             />
           )}
         />
-        <Controller
-          name="password"
-          control={control}
-          render={({ field: { onChange, value } }) => (
-            <Input
-              label="Senha"
-              placeholder="••••••••"
-              secureTextEntry
-              onChangeText={onChange}
-              value={value}
-              error={errors.password?.message}
-            />
-          )}
-        />
-        <Controller
-          name="confirm"
-          control={control}
-          render={({ field: { onChange, value } }) => (
-            <Input
-              label="Confirmar senha"
-              placeholder="••••••••"
-              secureTextEntry
-              onChangeText={onChange}
-              value={value}
-              error={errors.confirm?.message}
-            />
-          )}
-        />
 
-        {errors.root && <FormError message={errors.root.message!} />}
+        {serverError ? <FormError message={serverError} /> : null}
+        {success ? (
+          <Text style={[s.success, { color: colors.primary }]}>E-mail enviado. Verifique sua caixa de entrada e clique no link para redefinir sua senha.</Text>
+        ) : null}
 
         <Button
-          label="Criar conta"
+          label="Enviar link de recuperação"
           loading={isLoading}
           onPress={handleSubmit(onSubmit)}
         />
       </View>
 
       <View style={s.footer}>
-        <Text style={s.footerText}>Já tem conta? </Text>
-        <Link href="/(auth)/login">
-          <Text style={s.link}>Entrar</Text>
+        <Link href="/(auth)/login" asChild>
+          <Text style={[s.link, { color: colors.primary }]}>Voltar para entrar</Text>
         </Link>
       </View>
     </SafeAreaView>
@@ -126,20 +91,14 @@ export default function RegisterScreen() {
 const s = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#fff",
     justifyContent: "center",
     paddingHorizontal: 24,
     paddingVertical: 40,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: "bold",
-    color: "#111827",
-    marginBottom: 4,
-  },
-  subtitle: { fontSize: 14, color: "#6b7280", marginBottom: 32 },
+  title: { fontSize: 28, fontWeight: "800", marginBottom: 8 },
+  subtitle: { fontSize: 14, lineHeight: 21, marginBottom: 32 },
   form: { gap: 16 },
-  footer: { flexDirection: "row", justifyContent: "center", marginTop: 32 },
-  footerText: { color: "#6b7280" },
-  link: { color: "#6366f1", fontWeight: "600" },
+  success: { fontSize: 13, lineHeight: 19 },
+  footer: { alignItems: "center", marginTop: 28 },
+  link: { fontWeight: "600" },
 });
