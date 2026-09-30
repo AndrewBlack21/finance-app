@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Link, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { useForm, Controller } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -12,6 +12,7 @@ import { useAppTheme } from "@/hooks/useTheme";
 const schema = z.object({
   email: z.string().trim().email("Digite um e-mail válido"),
 });
+
 type ForgotForm = z.infer<typeof schema>;
 
 export default function ForgotPasswordScreen() {
@@ -21,11 +22,7 @@ export default function ForgotPasswordScreen() {
   const [success, setSuccess] = useState(false);
   const [serverError, setServerError] = useState("");
 
-  const {
-    control,
-    handleSubmit,
-    formState: { errors },
-  } = useForm<ForgotForm>({
+  const { control, handleSubmit, formState: { errors } } = useForm<ForgotForm>({
     resolver: zodResolver(schema),
     defaultValues: { email: "" },
   });
@@ -34,7 +31,7 @@ export default function ForgotPasswordScreen() {
     setServerError("");
     setSuccess(false);
 
-    const { error } = await forgotPassword(email.toLowerCase());
+    const { error } = await forgotPassword(email.trim().toLowerCase());
 
     if (error) {
       setServerError(error);
@@ -60,6 +57,8 @@ export default function ForgotPasswordScreen() {
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
+              autoComplete="email"
+              textContentType="emailAddress"
               value={value}
               onChangeText={onChange}
               error={errors.email?.message}
@@ -79,26 +78,23 @@ export default function ForgotPasswordScreen() {
         />
       </View>
 
-      <View style={s.footer}>
-        <Link href="/(auth)/login" asChild>
-          <Text style={[s.link, { color: colors.primary }]}>Voltar para entrar</Text>
-        </Link>
-      </View>
+      <TouchableOpacity
+        style={s.footer}
+        onPress={() => router.replace("/(auth)/login")}
+        disabled={isLoading}
+      >
+        <Text style={[s.link, { color: colors.primary }]}>Voltar para entrar</Text>
+      </TouchableOpacity>
     </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: "center",
-    paddingHorizontal: 24,
-    paddingVertical: 40,
-  },
+  container: { flex: 1, justifyContent: "center", paddingHorizontal: 24, paddingVertical: 40 },
   title: { fontSize: 28, fontWeight: "800", marginBottom: 8 },
   subtitle: { fontSize: 14, lineHeight: 21, marginBottom: 32 },
   form: { gap: 16 },
   success: { fontSize: 13, lineHeight: 19 },
-  footer: { alignItems: "center", marginTop: 28 },
+  footer: { alignItems: "center", marginTop: 28, padding: 8 },
   link: { fontWeight: "600" },
 });
