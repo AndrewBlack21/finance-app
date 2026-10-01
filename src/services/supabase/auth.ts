@@ -13,26 +13,20 @@ const missingConfigError =
 const PRODUCTION_WEB_URL = "https://secontrolaai.vercel.app";
 
 const getPasswordResetRedirectUrl = () => {
-  if (Platform.OS === "web") {
-    const configuredWebUrl = process.env.EXPO_PUBLIC_WEB_URL?.trim();
+  if (Platform.OS === "web" && typeof window !== "undefined") {
+    const { origin, hostname } = window.location;
 
-    if (configuredWebUrl) {
-      return `${configuredWebUrl.replace(/\/$/, "")}/reset-password`;
+    // Desenvolvimento local continua usando localhost.
+    if (hostname === "localhost" || hostname === "127.0.0.1") {
+      return `${origin}/reset-password`;
     }
 
-    if (typeof window !== "undefined") {
-      const hostname = window.location.hostname;
-      const isLocalhost = hostname === "localhost" || hostname === "127.0.0.1";
-
-      return isLocalhost
-        ? `${window.location.origin}/reset-password`
-        : `${PRODUCTION_WEB_URL}/reset-password`;
-    }
-
-    return `${PRODUCTION_WEB_URL}/reset-password`;
+    // Produção e previews web usam a própria origem da aplicação.
+    // Isso evita que uma variável de ambiente antiga aponte o reset para localhost.
+    return `${origin}/reset-password`;
   }
 
-  return "financeapp://reset-password";
+  return `${PRODUCTION_WEB_URL}/reset-password`;
 };
 
 const getLoginErrorMessage = (message?: string | null) => {
@@ -82,6 +76,7 @@ export const authService = {
       email,
       password,
     });
+
     return {
       data: data.session,
       error: error ? getLoginErrorMessage(error.message) : null,
@@ -97,6 +92,7 @@ export const authService = {
     if (!isSupabaseConfigured) return { data: null, error: missingConfigError };
 
     const redirectTo = getPasswordResetRedirectUrl();
+
     console.log("Link de recuperação configurado para:", redirectTo);
 
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
@@ -122,6 +118,7 @@ export const authService = {
     const { data } = supabase.auth.onAuthStateChange((_event, session) =>
       callback(session),
     );
+
     return data.subscription;
   },
 };
