@@ -13,6 +13,7 @@ import {
   KeyboardAvoidingView,
   ScrollView,
   RefreshControl,
+  useWindowDimensions,
 } from "react-native";
 import {
   SafeAreaView,
@@ -63,6 +64,8 @@ export default function AccountDetailScreen() {
   }>();
   const router = useRouter();
   const { colors, isDark } = useAppTheme();
+  const { width: screenWidth } = useWindowDimensions();
+  const isSmallScreen = screenWidth < 390;
   const insets = useSafeAreaInsets();
 
   const [type, setType] = useState("checking");
@@ -612,7 +615,11 @@ export default function AccountDetailScreen() {
           <View style={{ marginTop: 10 }}>
             {/* Cartão de Crédito Moderno */}
             <View
-              style={[s.physicalCardModern, { backgroundColor: accountColor }]}
+              style={[
+                s.physicalCardModern,
+                { backgroundColor: accountColor },
+                isSmallScreen && { padding: 18, marginBottom: 16 },
+              ]}
             >
               <View style={s.ccTopRowModern}>
                 <Text style={s.ccTopTextModern}>Cartão de Crédito</Text>
@@ -623,7 +630,13 @@ export default function AccountDetailScreen() {
                   <Text style={s.ccVisaTextModern}>Visa</Text>
                 </View>
               </View>
-              <Text style={s.ccBankNameModern}>{currentAccount.name}</Text>
+              <Text
+                style={[s.ccBankNameModern, isSmallScreen && { fontSize: 18 }]}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
+                {currentAccount.name}
+              </Text>
               <Text style={s.ccDotsModern}>•••• •••• •••• 4521</Text>
               <View style={s.ccBottomRowModern}>
                 <View>
@@ -813,7 +826,10 @@ export default function AccountDetailScreen() {
           ListHeaderComponent={renderTopSection()}
           data={transactions}
           keyExtractor={(t) => t.id}
-          contentContainerStyle={s.list}
+          contentContainerStyle={[
+            s.list,
+            isSmallScreen && { paddingHorizontal: 12 },
+          ]}
           ListEmptyComponent={
             <EmptyState
               text={
@@ -842,7 +858,10 @@ export default function AccountDetailScreen() {
           ListHeaderComponent={renderTopSection()}
           data={installments}
           keyExtractor={(i) => i.id}
-          contentContainerStyle={s.list}
+          contentContainerStyle={[
+            s.list,
+            isSmallScreen && { paddingHorizontal: 12 },
+          ]}
           ListEmptyComponent={
             <EmptyState
               text={
@@ -885,7 +904,10 @@ export default function AccountDetailScreen() {
           }
           data={unifiedHistory}
           keyExtractor={(t) => t.id + (t.isCredit ? "-C" : "-D")}
-          contentContainerStyle={s.list}
+          contentContainerStyle={[
+            s.list,
+            isSmallScreen && { paddingHorizontal: 12 },
+          ]}
           ListEmptyComponent={
             <EmptyState text="Nenhum movimento neste período" colors={colors} />
           }
@@ -1498,7 +1520,13 @@ function TransactionRow({ item, currency, colors, onEdit, onDelete }: any) {
         </Text>
       </View>
 
-      <View style={{ alignItems: "flex-end" }}>
+      <View
+        style={{
+          width: 100,
+          maxWidth: 100,
+          alignItems: "flex-end",
+        }}
+      >
         <Text style={[s.itemAmount, { color }]}>
           {isIncome ? "+" : "-"}
           {formatCurrency(item.amount, currency)}
@@ -1586,7 +1614,14 @@ function InstallmentCard({
         )}
       </View>
 
-      <View style={{ alignItems: "flex-end", justifyContent: "center" }}>
+      <View
+        style={{
+          width: 108,
+          maxWidth: 108,
+          alignItems: "flex-end",
+          justifyContent: "center",
+        }}
+      >
         <Text style={[s.itemAmount, { color: colors.text }]}>
           {formatCurrency(i.installment_amount, currency)}
         </Text>
@@ -2046,6 +2081,9 @@ const s = StyleSheet.create({
   ieValue: { color: "#fff", fontSize: 14, fontWeight: "bold" },
 
   physicalCardModern: {
+    width: "100%",
+    maxWidth: 520,
+    alignSelf: "center",
     borderRadius: 24,
     padding: 24,
     shadowColor: "#000",
@@ -2146,13 +2184,19 @@ const s = StyleSheet.create({
   tabActive: { borderBottomWidth: 3 },
   tabText: { fontSize: 12, fontWeight: "700" },
 
-  list: { paddingHorizontal: 20, paddingBottom: 40 },
+  list: { paddingHorizontal: 16, paddingBottom: 40, width: "100%" },
 
   item: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 16,
-    borderBottomWidth: 1,
+    width: "100%",
+    minWidth: 0,
+    paddingHorizontal: 12,
+    paddingVertical: 13,
+    marginBottom: 8,
+    borderRadius: 16,
+    borderWidth: 1,
+    overflow: "hidden",
   },
   itemIcon: {
     width: 44,
@@ -2162,16 +2206,26 @@ const s = StyleSheet.create({
     alignItems: "center",
     marginRight: 14,
   },
-  itemInfo: { flex: 1, paddingRight: 10 },
-  itemTitle: { fontSize: 15, fontWeight: "bold", marginBottom: 2 },
-  itemSub: { fontSize: 12 },
-  itemAmount: { fontSize: 15, fontWeight: "bold" },
+  itemInfo: {
+    flex: 1,
+    minWidth: 0,
+    paddingRight: 8,
+  },
+  itemTitle: { fontSize: 14, fontWeight: "700", marginBottom: 3 },
+  itemSub: { fontSize: 11, lineHeight: 15 },
+  itemAmount: { fontSize: 13, fontWeight: "800" },
 
   installCard: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 16,
-    borderBottomWidth: 1,
+    width: "100%",
+    minWidth: 0,
+    paddingHorizontal: 12,
+    paddingVertical: 13,
+    marginBottom: 8,
+    borderRadius: 16,
+    borderWidth: 1,
+    overflow: "hidden",
   },
 
   historyHeader: { marginBottom: 20 },
