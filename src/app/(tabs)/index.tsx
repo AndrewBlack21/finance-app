@@ -44,6 +44,8 @@ export default function DashboardScreen() {
   const router = useRouter();
   const { colors, isDark } = useAppTheme();
   const insets = useSafeAreaInsets();
+  const { width: screenWidth } = useWindowDimensions();
+  const isSmallScreen = screenWidth < 390;
 
   const [balanceView, setBalanceView] = useState<"month" | "week">("month");
   const [refreshing, setRefreshing] = useState(false);
@@ -394,7 +396,7 @@ export default function DashboardScreen() {
           ]}
         >
           <View style={s.headerTopRow}>
-            <View style={s.headerProfile}>
+            <View style={[s.headerProfile, { flex: 1, minWidth: 0 }]}>
               <View style={s.profileAvatar}>
                 <Text style={s.profileInitials}>
                   {firstName.substring(0, 2).toUpperCase()}
@@ -402,10 +404,16 @@ export default function DashboardScreen() {
               </View>
               <View>
                 <Text style={s.greetingText}>Bom dia!</Text>
-                <Text style={s.nameText}>{profile?.name || "Usuário"}</Text>
+                <Text
+                  style={s.nameText}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
+                  {profile?.name || "Usuário"}
+                </Text>
               </View>
             </View>
-            <View style={{ flexDirection: "row", gap: 12 }}>
+            <View style={{ flexDirection: "row", gap: isSmallScreen ? 8 : 12 }}>
               <TouchableOpacity
                 onPress={() => setShowMonthPicker(true)}
                 style={s.headerIconBtn}
@@ -428,7 +436,15 @@ export default function DashboardScreen() {
 
           <View style={s.balanceArea}>
             <Text style={s.balanceLabel}>Saldo Disponível</Text>
-            <Text style={s.balanceValue}>
+            <Text
+              style={[
+                s.balanceValue,
+                isSmallScreen && { fontSize: 30, letterSpacing: -0.5 },
+              ]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.75}
+            >
               {formatCurrency(checkingBalance, currency)}
             </Text>
             <Text style={s.balanceMonthLabel}>
@@ -466,7 +482,12 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        <View style={s.quickActionsRow}>
+        <View
+          style={[
+            s.quickActionsRow,
+            isSmallScreen && { paddingHorizontal: 16, marginTop: 16 },
+          ]}
+        >
           <TouchableOpacity
             style={s.actionBtn}
             onPress={() => router.push("/(tabs)/accounts?openModal=1")}
@@ -1052,15 +1073,17 @@ export default function DashboardScreen() {
             ]}
           >
             <View style={s.menuHeaderTop}>
-              <View style={s.menuProfile}>
+              <View style={[s.menuProfile, { flex: 1, minWidth: 0 }]}>
                 <View style={s.menuAvatar}>
                   <Text style={s.menuAvatarText}>
                     {firstName.substring(0, 2).toUpperCase()}
                   </Text>
                 </View>
                 <View>
-                  <Text style={s.menuName}>{profile?.name || "Usuário"}</Text>
-                  <Text style={s.menuEmail}>
+                  <Text style={s.menuName} numberOfLines={1} ellipsizeMode="tail">
+                    {profile?.name || "Usuário"}
+                  </Text>
+                  <Text style={s.menuEmail} numberOfLines={1} ellipsizeMode="tail">
                     {session?.user?.email || "usuario@email.com"}
                   </Text>
                   <View style={s.menuBadge}>
@@ -1563,11 +1586,13 @@ const s = StyleSheet.create({
   quickActionsRow: {
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "flex-start",
     paddingHorizontal: 24,
     marginTop: 20,
     marginBottom: 10,
+    width: "100%",
   },
-  actionBtn: { alignItems: "center", gap: 8 },
+  actionBtn: { alignItems: "center", gap: 8, flexShrink: 1 },
   actionIconBox: {
     width: 56,
     height: 56,
@@ -1780,6 +1805,7 @@ const s = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 16,
+    minWidth: 0,
   },
   menuAvatar: {
     width: 56,
