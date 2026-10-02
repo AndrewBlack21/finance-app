@@ -261,10 +261,10 @@ export default function TransactionsScreen() {
 
       <View
         style={{
-          paddingHorizontal: 20,
+          paddingHorizontal: isSmallScreen ? 14 : 20,
           marginBottom: 12,
           flexDirection: "row",
-          gap: 10,
+          gap: isSmallScreen ? 8 : 10,
         }}
       >
         <TouchableOpacity
