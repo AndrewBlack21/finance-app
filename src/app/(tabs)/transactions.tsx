@@ -10,6 +10,7 @@ import {
   Alert,
   Platform,
   RefreshControl,
+  useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -29,6 +30,8 @@ export default function TransactionsScreen() {
   const { profile } = useAuth();
   const { accounts, update: updateAccount } = useAccounts();
   const { colors, isDark } = useAppTheme();
+  const { width: screenWidth } = useWindowDimensions();
+  const isSmallScreen = screenWidth < 390;
 
   const {
     transactions,
@@ -214,7 +217,12 @@ export default function TransactionsScreen() {
         <Text style={[s.title, { color: colors.text }]}>Transações</Text>
       </View>
 
-      <View style={s.summaryRow}>
+      <View
+        style={[
+          s.summaryRow,
+          isSmallScreen && { paddingHorizontal: 14, gap: 8 },
+        ]}
+      >
         <View
           style={[
             s.summaryCard,
@@ -287,7 +295,10 @@ export default function TransactionsScreen() {
         <FlatList
           data={sortedTransactions}
           keyExtractor={(t) => t.id}
-          contentContainerStyle={s.list}
+          contentContainerStyle={[
+            s.list,
+            isSmallScreen && { paddingHorizontal: 12 },
+          ]}
           onEndReached={fetchMore}
           onEndReachedThreshold={0.3}
           ListFooterComponent={
@@ -439,7 +450,11 @@ function TransactionItem({
     <View
       style={[
         s.item,
-        { backgroundColor: colors.card, borderBottomColor: colors.border },
+        {
+          backgroundColor: colors.card,
+          borderColor: colors.border,
+          borderWidth: 1,
+        },
       ]}
     >
       <View style={[s.itemIcon, { backgroundColor: colors.inputBg }]}>
@@ -537,12 +552,17 @@ const s = StyleSheet.create({
   summaryValue: { fontSize: 18, fontWeight: "bold" },
 
   // Lista Limpa
-  list: { paddingHorizontal: 20, paddingBottom: 100 }, // Espaço para o FAB
+  list: { paddingHorizontal: 16, paddingBottom: 110, width: "100%" },
   item: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 16,
-    borderBottomWidth: 1,
+    width: "100%",
+    minWidth: 0,
+    paddingHorizontal: 12,
+    paddingVertical: 13,
+    marginBottom: 8,
+    borderRadius: 16,
+    overflow: "hidden",
   },
   itemIcon: {
     width: 44,
@@ -552,12 +572,24 @@ const s = StyleSheet.create({
     alignItems: "center",
     marginRight: 14,
   },
-  itemInfo: { flex: 1, paddingRight: 10 },
-  itemTitle: { fontSize: 15, fontWeight: "bold", marginBottom: 2 },
-  itemCategory: { fontSize: 13 },
-  itemRight: { alignItems: "flex-end" },
-  itemAmount: { fontSize: 15, fontWeight: "bold", marginBottom: 2 },
-  itemActions: { flexDirection: "row", gap: 12, marginTop: 6 },
+  itemInfo: {
+    flex: 1,
+    minWidth: 0,
+    paddingRight: 8,
+  },
+  itemTitle: { fontSize: 14, fontWeight: "700", marginBottom: 3 },
+  itemCategory: { fontSize: 12 },
+  itemRight: {
+    width: 102,
+    maxWidth: 102,
+    alignItems: "flex-end",
+  },
+  itemAmount: { fontSize: 13, fontWeight: "800", marginBottom: 2 },
+  itemActions: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 5,
+  },
   actionIcon: { padding: 4 },
 
   // Botão Flutuante (FAB)
