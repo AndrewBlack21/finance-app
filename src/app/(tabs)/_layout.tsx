@@ -94,6 +94,7 @@ export default function TabsLayout() {
       <Tabs.Screen name="budget" options={{ href: null, title: "Metas de Gastos" }} />
       <Tabs.Screen name="investments" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="settings" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="shopping-list" options={{ href: null, headerShown: false }} />
     </Tabs>
   );
 }
