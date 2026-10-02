@@ -1,12 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { fixedExpenseService, transactionService } from "@/services";
 import type { FixedExpense, CreateFixedExpense } from "@/types";
+import { useAuth } from "@/hooks/useAuth";
 
 export function useFixedExpenses() {
   const [expenses, setExpenses] = useState<FixedExpense[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const { session, isHydrated } = useAuth();
 
-  const fetch = async () => {
+  const fetch = useCallback(async () => {
     setIsLoading(true);
     const { data } = await fixedExpenseService.list();
 
@@ -48,11 +50,18 @@ export function useFixedExpenses() {
 
     setExpenses(validExpenses);
     setIsLoading(false);
-  };
+  }, [session?.user?.id]);
 
   useEffect(() => {
-    fetch();
-  }, []);
+    if (!isHydrated) return;
+
+    if (session?.user?.id) {
+      void fetch();
+    } else {
+      setExpenses([]);
+      setIsLoading(false);
+    }
+  }, [isHydrated, session?.user?.id, fetch]);
 
   const create = async (payload: CreateFixedExpense) => {
     setIsLoading(true);
