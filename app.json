@@ -38,7 +38,11 @@
         "display": "standalone",
         "orientation": "portrait",
         "start_url": "/"
-      }
+      },
+      "display": "standalone",
+      "startUrl": "/",
+      "orientation": "portrait",
+      "barStyle": "black-translucent"
     },
     "plugins": [
       "expo-router",
