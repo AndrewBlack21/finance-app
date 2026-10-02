@@ -10,4 +10,5 @@ export { categoryService } from "./supabase/accounts-categories-goals";
 export { goalService } from "./supabase/accounts-categories-goals";
 export { installmentService } from "./supabase/installments";
 export { fixedExpenseService } from "./supabase/fixedExpenses";
+export { shoppingListService } from "./supabase/shoppingList";
 export * from "./supabase/invoices";
