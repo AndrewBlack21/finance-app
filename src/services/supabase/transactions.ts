@@ -79,8 +79,31 @@ export const transactionService = {
 
   // Remove
   remove: async (id: string): Promise<ServiceResponse<null>> => {
-    const { error } = await supabase.from("transactions").delete().eq("id", id);
-    return { data: null, error: error?.message ?? null };
+    const { error } = await supabase
+      .from("transactions")
+      .delete()
+      .eq("id", id);
+
+    if (!error) {
+      return { data: null, error: null };
+    }
+
+    const message = error.message ?? "";
+    const normalized = message.toLowerCase();
+
+    if (
+      normalized.includes("foreign key") ||
+      normalized.includes("violates") ||
+      normalized.includes("409")
+    ) {
+      return {
+        data: null,
+        error:
+          "Esta transação está vinculada a outro registro, provavelmente ao pagamento de uma fatura. Use a opção de cancelar/desfazer o pagamento da fatura antes de excluir esta transação.",
+      };
+    }
+
+    return { data: null, error: message };
   },
 
   // Resumo mensal para o dashboard
