@@ -105,7 +105,14 @@ export function useAuth() {
 
   const login = async (credentials: AuthCredentials) => {
     store.setLoading(true);
-    const { error } = await authService.login(credentials);
+
+    const { data: session, error } = await authService.login(credentials);
+
+    if (!error && session) {
+      await syncSession(useAuthStore.getState(), session);
+      store.setHydrated(true);
+    }
+
     store.setLoading(false);
     return { error };
   };
