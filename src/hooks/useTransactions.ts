@@ -52,6 +52,7 @@ export function useTransactions(initialFilters: TransactionFilters = {}) {
   const [hasMore, setHasMore] = useState(true); // ← novo: controla se há mais páginas
   const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<TransactionFilters>(initialFilters);
+  const { session, isHydrated } = useAuth();
 
   const pageRef = useRef(0); // página atual — não causa re-render
 
@@ -115,13 +116,19 @@ export function useTransactions(initialFilters: TransactionFilters = {}) {
     setIsLoadingMore(false);
   };
 
-  // Re-busca sempre que filtros mudam — igual ao original
+  // Só busca quando a sessão já foi hidratada.
+  // Isso evita o primeiro fetch acontecer com auth.uid() vazio.
   useEffect(() => {
-    // Aguarda sessão antes de buscar transações
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) fetch();
-    });
-  }, [fetch]);
+    if (!isHydrated) return;
+
+    if (session?.user?.id) {
+      void fetch();
+    } else {
+      setTransactions([]);
+      setHasMore(false);
+      setError(null);
+    }
+  }, [isHydrated, session?.user?.id, fetch]);
 
   // ── CRUD — mantém comportamento original ─────────────────
   const create = async (payload: CreateTransaction) => {
