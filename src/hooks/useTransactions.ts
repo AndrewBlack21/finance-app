@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { transactionService, supabase } from "@/services";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useAuth } from "@/hooks/useAuth";
 import type {
   Transaction,
   CreateTransaction,
