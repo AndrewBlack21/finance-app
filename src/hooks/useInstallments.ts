@@ -1,8 +1,8 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { installmentService } from "@/services";
 import type { Installment, CreateInstallment } from "@/types";
 import type { InstallmentGroup } from "@/types";
-import { supabase } from "@/services";
+import { useAuth } from "@/hooks/useAuth";
 
 // ================================================================
 // HOOK DE PARCELAS (compras no cartão de crédito)
@@ -15,8 +15,9 @@ import { supabase } from "@/services";
 export function useInstallments() {
   const [installments, setInstallments] = useState<Installment[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const { session, isHydrated } = useAuth();
 
-  const fetch = async () => {
+  const fetch = useCallback(async () => {
     setIsLoading(true);
     const { data } = await installmentService.list();
     const enriched = (data ?? []).map((i) => ({
@@ -26,11 +27,18 @@ export function useInstallments() {
     }));
     setInstallments(enriched);
     setIsLoading(false);
-  };
+  }, [session?.user?.id]);
 
   useEffect(() => {
-    fetch();
-  }, []);
+    if (!isHydrated) return;
+
+    if (session?.user?.id) {
+      void fetch();
+    } else {
+      setInstallments([]);
+      setIsLoading(false);
+    }
+  }, [isHydrated, session?.user?.id, fetch]);
 
   const create = async (payload: CreateInstallment) => {
     setIsLoading(true);
