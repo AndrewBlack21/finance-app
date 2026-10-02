@@ -1501,7 +1501,10 @@ function TransactionRow({ item, currency, colors, onEdit, onDelete }: any) {
     <View
       style={[
         s.item,
-        { backgroundColor: colors.card, borderBottomColor: colors.border },
+        {
+          backgroundColor: colors.card,
+          borderColor: colors.border,
+        },
       ]}
     >
       <View style={[s.itemIcon, { backgroundColor: colors.inputBg }]}>
@@ -1575,7 +1578,10 @@ function InstallmentCard({
     <View
       style={[
         s.installCard,
-        { backgroundColor: colors.card, borderBottomColor: colors.border },
+        {
+          backgroundColor: colors.card,
+          borderColor: colors.border,
+        },
       ]}
     >
       <View style={[s.itemIcon, { backgroundColor: colors.inputBg }]}>
