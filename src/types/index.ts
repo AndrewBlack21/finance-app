@@ -210,6 +210,23 @@ export interface CreateInstallment {
 export type UpdateInstallment = Partial<CreateInstallment> & {
   paid_installments?: number;
 };
+
+export interface ShoppingListItem {
+  id: string;
+  user_id: string;
+  product_name: string;
+  is_purchased: boolean;
+  purchased_value: number | null;
+  purchased_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type CreateShoppingListItem = Pick<
+  ShoppingListItem,
+  "product_name"
+>;
+
 export interface ServiceResponse<T> {
   data: T | null;
   error: string | null;
