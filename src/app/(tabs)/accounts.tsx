@@ -180,29 +180,65 @@ export default function AccountDetailScreen() {
   const handleDeleteTx = (itemId: string) => {
     const confirmAction = async () => {
       const tx = transactions.find((t) => t.id === itemId);
-      if (tx && tx.account_id) {
+
+      // Primeiro excluímos a transação. Assim o saldo não muda
+      // quando o banco rejeita a exclusão por uma chave estrangeira.
+      const { error: transactionError } = await transactionService.remove(itemId);
+
+      if (transactionError) {
+        const message =
+          "Não foi possível excluir a transação.\n\n" + transactionError;
+
+        if (Platform.OS === "web") {
+          window.alert(message);
+        } else {
+          Alert.alert("Não foi possível excluir", transactionError);
+        }
+        return;
+      }
+
+      // Só depois da exclusão confirmada ajustamos o saldo.
+      if (tx?.account_id) {
         const acc = accounts.find((a) => a.id === tx.account_id);
+
         if (acc) {
           const modifier = tx.type === "expense" ? tx.amount : -tx.amount;
-          await updateAccount(acc.id, {
+          const { error: balanceError } = await updateAccount(acc.id, {
             balance: Number(acc.balance) + modifier,
           });
+
+          if (balanceError) {
+            const message =
+              "A transação foi excluída, mas não foi possível atualizar o saldo automaticamente.\n\n" +
+              balanceError;
+
+            if (Platform.OS === "web") {
+              window.alert(message);
+            } else {
+              Alert.alert("Saldo não atualizado", message);
+            }
+          }
         }
       }
-      await transactionService.remove(itemId);
-      loadData();
+
+      await loadData();
     };
 
     if (Platform.OS === "web") {
-      if (window.confirm("Deseja remover esta transação do banco de dados?"))
-        confirmAction();
+      if (window.confirm("Deseja remover esta transação do banco de dados?")) {
+        void confirmAction();
+      }
     } else {
       Alert.alert(
         "Remover",
         "Deseja remover esta transação do banco de dados?",
         [
           { text: "Cancelar", style: "cancel" },
-          { text: "Remover", style: "destructive", onPress: confirmAction },
+          {
+            text: "Remover",
+            style: "destructive",
+            onPress: () => void confirmAction(),
+          },
         ],
       );
     }
