@@ -1178,6 +1178,27 @@ export default function DashboardScreen() {
             </View>
 
             <Text style={[s.menuSectionTitle, { color: colors.subText }]}>
+              UTILIDADES
+            </Text>
+            <View
+              style={[
+                s.menuSection,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+            >
+              <MenuOption
+                icon="cart"
+                color="#10b981"
+                title="Lista de Compras"
+                subtitle="Organize suas compras sem mexer no saldo"
+                onPress={() => {
+                  setIsMenuVisible(false);
+                  router.push("/(tabs)/shopping-list");
+                }}
+              />
+            </View>
+
+            <Text style={[s.menuSectionTitle, { color: colors.subText }]}>
               PREFERÊNCIAS
             </Text>
             <View
