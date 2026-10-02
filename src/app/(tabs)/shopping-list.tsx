@@ -124,36 +124,37 @@ export default function ShoppingListScreen() {
   };
 
   const buildWhatsAppMessage = () => {
+    // Mantemos o texto simples para evitar caracteres quebrados ao abrir o WhatsApp.
     const pendingText =
       pendingItems.length > 0
-        ? pendingItems.map((item) => `• ${item.product_name}`).join("\n")
-        : "• Nenhum item pendente";
+        ? pendingItems.map((item) => `- ${item.product_name}`).join("\n")
+        : "- Nenhum item pendente";
 
     const purchasedText =
       purchasedItems.length > 0
         ? purchasedItems
             .map(
               (item) =>
-                `• ${item.product_name} — ${formatCurrency(
+                `- ${item.product_name} - ${formatCurrency(
                   Number(item.purchased_value ?? 0),
                   "BRL",
                 )}`,
             )
             .join("\n")
-        : "• Nenhum item comprado";
+        : "- Nenhum item comprado";
 
     return [
-      "🛒 *Lista de Compras*",
+      "LISTA DE COMPRAS",
       "",
-      "📝 *FALTA COMPRAR*",
+      "FALTA COMPRAR",
       pendingText,
       "",
-      "✅ *JÁ FOI COMPRADO*",
+      "JA FOI COMPRADO",
       purchasedText,
       "",
-      `💰 *Total já comprado:* ${formatCurrency(purchasedTotal, "BRL")}`,
+      `TOTAL JA COMPRADO: ${formatCurrency(purchasedTotal, "BRL")}`,
       "",
-      "Os valores desta lista são apenas para controle de compras e não alteram o saldo principal.",
+      "Os valores desta lista sao apenas para controle de compras e nao alteram o saldo principal.",
     ].join("\n");
   };
 
@@ -167,7 +168,7 @@ export default function ShoppingListScreen() {
     }
 
     const text = encodeURIComponent(buildWhatsAppMessage());
-    const url = `https://wa.me/?text=${text}`;
+    const url = `https://api.whatsapp.com/send?text=${text}`;
 
     try {
       if (Platform.OS === "web" && typeof window !== "undefined") {
