@@ -2,13 +2,26 @@
   "name": "Finance App",
   "short_name": "Finance",
   "description": "Controle financeiro pessoal",
+  "id": "/",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
+  "display_override": [
+    "standalone"
+  ],
   "background_color": "#ffffff",
   "theme_color": "#6366f1",
   "orientation": "portrait",
   "icons": [
-    { "src": "/assets/icon.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "/assets/icon.png", "sizes": "512x512", "type": "image/png" }
+    {
+      "src": "/assets/icon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/assets/icon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
   ]
 }
