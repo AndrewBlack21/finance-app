@@ -111,9 +111,6 @@ export default function CreditCardsScreen() {
     fetchInvoices();
   }, [creditAccountsOnly.map((a) => a.id).join(",")]);
 
-  // A fatura paga não pode ser recalculada a partir de "paid_installments",
-  // porque esse campo avança a parcela para o próximo mês. O valor histórico
-  // da fatura precisa vir de invoices.paid_amount.
   const invoiceGroups = useMemo(() => {
     const currentMonthIso = new Date().toISOString().slice(0, 7);
 
@@ -121,36 +118,45 @@ export default function CreditCardsScreen() {
       const paidInst = Number(item.paid_installments) || 0;
       const dateStr = item.start_date
         ? item.start_date.split("T")[0]
-        : item.created_at
-          ? item.created_at.split("T")[0]
-          : new Date().toISOString().split("T")[0];
-
+        : item.created_at.split("T")[0];
       const [y, m] = dateStr.split("-").map(Number);
       const totalMonths = y * 12 + (m - 1) + paidInst;
       const refY = Math.floor(totalMonths / 12);
       const refM = (totalMonths % 12) + 1;
-
       return `${refY}-${String(refM).padStart(2, "0")}`;
     };
 
-    return creditAccountsOnly.map((acc) => {
-      const accInstallments = installments.filter(
-        (i) => i.account_id === acc.id,
-      );
+    const getReferenceFromStartAndOffset = (item: Installment, offset: number) => {
+      const dateStr = item.start_date
+        ? item.start_date.split("T")[0]
+        : item.created_at.split("T")[0];
+      const [y, m] = dateStr.split("-").map(Number);
+      const totalMonths = y * 12 + (m - 1) + offset;
+      const refY = Math.floor(totalMonths / 12);
+      const refM = (totalMonths % 12) + 1;
+      return `${refY}-${String(refM).padStart(2, "0")}`;
+    };
 
-      const allActive = accInstallments.filter(
+    const getInstallmentNumberForReference = (item: Installment, reference: string) => {
+      const startRef = getReferenceFromStartAndOffset(item, 0);
+      const [sy, sm] = startRef.split("-").map(Number);
+      const [ry, rm] = reference.split("-").map(Number);
+      const diff = ry * 12 + (rm - 1) - (sy * 12 + (sm - 1));
+      return Math.min(
+        Math.max(diff + 1, 1),
+        Number(item.total_installments) || 1,
+      );
+    };
+
+    return creditAccountsOnly.map((acc) => {
+      const accInstallments = installments.filter((i) => i.account_id === acc.id);
+      const activeInstallments = accInstallments.filter(
         (i) => Number(i.paid_installments) < Number(i.total_installments),
       );
 
-      const accountInvoices = Object.values(
-        invoicesByAccount[acc.id] ?? {},
-      ) as any[];
-
+      const accountInvoices = Object.values(invoicesByAccount[acc.id] ?? {}) as any[];
       const eligibleInvoices = accountInvoices
-        .filter(
-          (invoice) =>
-            invoice.reference && invoice.reference <= currentMonthIso,
-        )
+        .filter((invoice) => invoice.reference && invoice.reference <= currentMonthIso)
         .sort((a, b) => b.reference.localeCompare(a.reference));
 
       const currentInvoice =
@@ -162,18 +168,21 @@ export default function CreditCardsScreen() {
       const currentRef = currentInvoice?.reference ?? currentMonthIso;
       const nextRef = addMonthsToReference(currentRef, 1);
 
-      const currentInstallments = !isInvoicePaid
-        ? allActive.filter(
-            (item) =>
-              item.invoice?.reference === currentRef ||
-              getInstallmentReference(item) === currentRef,
-          )
-        : [];
+      const currentInstallments = accInstallments.filter((item) =>
+        item.invoice?.reference === currentRef ||
+        (!isInvoicePaid &&
+          Number(item.paid_installments) < Number(item.total_installments) &&
+          getInstallmentReference(item) === currentRef),
+      );
 
-      const nextInstallments = allActive.filter(
-        (item) =>
-          item.invoice?.reference === nextRef ||
-          getInstallmentReference(item) === nextRef,
+      const nextInstallments = activeInstallments.filter((item) =>
+        item.invoice?.reference === nextRef ||
+        getInstallmentReference(item) === nextRef,
+      );
+
+      const nextFinishedInstallments = accInstallments.filter((item) =>
+        Number(item.paid_installments) >= Number(item.total_installments) &&
+        getReferenceFromStartAndOffset(item, Number(item.total_installments) - 1) === nextRef,
       );
 
       const calculatedCurrentTotal = currentInstallments.reduce(
@@ -190,6 +199,38 @@ export default function CreditCardsScreen() {
         0,
       );
 
+      const paymentHistory = accountInvoices
+        .filter(
+          (invoice) =>
+            invoice.status === "paga" &&
+            Number(invoice.paid_amount ?? 0) > 0,
+        )
+        .map((invoice) => ({
+          id: invoice.id,
+          accountName: acc.name,
+          reference: invoice.reference,
+          amount: Number(invoice.paid_amount ?? 0),
+          currency: acc.currency ?? "BRL",
+        }))
+        .sort((a, b) => b.reference.localeCompare(a.reference))
+        .slice(0, 12);
+
+      const monthlySpending = Array.from({ length: 6 }, (_, index) => {
+        const now = new Date();
+        const date = new Date(now.getFullYear(), now.getMonth() - (5 - index), 1);
+        const reference = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+        const total = paymentHistory
+          .filter((item) => item.reference === reference)
+          .reduce((sum, item) => sum + item.amount, 0);
+        return {
+          reference,
+          label: new Intl.DateTimeFormat("pt-BR", { month: "short" })
+            .format(date)
+            .replace(".", ""),
+          amount: total,
+        };
+      });
+
       return {
         account: acc,
         invoice: currentInvoice,
@@ -197,62 +238,16 @@ export default function CreditCardsScreen() {
         nextRef,
         currentInstallments,
         nextInstallments,
+        nextFinishedInstallments,
         invoiceTotal,
         nextInvoiceTotal,
         isInvoicePaid,
+        paymentHistory,
+        monthlySpending,
+        getInstallmentNumberForReference,
       };
     });
   }, [creditAccountsOnly, installments, invoicesByAccount]);
-
-  const paymentHistory = useMemo(() => {
-    return creditAccountsOnly
-      .flatMap((account) =>
-        (Object.values(invoicesByAccount[account.id] ?? {}) as any[])
-          .filter(
-            (invoice) =>
-              invoice.status === "paga" &&
-              Number(invoice.paid_amount ?? 0) > 0,
-          )
-          .map((invoice) => ({
-            id: invoice.id,
-            accountName: account.name,
-            reference: invoice.reference,
-            amount: Number(invoice.paid_amount ?? 0),
-            currency: account.currency ?? "BRL",
-          })),
-      )
-      .sort((a, b) => b.reference.localeCompare(a.reference))
-      .slice(0, 12);
-  }, [creditAccountsOnly, invoicesByAccount]);
-
-  const monthlySpending = useMemo(() => {
-    const now = new Date();
-
-    return Array.from({ length: 6 }, (_, index) => {
-      const date = new Date(
-        now.getFullYear(),
-        now.getMonth() - (5 - index),
-        1,
-      );
-      const reference = `${date.getFullYear()}-${String(
-        date.getMonth() + 1,
-      ).padStart(2, "0")}`;
-
-      const total = paymentHistory
-        .filter((item) => item.reference === reference)
-        .reduce((sum, item) => sum + item.amount, 0);
-
-      return {
-        reference,
-        label: new Intl.DateTimeFormat("pt-BR", {
-          month: "short",
-        })
-          .format(date)
-          .replace(".", ""),
-        amount: total,
-      };
-    });
-  }, [paymentHistory]);
 
   const handleOpenPayModal = (group: any) => {
     if (!group.invoice) return;
@@ -505,12 +500,6 @@ export default function CreditCardsScreen() {
             onDelete={handleDelete}
           />
         )}
-        ListFooterComponent={
-          <View>
-            <PaymentHistorySection history={paymentHistory} colors={colors} />
-            <MonthlySpendingChart data={monthlySpending} colors={colors} />
-          </View>
-        }
       />
 
       <TouchableOpacity
@@ -664,22 +653,26 @@ function InvoiceCard({
 }: any) {
   const [expanded, setExpanded] = useState(false);
   const [showNext, setShowNext] = useState(false);
+  const [historyVisible, setHistoryVisible] = useState(false);
 
   const {
     account,
     invoice,
     currentInstallments,
     nextInstallments,
+    nextFinishedInstallments,
     invoiceTotal,
     nextInvoiceTotal,
     isInvoicePaid,
     currentRef,
     nextRef,
+    paymentHistory,
+    monthlySpending,
+    getInstallmentNumberForReference,
   } = group;
 
   const displayList = showNext ? nextInstallments : currentInstallments;
   const displayTotal = showNext ? nextInvoiceTotal : invoiceTotal;
-
   const currentMonthName = getMonthName(currentRef);
   const nextMonthName = getMonthName(nextRef);
 
@@ -688,10 +681,7 @@ function InvoiceCard({
       <TouchableOpacity
         activeOpacity={0.9}
         onPress={() => setExpanded(!expanded)}
-        style={[
-          s.physicalCard,
-          { backgroundColor: account.color || colors.primary, zIndex: 2 },
-        ]}
+        style={[s.physicalCard, { backgroundColor: account.color || colors.primary, zIndex: 2 }]}
       >
         <View style={s.ccTopRow}>
           <View style={s.ccChip}>
@@ -699,14 +689,14 @@ function InvoiceCard({
             <View style={s.ccChipLine} />
             <View style={s.ccChipLine} />
           </View>
-          <Text style={s.ccBankName}>{account.name.toUpperCase()}</Text>
+          <Text style={s.ccBankName} numberOfLines={1} ellipsizeMode="tail">
+            {account.name.toUpperCase()}
+          </Text>
         </View>
 
         <View style={s.ccAmountArea}>
           <Text style={s.ccAmountLabel}>
-            {showNext
-              ? `Previsto: ${nextMonthName}`
-              : `Fatura: ${currentMonthName}`}
+            {showNext ? `Previsão: ${nextMonthName}` : `Fatura: ${currentMonthName}`}
           </Text>
           <Text style={s.ccAmountValue}>
             {formatCurrency(displayTotal, account.currency)}
@@ -725,11 +715,7 @@ function InvoiceCard({
             ]}
           >
             <Text style={s.ccStatusText}>
-              {isInvoicePaid
-                ? "Pago"
-                : invoice
-                  ? "Fechada/Pendente"
-                  : "Em Aberto"}
+              {isInvoicePaid ? "Pago" : invoice ? "Fechada/Pendente" : "Em Aberto"}
             </Text>
           </View>
           <Ionicons
@@ -741,198 +727,238 @@ function InvoiceCard({
       </TouchableOpacity>
 
       {expanded && (
-        <View
-          style={[
-            s.expandedCard,
-            {
-              backgroundColor: colors.card,
-              borderColor: colors.border,
-              zIndex: 1,
-            },
-          ]}
+        <View style={[s.expandedCard, { backgroundColor: colors.card, borderColor: colors.border, zIndex: 1 }]}
         >
-          {!showNext && invoice && !isInvoicePaid && (
+          <View style={s.cardActionRow}>
             <TouchableOpacity
-              style={[s.payBtn, { backgroundColor: "#10b981" }]}
-              onPress={onPayInvoice}
+              style={[s.historyButton, { backgroundColor: colors.inputBg, borderColor: colors.border }]}
+              onPress={() => setHistoryVisible(true)}
             >
+              <Ionicons name="time-outline" size={18} color={colors.primary} />
+              <Text style={[s.historyButtonText, { color: colors.text }]}>Histórico de Pagamentos</Text>
+            </TouchableOpacity>
+          </View>
+
+          {!showNext && invoice && !isInvoicePaid && (
+            <TouchableOpacity style={[s.payBtn, { backgroundColor: "#10b981" }]} onPress={onPayInvoice}>
               <Ionicons name="checkmark-done-circle" size={20} color="#fff" />
               <Text style={s.payBtnText}>Pagar Fatura Completa</Text>
             </TouchableOpacity>
           )}
+
           {!showNext && isInvoicePaid && (
             <View style={{ marginBottom: 16 }}>
-              <Text
-                style={{
-                  color: "#10b981",
-                  fontWeight: "bold",
-                  textAlign: "center",
-                  marginBottom: 12,
-                }}
-              >
-                Fatura Paga com Sucesso! 🎉
+              <Text style={{ color: "#10b981", fontWeight: "bold", textAlign: "center", marginBottom: 12 }}>
+                Fatura Paga com Sucesso!
               </Text>
               <TouchableOpacity
-                style={[
-                  s.payBtn,
-                  {
-                    backgroundColor: colors.inputBg,
-                    borderWidth: 1,
-                    borderColor: colors.border,
-                  },
-                ]}
+                style={[s.payBtn, { backgroundColor: colors.inputBg, borderWidth: 1, borderColor: colors.border }]}
                 onPress={onCancelPayment}
               >
                 <Ionicons name="arrow-undo" size={20} color="#ef4444" />
-                <Text style={[s.payBtnText, { color: "#ef4444" }]}>
-                  Desfazer Pagamento
-                </Text>
+                <Text style={[s.payBtnText, { color: "#ef4444" }]}>Desfazer Pagamento</Text>
               </TouchableOpacity>
             </View>
           )}
 
           <TouchableOpacity
-            style={[
-              s.nextInvoiceBox,
-              {
-                backgroundColor: colors.inputBg,
-                borderColor: showNext ? colors.primary : colors.border,
-              },
-            ]}
+            style={[s.nextInvoiceBox, { backgroundColor: colors.inputBg, borderColor: showNext ? colors.primary : colors.border }]}
             onPress={() => setShowNext(!showNext)}
           >
-            <Ionicons
-              name="calendar-outline"
-              size={20}
-              color={colors.primary}
-            />
+            <Ionicons name="calendar-outline" size={20} color={colors.primary} />
             <View style={{ marginLeft: 12, flex: 1 }}>
-              {showNext ? (
-                <>
-                  <Text style={{ color: colors.text, fontSize: 13 }}>
-                    Total do Mês Atual:{" "}
-                    <Text style={{ fontWeight: "bold" }}>
-                      {formatCurrency(invoiceTotal, account.currency)}
-                    </Text>
-                  </Text>
-                  <Text
-                    style={{
-                      color: colors.primary,
-                      fontSize: 11,
-                      marginTop: 4,
-                      fontWeight: "600",
-                    }}
-                  >
-                    ↑ Ver Fatura Atual
-                  </Text>
-                </>
-              ) : (
-                <>
-                  <Text style={{ color: colors.text, fontSize: 13 }}>
-                    Previsão Próximo Mês:{" "}
-                    <Text style={{ fontWeight: "bold" }}>
-                      {formatCurrency(nextInvoiceTotal, account.currency)}
-                    </Text>
-                  </Text>
-                  <Text
-                    style={{
-                      color: colors.primary,
-                      fontSize: 11,
-                      marginTop: 4,
-                      fontWeight: "600",
-                    }}
-                  >
-                    ↓ Ver Próximas Compras
-                  </Text>
-                </>
-              )}
+              <Text style={{ color: colors.text, fontSize: 13 }}>
+                {showNext ? "Fatura Atual: " : "Próximo mês: "}
+                <Text style={{ fontWeight: "bold" }}>
+                  {formatCurrency(showNext ? invoiceTotal : nextInvoiceTotal, account.currency)}
+                </Text>
+              </Text>
+              <Text style={{ color: colors.primary, fontSize: 11, marginTop: 4, fontWeight: "600" }}>
+                {showNext ? "↑ Voltar para Fatura Atual" : "↓ Ver Próximas Compras"}
+              </Text>
             </View>
           </TouchableOpacity>
 
-          <Text
-            style={{
-              color: colors.text,
-              fontWeight: "bold",
-              marginTop: 8,
-              marginBottom: 8,
-              fontSize: 14,
-            }}
-          >
-            {showNext
-              ? `Detalhes de ${nextMonthName}:`
-              : `Detalhes de ${currentMonthName}:`}
+          <Text style={{ color: colors.text, fontWeight: "bold", marginTop: 8, marginBottom: 8, fontSize: 14 }}>
+            {showNext ? `Próximo mês — ${nextMonthName}` : `Detalhamento da Fatura — ${currentMonthName}`}
           </Text>
 
-          {displayList.length === 0 && (
-            <Text
-              style={{
-                color: colors.subText,
-                fontStyle: "italic",
-                textAlign: "center",
-                paddingVertical: 20,
-              }}
-            >
-              Nenhuma compra para exibir.
-            </Text>
+          {!showNext ? (
+            currentInstallments.length === 0 ? (
+              <Text style={[s.emptyDetailText, { color: colors.subText }]}>Nenhuma compra registrada nesta fatura.</Text>
+            ) : (
+              currentInstallments.map((item: Installment, idx: number) => {
+                const parcela = getInstallmentNumberForReference(item, currentRef);
+                return (
+                  <DetailItem
+                    key={item.id}
+                    item={item}
+                    installmentNumber={parcela}
+                    totalInstallments={item.total_installments}
+                    currency={account.currency}
+                    colors={colors}
+                    isLast={idx === currentInstallments.length - 1}
+                    status={isInvoicePaid ? "Pago" : "Pendente"}
+                    onEdit={onEdit}
+                    onDelete={onDelete}
+                  />
+                );
+              })
+            )
+          ) : (
+            <View>
+              <Text style={[s.detailGroupTitle, { color: "#f59e0b" }]}>Compras pendentes</Text>
+              {nextInstallments.length === 0 ? (
+                <Text style={[s.emptyDetailText, { color: colors.subText }]}>Nenhuma compra pendente para o próximo mês.</Text>
+              ) : (
+                nextInstallments.map((item: Installment, idx: number) => (
+                  <DetailItem
+                    key={`pending-${item.id}`}
+                    item={item}
+                    installmentNumber={getInstallmentNumberForReference(item, nextRef)}
+                    totalInstallments={item.total_installments}
+                    currency={account.currency}
+                    colors={colors}
+                    isLast={idx === nextInstallments.length - 1 && nextFinishedInstallments.length === 0}
+                    status="Pendente"
+                    onEdit={onEdit}
+                    onDelete={onDelete}
+                  />
+                ))
+              )}
+
+              <Text style={[s.detailGroupTitle, { color: "#10b981" }]}>Compras finalizadas</Text>
+              {nextFinishedInstallments.length === 0 ? (
+                <Text style={[s.emptyDetailText, { color: colors.subText }]}>Nenhuma compra finalizada neste mês.</Text>
+              ) : (
+                nextFinishedInstallments.map((item: Installment, idx: number) => (
+                  <DetailItem
+                    key={`finished-${item.id}`}
+                    item={item}
+                    installmentNumber={item.total_installments}
+                    totalInstallments={item.total_installments}
+                    currency={account.currency}
+                    colors={colors}
+                    isLast={idx === nextFinishedInstallments.length - 1}
+                    status="Finalizada"
+                    onEdit={onEdit}
+                    onDelete={onDelete}
+                  />
+                ))
+              )}
+            </View>
           )}
 
-          {displayList.map((item: Installment, idx: number) => {
-            const currentParcela = Number(item.paid_installments) + 1;
-            return (
-              <View
-                key={item.id}
-                style={[
-                  s.itemRow,
-                  {
-                    borderBottomColor: colors.border,
-                    borderBottomWidth: idx === displayList.length - 1 ? 0 : 1,
-                  },
-                ]}
+          <MonthlySpendingChart
+            accountName={account.name}
+            data={monthlySpending}
+            colors={colors}
+          />
+
+          <Modal
+            visible={historyVisible}
+            transparent
+            animationType="slide"
+            onRequestClose={() => setHistoryVisible(false)}
+          >
+            <View style={s.modalOverlay}>
+              <View style={[s.historyModal, { backgroundColor: colors.card, borderColor: colors.border }]}
               >
-                <View style={[s.itemIcon, { backgroundColor: colors.inputBg }]}>
-                  <Ionicons
-                    name="card-outline"
-                    size={18}
-                    color={colors.primary}
-                  />
-                </View>
-                <View style={s.itemInfo}>
-                  <Text
-                    style={[s.itemTitle, { color: colors.text }]}
-                    numberOfLines={1}
-                  >
-                    {item.title}
-                  </Text>
-                  <Text style={[s.itemSub, { color: colors.subText }]}>
-                    Parcela {currentParcela} de {item.total_installments}
-                  </Text>
-                </View>
-                <View style={s.itemRight}>
-                  <Text style={[s.itemValue, { color: colors.text }]}>
-                    {formatCurrency(item.installment_amount, account.currency)}
-                  </Text>
-                  <View style={s.itemActions}>
-                    <TouchableOpacity onPress={() => onEdit(item)}>
-                      <Ionicons
-                        name="create-outline"
-                        size={18}
-                        color={colors.subText}
-                      />
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => onDelete(item.id)}>
-                      <Ionicons
-                        name="trash-outline"
-                        size={18}
-                        color="#ef4444"
-                      />
-                    </TouchableOpacity>
+                <View style={s.historyModalHeader}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[s.modalTitle, { color: colors.text, marginBottom: 2 }]}>Histórico — {account.name}</Text>
+                    <Text style={[s.sectionSubtitle, { color: colors.subText }]}>Meses em que a fatura foi paga</Text>
                   </View>
+                  <TouchableOpacity onPress={() => setHistoryVisible(false)} style={[s.modalCloseButton, { backgroundColor: colors.inputBg }]}
+                  >
+                    <Ionicons name="close" size={20} color={colors.text} />
+                  </TouchableOpacity>
                 </View>
+
+                <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 480 }}>
+                  {paymentHistory.length === 0 ? (
+                    <View style={s.historyEmpty}>
+                      <Ionicons name="receipt-outline" size={32} color={colors.subText} />
+                      <Text style={[s.historyEmptyText, { color: colors.subText }]}>Nenhum pagamento registrado para este cartão.</Text>
+                    </View>
+                  ) : (
+                    paymentHistory.map((item: any) => (
+                      <View key={item.id} style={[s.historyRow, { borderBottomColor: colors.border, borderBottomWidth: 1 }]}
+                      >
+                        <View style={[s.historyRowIcon, { backgroundColor: colors.inputBg }]}
+                        >
+                          <Ionicons name="checkmark-circle" size={19} color="#10b981" />
+                        </View>
+                        <View style={s.historyRowInfo}>
+                          <Text style={[s.historyRowTitle, { color: colors.text }]}>
+                            {formatInvoiceMonth(item.reference)}
+                          </Text>
+                          <Text style={[s.historyRowSub, { color: colors.subText }]}>{account.name}</Text>
+                        </View>
+                        <Text style={[s.historyRowAmount, { color: "#10b981" }]}>{formatCurrency(item.amount, item.currency)}</Text>
+                      </View>
+                    ))
+                  )}
+                </ScrollView>
+
+                <TouchableOpacity style={[s.closeHistoryButton, { backgroundColor: colors.primary }]} onPress={() => setHistoryVisible(false)}>
+                  <Text style={s.closeHistoryButtonText}>Fechar</Text>
+                </TouchableOpacity>
               </View>
-            );
-          })}
+            </View>
+          </Modal>
         </View>
       )}
+    </View>
+  );
+}
+
+function DetailItem({
+  item,
+  installmentNumber,
+  totalInstallments,
+  currency,
+  colors,
+  isLast,
+  status,
+  onEdit,
+  onDelete,
+}: any) {
+  const statusColor = status === "Pendente" ? "#f59e0b" : "#10b981";
+  return (
+    <View
+      style={[
+        s.itemRow,
+        !isLast && { borderBottomColor: colors.border, borderBottomWidth: 1 },
+      ]}
+    >
+      <View style={[s.itemIcon, { backgroundColor: colors.inputBg }]}
+      >
+        <Ionicons name="card-outline" size={18} color={colors.primary} />
+      </View>
+      <View style={s.itemInfo}>
+        <Text style={[s.itemTitle, { color: colors.text }]} numberOfLines={1}>
+          {item.title}
+        </Text>
+        <Text style={[s.itemSub, { color: colors.subText }]}>
+          Parcela {installmentNumber} de {totalInstallments}
+        </Text>
+        <View style={[s.statusPill, { backgroundColor: `${statusColor}18` }]}
+        >
+          <Text style={[s.statusPillText, { color: statusColor }]}>{status}</Text>
+        </View>
+      </View>
+      <View style={s.itemRight}>
+        <Text style={[s.itemValue, { color: colors.text }]}>{formatCurrency(item.installment_amount, currency)}</Text>
+        <View style={s.itemActions}>
+          <TouchableOpacity onPress={() => onEdit(item)}>
+            <Ionicons name="create-outline" size={18} color={colors.subText} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => onDelete(item.id)}>
+            <Ionicons name="trash-outline" size={18} color="#ef4444" />
+          </TouchableOpacity>
+        </View>
+      </View>
     </View>
   );
 }
@@ -947,63 +973,16 @@ function formatInvoiceMonth(reference: string) {
   }).format(date);
 }
 
-function PaymentHistorySection({ history, colors }: any) {
-  return (
-    <View style={[s.historySection, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <View style={s.sectionHeaderRow}>
-        <View>
-          <Text style={[s.sectionTitle, { color: colors.text }]}>Histórico de Pagamentos</Text>
-          <Text style={[s.sectionSubtitle, { color: colors.subText }]}>Faturas pagas nos meses anteriores</Text>
-        </View>
-        <View style={s.historyIcon}>
-          <Ionicons name="time-outline" size={20} color={colors.primary} />
-        </View>
-      </View>
-
-      {history.length === 0 ? (
-        <View style={s.historyEmpty}>
-          <Ionicons name="receipt-outline" size={28} color={colors.subText} />
-          <Text style={[s.historyEmptyText, { color: colors.subText }]}>Nenhuma fatura paga registrada ainda.</Text>
-        </View>
-      ) : (
-        history.map((item: any, index: number) => (
-          <View
-            key={item.id}
-            style={[
-              s.historyRow,
-              index < history.length - 1 && { borderBottomWidth: 1, borderBottomColor: colors.border },
-            ]}
-          >
-            <View style={[s.historyRowIcon, { backgroundColor: colors.inputBg }]}>
-              <Ionicons name="checkmark-circle" size={19} color="#10b981" />
-            </View>
-            <View style={s.historyRowInfo}>
-              <Text style={[s.historyRowTitle, { color: colors.text }]} numberOfLines={1}>
-                {item.accountName}
-              </Text>
-              <Text style={[s.historyRowSub, { color: colors.subText }]} numberOfLines={1}>
-                {formatInvoiceMonth(item.reference)}
-              </Text>
-            </View>
-            <Text style={[s.historyRowAmount, { color: "#10b981" }]}>
-              {formatCurrency(item.amount, item.currency)}
-            </Text>
-          </View>
-        ))
-      )}
-    </View>
-  );
-}
-
-function MonthlySpendingChart({ data, colors }: any) {
+function MonthlySpendingChart({ accountName, data, colors }: any) {
   const maxValue = Math.max(...data.map((item: any) => item.amount), 1);
 
   return (
-    <View style={[s.chartSection, { backgroundColor: colors.card, borderColor: colors.border }]}>
+    <View style={[s.chartSection, { backgroundColor: colors.card, borderColor: colors.border }]}
+    >
       <View style={s.sectionHeaderRow}>
         <View style={{ flex: 1 }}>
-          <Text style={[s.sectionTitle, { color: colors.text }]}>Balanço Mensal do Cartão</Text>
-          <Text style={[s.sectionSubtitle, { color: colors.subText }]}>Valores efetivamente pagos nas faturas</Text>
+          <Text style={[s.sectionTitle, { color: colors.text }]}>Balanço Mensal — {accountName}</Text>
+          <Text style={[s.sectionSubtitle, { color: colors.subText }]}>Histórico dos pagamentos deste cartão</Text>
         </View>
         <Ionicons name="bar-chart-outline" size={22} color={colors.primary} />
       </View>
@@ -1016,28 +995,18 @@ function MonthlySpendingChart({ data, colors }: any) {
               <Text style={[s.chartValue, { color: colors.text }]} numberOfLines={1}>
                 {item.amount > 0 ? formatCurrency(item.amount, "BRL") : "R$ 0"}
               </Text>
-              <View style={[s.chartBarTrack, { backgroundColor: colors.inputBg }]}>
-                <View
-                  style={[
-                    s.chartBar,
-                    {
-                      height: `${percentage}%`,
-                      backgroundColor: colors.primary,
-                    },
-                  ]}
-                />
+              <View style={[s.chartBarTrack, { backgroundColor: colors.inputBg }]}
+              >
+                <View style={[s.chartBar, { height: `${percentage}%`, backgroundColor: colors.primary }]} />
               </View>
               <Text style={[s.chartLabel, { color: colors.subText }]}>{item.label}</Text>
             </View>
           );
         })}
       </View>
-
       <View style={[s.chartLegend, { borderTopColor: colors.border }]}>
         <Ionicons name="information-circle-outline" size={15} color={colors.subText} />
-        <Text style={[s.chartLegendText, { color: colors.subText }]}>
-          O gráfico usa o valor pago registrado em cada fatura.
-        </Text>
+        <Text style={[s.chartLegendText, { color: colors.subText }]}>Valor pago nas faturas deste cartão.</Text>
       </View>
     </View>
   );
