@@ -106,9 +106,9 @@ const s = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 12,
+    borderRadius: 14,
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 15,
   },
   disabled: { opacity: 0.5 },
 
@@ -118,16 +118,17 @@ const s = StyleSheet.create({
   ghost: { backgroundColor: "transparent" },
 
   // Button labels
-  btnLabel: { fontSize: 16, fontWeight: "600" },
+  btnLabel: { fontSize: 15, fontWeight: "800", letterSpacing: 0.1 },
   primaryLabel: { color: "#fff" },
 
   // Input
-  inputWrapper: { gap: 6 },
-  label: { fontSize: 14, fontWeight: "500" },
+  inputWrapper: { gap: 7 },
+  label: { fontSize: 12, fontWeight: "700", letterSpacing: 0.2 },
   input: {
+    minHeight: 50,
     borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 16,
+    borderRadius: 14,
+    paddingHorizontal: 15,
     paddingVertical: 12,
     fontSize: 16,
   },
