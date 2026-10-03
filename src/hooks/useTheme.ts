@@ -15,7 +15,6 @@ export const useThemeStore = create<ThemeState>((set) => ({
   },
 }));
 
-// Carrega o tema salvo imediatamente ao iniciar a aplicação
 AsyncStorage.getItem("@app_theme").then((saved) => {
   if (saved === "light" || saved === "dark" || saved === "auto") {
     useThemeStore.setState({ theme: saved });
@@ -29,13 +28,17 @@ export function useAppTheme() {
   const isDark = theme === "auto" ? systemTheme === "dark" : theme === "dark";
 
   const colors = {
-    bg: isDark ? "#111827" : "#f8fafc",
-    card: isDark ? "#1f2937" : "#fff",
-    text: isDark ? "#f9fafb" : "#111827",
-    subText: isDark ? "#9ca3af" : "#4b5563",
-    border: isDark ? "#374151" : "#e5e7eb",
-    inputBg: isDark ? "#374151" : "#f9fafb",
-    primary: "#6366f1",
+    bg: isDark ? "#0B1220" : "#F7F8FC",
+    card: isDark ? "#121C2D" : "#FFFFFF",
+    text: isDark ? "#F8FAFC" : "#0F172A",
+    subText: isDark ? "#94A3B8" : "#64748B",
+    border: isDark ? "#22304A" : "#E2E8F0",
+    inputBg: isDark ? "#17243A" : "#F1F5F9",
+    primary: "#6366F1",
+    success: "#10B981",
+    warning: "#F59E0B",
+    danger: "#EF4444",
+    info: "#38BDF8",
   };
 
   return { theme, setTheme, isDark, colors };
