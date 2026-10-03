@@ -937,6 +937,112 @@ function InvoiceCard({
   );
 }
 
+function formatInvoiceMonth(reference: string) {
+  if (!reference) return "";
+  const [year, month] = reference.split("-").map(Number);
+  const date = new Date(year, month - 1, 1);
+  return new Intl.DateTimeFormat("pt-BR", {
+    month: "long",
+    year: "numeric",
+  }).format(date);
+}
+
+function PaymentHistorySection({ history, colors }: any) {
+  return (
+    <View style={[s.historySection, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View style={s.sectionHeaderRow}>
+        <View>
+          <Text style={[s.sectionTitle, { color: colors.text }]}>Histórico de Pagamentos</Text>
+          <Text style={[s.sectionSubtitle, { color: colors.subText }]}>Faturas pagas nos meses anteriores</Text>
+        </View>
+        <View style={s.historyIcon}>
+          <Ionicons name="time-outline" size={20} color={colors.primary} />
+        </View>
+      </View>
+
+      {history.length === 0 ? (
+        <View style={s.historyEmpty}>
+          <Ionicons name="receipt-outline" size={28} color={colors.subText} />
+          <Text style={[s.historyEmptyText, { color: colors.subText }]}>Nenhuma fatura paga registrada ainda.</Text>
+        </View>
+      ) : (
+        history.map((item: any, index: number) => (
+          <View
+            key={item.id}
+            style={[
+              s.historyRow,
+              index < history.length - 1 && { borderBottomWidth: 1, borderBottomColor: colors.border },
+            ]}
+          >
+            <View style={[s.historyRowIcon, { backgroundColor: colors.inputBg }]}>
+              <Ionicons name="checkmark-circle" size={19} color="#10b981" />
+            </View>
+            <View style={s.historyRowInfo}>
+              <Text style={[s.historyRowTitle, { color: colors.text }]} numberOfLines={1}>
+                {item.accountName}
+              </Text>
+              <Text style={[s.historyRowSub, { color: colors.subText }]} numberOfLines={1}>
+                {formatInvoiceMonth(item.reference)}
+              </Text>
+            </View>
+            <Text style={[s.historyRowAmount, { color: "#10b981" }]}>
+              {formatCurrency(item.amount, item.currency)}
+            </Text>
+          </View>
+        ))
+      )}
+    </View>
+  );
+}
+
+function MonthlySpendingChart({ data, colors }: any) {
+  const maxValue = Math.max(...data.map((item: any) => item.amount), 1);
+
+  return (
+    <View style={[s.chartSection, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View style={s.sectionHeaderRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={[s.sectionTitle, { color: colors.text }]}>Balanço Mensal do Cartão</Text>
+          <Text style={[s.sectionSubtitle, { color: colors.subText }]}>Valores efetivamente pagos nas faturas</Text>
+        </View>
+        <Ionicons name="bar-chart-outline" size={22} color={colors.primary} />
+      </View>
+
+      <View style={s.chartArea}>
+        {data.map((item: any) => {
+          const percentage = item.amount > 0 ? Math.max((item.amount / maxValue) * 100, 4) : 0;
+          return (
+            <View key={item.reference} style={s.chartColumn}>
+              <Text style={[s.chartValue, { color: colors.text }]} numberOfLines={1}>
+                {item.amount > 0 ? formatCurrency(item.amount, "BRL") : "R$ 0"}
+              </Text>
+              <View style={[s.chartBarTrack, { backgroundColor: colors.inputBg }]}>
+                <View
+                  style={[
+                    s.chartBar,
+                    {
+                      height: `${percentage}%`,
+                      backgroundColor: colors.primary,
+                    },
+                  ]}
+                />
+              </View>
+              <Text style={[s.chartLabel, { color: colors.subText }]}>{item.label}</Text>
+            </View>
+          );
+        })}
+      </View>
+
+      <View style={[s.chartLegend, { borderTopColor: colors.border }]}>
+        <Ionicons name="information-circle-outline" size={15} color={colors.subText} />
+        <Text style={[s.chartLegendText, { color: colors.subText }]}>
+          O gráfico usa o valor pago registrado em cada fatura.
+        </Text>
+      </View>
+    </View>
+  );
+}
+
 function InstallmentFormModal({
   visible,
   onClose,
