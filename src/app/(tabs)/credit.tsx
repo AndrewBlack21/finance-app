@@ -111,82 +111,90 @@ export default function CreditCardsScreen() {
     fetchInvoices();
   }, [creditAccountsOnly.map((a) => a.id).join(",")]);
 
-  // 👇 LÓGICA BLINDADA E SIMPLIFICADA PARA EVITAR ZERAR OS VALORES
+  // A fatura paga não pode ser recalculada a partir de "paid_installments",
+  // porque esse campo avança a parcela para o próximo mês. O valor histórico
+  // da fatura precisa vir de invoices.paid_amount.
   const invoiceGroups = useMemo(() => {
     const currentMonthIso = new Date().toISOString().slice(0, 7);
-    const nextMonthDate = new Date();
-    nextMonthDate.setMonth(nextMonthDate.getMonth() + 1);
-    const nextMonthIso = nextMonthDate.toISOString().slice(0, 7);
+
+    const getInstallmentReference = (item: Installment) => {
+      const paidInst = Number(item.paid_installments) || 0;
+      const dateStr = item.start_date
+        ? item.start_date.split("T")[0]
+        : item.created_at
+          ? item.created_at.split("T")[0]
+          : new Date().toISOString().split("T")[0];
+
+      const [y, m] = dateStr.split("-").map(Number);
+      const totalMonths = y * 12 + (m - 1) + paidInst;
+      const refY = Math.floor(totalMonths / 12);
+      const refM = (totalMonths % 12) + 1;
+
+      return `${refY}-${String(refM).padStart(2, "0")}`;
+    };
 
     return creditAccountsOnly.map((acc) => {
       const accInstallments = installments.filter(
         (i) => i.account_id === acc.id,
       );
+
       const allActive = accInstallments.filter(
         (i) => Number(i.paid_installments) < Number(i.total_installments),
       );
 
-      const currentInstallments: Installment[] = [];
-      const nextInstallments: Installment[] = [];
+      const accountInvoices = Object.values(
+        invoicesByAccount[acc.id] ?? {},
+      ) as any[];
 
-      allActive.forEach((item) => {
-        const paidInst = Number(item.paid_installments) || 0;
-        const totalInst = Number(item.total_installments) || 1;
-
-        // Matemática direta baseada na data da compra
-        const dateStr = item.start_date
-          ? item.start_date.split("T")[0]
-          : item.created_at
-            ? item.created_at.split("T")[0]
-            : new Date().toISOString().split("T")[0];
-        const [y, m] = dateStr.split("-").map(Number);
-        const totalMonths = y * 12 + (m - 1) + paidInst;
-        const refY = Math.floor(totalMonths / 12);
-        const refM = (totalMonths % 12) + 1;
-        const itemRef = `${refY}-${String(refM).padStart(2, "0")}`;
-
-        let isCurrent = false;
-
-        if (
-          item.invoice?.status === "aberta" ||
-          item.invoice?.status === "fechada"
-        ) {
-          isCurrent = true;
-        } else if (item.invoice?.status === "paga") {
-          isCurrent = false;
-        } else {
-          isCurrent = itemRef <= currentMonthIso;
-        }
-
-        if (isCurrent) {
-          currentInstallments.push(item);
-          if (paidInst + 1 < totalInst) {
-            nextInstallments.push({ ...item, paid_installments: paidInst + 1 });
-          }
-        } else if (itemRef === nextMonthIso) {
-          nextInstallments.push(item);
-        }
-      });
+      const eligibleInvoices = accountInvoices
+        .filter(
+          (invoice) =>
+            invoice.reference && invoice.reference <= currentMonthIso,
+        )
+        .sort((a, b) => b.reference.localeCompare(a.reference));
 
       const currentInvoice =
-        currentInstallments.find((i) => i.invoice)?.invoice ?? null;
-      const isInvoicePaid =
-        currentInstallments.length === 0 && allActive.length > 0;
+        eligibleInvoices.find((invoice) => invoice.status !== "paga") ??
+        eligibleInvoices.find((invoice) => invoice.status === "paga") ??
+        null;
 
-      const invoiceTotal = currentInstallments.reduce(
-        (sum, i) => sum + Number(i.installment_amount),
+      const isInvoicePaid = currentInvoice?.status === "paga";
+      const currentRef = currentInvoice?.reference ?? currentMonthIso;
+      const nextRef = addMonthsToReference(currentRef, 1);
+
+      const currentInstallments = !isInvoicePaid
+        ? allActive.filter(
+            (item) =>
+              item.invoice?.reference === currentRef ||
+              getInstallmentReference(item) === currentRef,
+          )
+        : [];
+
+      const nextInstallments = allActive.filter(
+        (item) =>
+          item.invoice?.reference === nextRef ||
+          getInstallmentReference(item) === nextRef,
+      );
+
+      const calculatedCurrentTotal = currentInstallments.reduce(
+        (sum, item) => sum + Number(item.installment_amount),
         0,
       );
+
+      const invoiceTotal = isInvoicePaid
+        ? Number(currentInvoice?.paid_amount ?? 0)
+        : calculatedCurrentTotal;
+
       const nextInvoiceTotal = nextInstallments.reduce(
-        (sum, i) => sum + Number(i.installment_amount),
+        (sum, item) => sum + Number(item.installment_amount),
         0,
       );
 
       return {
         account: acc,
         invoice: currentInvoice,
-        currentRef: currentInvoice ? currentInvoice.reference : currentMonthIso,
-        nextRef: nextMonthIso,
+        currentRef,
+        nextRef,
         currentInstallments,
         nextInstallments,
         invoiceTotal,
@@ -194,7 +202,57 @@ export default function CreditCardsScreen() {
         isInvoicePaid,
       };
     });
-  }, [creditAccountsOnly, installments]);
+  }, [creditAccountsOnly, installments, invoicesByAccount]);
+
+  const paymentHistory = useMemo(() => {
+    return creditAccountsOnly
+      .flatMap((account) =>
+        (Object.values(invoicesByAccount[account.id] ?? {}) as any[])
+          .filter(
+            (invoice) =>
+              invoice.status === "paga" &&
+              Number(invoice.paid_amount ?? 0) > 0,
+          )
+          .map((invoice) => ({
+            id: invoice.id,
+            accountName: account.name,
+            reference: invoice.reference,
+            amount: Number(invoice.paid_amount ?? 0),
+            currency: account.currency ?? "BRL",
+          })),
+      )
+      .sort((a, b) => b.reference.localeCompare(a.reference))
+      .slice(0, 12);
+  }, [creditAccountsOnly, invoicesByAccount]);
+
+  const monthlySpending = useMemo(() => {
+    const now = new Date();
+
+    return Array.from({ length: 6 }, (_, index) => {
+      const date = new Date(
+        now.getFullYear(),
+        now.getMonth() - (5 - index),
+        1,
+      );
+      const reference = `${date.getFullYear()}-${String(
+        date.getMonth() + 1,
+      ).padStart(2, "0")}`;
+
+      const total = paymentHistory
+        .filter((item) => item.reference === reference)
+        .reduce((sum, item) => sum + item.amount, 0);
+
+      return {
+        reference,
+        label: new Intl.DateTimeFormat("pt-BR", {
+          month: "short",
+        })
+          .format(date)
+          .replace(".", ""),
+        amount: total,
+      };
+    });
+  }, [paymentHistory]);
 
   const handleOpenPayModal = (group: any) => {
     if (!group.invoice) return;
@@ -447,6 +505,12 @@ export default function CreditCardsScreen() {
             onDelete={handleDelete}
           />
         )}
+        ListFooterComponent={
+          <View>
+            <PaymentHistorySection history={paymentHistory} colors={colors} />
+            <MonthlySpendingChart data={monthlySpending} colors={colors} />
+          </View>
+        }
       />
 
       <TouchableOpacity
