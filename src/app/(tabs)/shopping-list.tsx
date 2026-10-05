@@ -20,6 +20,7 @@ import { useRouter } from "expo-router";
 import { useAppTheme } from "@/hooks/useTheme";
 import { useShoppingList } from "@/hooks/useShoppingList";
 import { formatCurrency } from "@/utils";
+import { OnboardingHelp } from "@/components/onboarding/OnboardingHelp";
 
 export default function ShoppingListScreen() {
   const router = useRouter();
@@ -212,13 +213,25 @@ export default function ShoppingListScreen() {
             </Text>
           </View>
 
-          <TouchableOpacity
-            onPress={handleShareWhatsApp}
-            style={s.whatsappBtn}
-            accessibilityLabel="Compartilhar lista no WhatsApp"
-          >
-            <Ionicons name="logo-whatsapp" size={21} color="#fff" />
-          </TouchableOpacity>
+          <View style={s.headerActions}>
+            <OnboardingHelp
+              title="Como funciona a Lista de Compras"
+              description="Use esta área para controlar produtos que faltam em casa. Ela é independente do seu saldo financeiro."
+              bullets={[
+                "Adicione o produto que está faltando.",
+                "Ao comprar, marque o item e informe o valor pago.",
+                "O valor fica somente no controle da lista e não cria uma transação.",
+                "Use o WhatsApp para compartilhar o que falta e o que já foi comprado.",
+              ]}
+            />
+            <TouchableOpacity
+              onPress={handleShareWhatsApp}
+              style={s.whatsappBtn}
+              accessibilityLabel="Compartilhar lista no WhatsApp"
+            >
+              <Ionicons name="logo-whatsapp" size={21} color="#fff" />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <ScrollView
@@ -636,6 +649,11 @@ const s = StyleSheet.create({
   },
   headerTitle: { fontSize: 19, fontWeight: "800" },
   headerSubtitle: { fontSize: 11, marginTop: 2 },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
   whatsappBtn: {
     width: 42,
     height: 42,
