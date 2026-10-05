@@ -29,6 +29,7 @@ import { useInstallments } from "@/hooks/useInstallments";
 import { formatCurrency } from "@/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { useAppTheme } from "@/hooks/useTheme";
+import { OnboardingHelp } from "@/components/onboarding/OnboardingHelp";
 
 const PALETTE = [
   "#3b82f6",
@@ -774,13 +775,25 @@ export default function ChartsScreen() {
       <View
         style={[s.headerContainer, { paddingTop: Math.max(insets.top, 10) }]}
       >
-        <View style={{ marginTop: 16 }}>
-          <Text style={[s.headerTitle, { color: colors.text }]}>
-            Estatísticas
-          </Text>
-          <Text style={[s.headerSubtitle, { color: colors.subText }]}>
-            Análise financeira detalhada
-          </Text>
+        <View style={s.headerRow}>
+          <View style={{ flex: 1, minWidth: 0, marginTop: 16 }}>
+            <Text style={[s.headerTitle, { color: colors.text }]}>
+              Estatísticas
+            </Text>
+            <Text style={[s.headerSubtitle, { color: colors.subText }]}>
+              Análise financeira detalhada
+            </Text>
+          </View>
+          <OnboardingHelp
+            title="Como usar os Relatórios"
+            description="Os relatórios ajudam você a entender para onde seu dinheiro está indo e a comparar períodos."
+            bullets={[
+              "Mês: veja a distribuição dos gastos por categoria.",
+              "Semestral: compare receitas e despesas dos últimos meses.",
+              "Ano: acompanhe a evolução financeira ao longo dos 12 meses.",
+              "Use os gráficos como apoio para identificar padrões de gasto.",
+            ]}
+          />
         </View>
       </View>
 
@@ -983,6 +996,11 @@ const s = StyleSheet.create({
   },
 
   headerContainer: { paddingHorizontal: 24, paddingBottom: 16 },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
   headerTitle: { fontSize: 26, fontWeight: "bold" },
   headerSubtitle: { fontSize: 14, marginTop: 4 },
 
