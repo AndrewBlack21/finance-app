@@ -22,6 +22,7 @@ import type { Installment } from "@/types";
 import { transactionService, invoiceService } from "@/services";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { OnboardingHelp } from "@/components/onboarding/OnboardingHelp";
 
 const showWebSafeAlert = (title: string, message: string) => {
   if (Platform.OS === "web") {
@@ -476,12 +477,26 @@ export default function CreditCardsScreen() {
       ]}
     >
       <View style={s.headerContainer}>
-        <Text style={[s.headerTitle, { color: colors.text }]}>
-          Cartões de Crédito
-        </Text>
-        <Text style={[s.headerSubtitle, { color: colors.subText }]}>
-          Acompanhe faturas e compras parceladas
-        </Text>
+        <View style={s.headerRow}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={[s.headerTitle, { color: colors.text }]}>
+              Cartões de Crédito
+            </Text>
+            <Text style={[s.headerSubtitle, { color: colors.subText }]}>
+              Acompanhe faturas e compras parceladas
+            </Text>
+          </View>
+          <OnboardingHelp
+            title="Como funcionam os cartões"
+            description="Use esta área para controlar suas faturas e acompanhar compras parceladas sem perder de vista o que já foi pago e o que virá nos próximos meses."
+            bullets={[
+              "O cartão mostra a fatura atual e a previsão do próximo mês.",
+              "Compras parceladas aparecem nas faturas seguintes até a última parcela.",
+              "O histórico registra os meses em que a fatura foi paga.",
+              "O balanço mensal considera cada cartão separadamente.",
+            ]}
+          />
+        </View>
       </View>
 
       <FlatList
@@ -1347,6 +1362,11 @@ const s = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 18,
     paddingBottom: 16,
+  },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
   },
   headerTitle: {
     fontSize: 26,
