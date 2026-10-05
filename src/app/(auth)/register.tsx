@@ -19,7 +19,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/hooks/useAuth";
 import { useAppTheme } from "@/hooks/useTheme";
 import { Button, Input, FormError } from "@/components/ui";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { markOnboardingPending } from "@/hooks/useOnboarding";
 
 const schema = z
   .object({
@@ -34,8 +34,6 @@ const schema = z
   });
 
 type RegisterForm = z.infer<typeof schema>;
-
-const ONBOARDING_PENDING_PREFIX = "@secontrola_onboarding_pending:";
 
 export default function RegisterScreen() {
   const { register, isLoading } = useAuth();
@@ -90,10 +88,7 @@ export default function RegisterScreen() {
 
         setError("root", { message: errorMsg });
       } else {
-        await AsyncStorage.setItem(
-          ONBOARDING_PENDING_PREFIX + data.email.trim().toLowerCase(),
-          "1",
-        );
+        await markOnboardingPending(data.email);
         router.replace("/");
       }
     } catch (err: any) {
