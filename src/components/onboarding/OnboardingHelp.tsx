@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import {
   Modal,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
