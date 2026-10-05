@@ -1330,7 +1330,7 @@ export default function DashboardScreen() {
       </Modal>
 
       {/* MODAL DE AJUDA E TUTORIAL (PWA) ADICIONADO AQUI */}
-      <Modal visible={showHelpModal} transparent animationType="fade">
+      <Modal visible={showInstallHelpModal} transparent animationType="fade">
         <View style={s.modalOverlayCenter}>
           <View
             style={[
