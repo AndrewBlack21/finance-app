@@ -36,6 +36,8 @@ import { formatCurrency, formatDate } from "@/utils";
 import type { Installment, Transaction, FixedExpense } from "@/types";
 import { Ionicons } from "@expo/vector-icons";
 import { useAppTheme } from "@/hooks/useTheme";
+import { useOnboarding } from "@/hooks/useOnboarding";
+import { OnboardingModal } from "@/components/onboarding/OnboardingModal";
 
 const globalIgnoredBills = new Set<string>();
 
@@ -53,8 +55,18 @@ export default function DashboardScreen() {
   const [monthOffset, setMonthOffset] = useState(0);
   const [showMonthPicker, setShowMonthPicker] = useState(false);
 
-  // 👇 A variável de estado do modal de ajuda já existia
-  const [showHelpModal, setShowHelpModal] = useState(false);
+  const [showInstallHelpModal, setShowInstallHelpModal] = useState(false);
+
+  const {
+    isVisible: isOnboardingVisible,
+    isReady: isOnboardingReady,
+    open: openOnboarding,
+    complete: completeOnboarding,
+    skip: skipOnboarding,
+  } = useOnboarding({
+    userId: session?.user?.id,
+    email: session?.user?.email,
+  });
 
   const [ignoredBills, setIgnoredBills] =
     useState<Set<string>>(globalIgnoredBills);
@@ -1244,13 +1256,26 @@ export default function DashboardScreen() {
                 style={[s.menuDivider, { backgroundColor: colors.border }]}
               />
               <MenuOption
-                icon="help-circle"
+                icon="book"
                 color="#8b5cf6"
-                title="Ajuda e Tutorial"
-                subtitle="Aprenda a usar a app"
+                title="Como usar o Se Controla Ai"
+                subtitle="Tutorial completo do aplicativo"
                 onPress={() => {
                   setIsMenuVisible(false);
-                  setShowHelpModal(true);
+                  openOnboarding();
+                }}
+              />
+              <View
+                style={[s.menuDivider, { backgroundColor: colors.border }]}
+              />
+              <MenuOption
+                icon="phone-portrait"
+                color="#38bdf8"
+                title="Instalar aplicativo"
+                subtitle="Adicionar à tela inicial (PWA)"
+                onPress={() => {
+                  setIsMenuVisible(false);
+                  setShowInstallHelpModal(true);
                 }}
               />
             </View>
@@ -1411,7 +1436,7 @@ export default function DashboardScreen() {
                 s.btn,
                 { backgroundColor: colors.primary, marginTop: 16 },
               ]}
-              onPress={() => setShowHelpModal(false)}
+              onPress={() => setShowInstallHelpModal(false)}
             >
               <Text style={{ color: "#fff", fontWeight: "bold" }}>
                 Entendi, fechar
@@ -1420,6 +1445,12 @@ export default function DashboardScreen() {
           </View>
         </View>
       </Modal>
+
+      <OnboardingModal
+        visible={isOnboardingVisible && isOnboardingReady}
+        onComplete={completeOnboarding}
+        onSkip={skipOnboarding}
+      />
 
       {/* SELETOR DE MÊS RESTAURADO */}
       <Modal visible={showMonthPicker} transparent animationType="fade">
