@@ -31,6 +31,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useAppTheme } from "@/hooks/useTheme";
 import { Ionicons } from "@expo/vector-icons";
 import type { FixedExpense } from "@/types";
+import { OnboardingHelp } from "@/components/onboarding/OnboardingHelp";
 
 const schema = z.object({
   title: z.string().min(1, "Nome obrigatório"),
@@ -341,12 +342,26 @@ export default function FixedExpensesScreen() {
     >
       {/* 👇 DESIGN ATUALIZADO: Cabeçalho Limpo */}
       <View style={s.headerContainer}>
-        <Text style={[s.headerTitle, { color: colors.text }]}>
-          Contas Fixas
-        </Text>
-        <Text style={[s.headerSubtitle, { color: colors.subText }]}>
-          Gerencie os seus compromissos mensais
-        </Text>
+        <View style={s.headerRow}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={[s.headerTitle, { color: colors.text }]}>
+              Contas Fixas
+            </Text>
+            <Text style={[s.headerSubtitle, { color: colors.subText }]}>
+              Gerencie os seus compromissos mensais
+            </Text>
+          </View>
+          <OnboardingHelp
+            title="Como funcionam as Contas Fixas"
+            description="Cadastre despesas recorrentes para acompanhar compromissos que acontecem regularmente."
+            bullets={[
+              "Cadastre nome, valor e dia de vencimento.",
+              "Associe uma conta quando o pagamento precisar alterar um saldo.",
+              "Marque como paga para registrar o pagamento conforme o fluxo atual.",
+              "Use esta área para compromissos recorrentes, não para gastos avulsos.",
+            ]}
+          />
+        </View>
       </View>
 
       {/* 👇 DESIGN ATUALIZADO: Resumo Financeiro (Semelhante a Transactions) */}
